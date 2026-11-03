@@ -28,6 +28,7 @@ describe('AmenitiesService', () => {
     deleteAmenity = jest.fn();
     repository = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findByCode: jest.fn(),
       findPage: jest.fn(),
       create: createAmenity,

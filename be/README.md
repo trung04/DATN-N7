@@ -63,6 +63,21 @@ npm run migration:run
 List query parameters are `page`, `limit`, `search`, `sortBy`, and `sortOrder`.
 The maximum page size is 100.
 
+## Rooms API
+
+Room management is available at `/api/v1/rooms`. A room belongs to a hotel by
+`hotelId` and can be associated with up to 50 amenities through `amenityIds`.
+The hotel foreign key is intentionally deferred until the hotel module exists;
+amenity identifiers are validated through `AmenitiesService` and persisted in
+the `room_amenities` join table.
+
+Prices use an exact `numeric(12,2)` database column and include a three-letter
+currency code, defaulting to `VND`. Operational statuses are `AVAILABLE`,
+`MAINTENANCE`, and `OUT_OF_SERVICE`.
+
+Room list query parameters are `page`, `limit`, `search`, `hotelId`, `roomType`,
+`operationalStatus`, `sortBy`, and `sortOrder`.
+
 ## Run tests
 
 ```bash
