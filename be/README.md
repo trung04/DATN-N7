@@ -27,6 +27,8 @@
 
 ## Project setup
 
+For PostgreSQL/TypeORM and Redis connection settings and Docker setup, follow the [repository setup guide](../README.md#database-and-redis-configuration). ConfigModule loads `.env` when present; Compose-supplied environment variables take precedence. Use Node.js 24 for development and tests.
+
 ```bash
 $ npm install
 ```

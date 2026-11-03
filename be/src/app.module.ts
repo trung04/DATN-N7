@@ -1,11 +1,22 @@
 import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
 import { StarterModule } from './modules/app/app.module';
+import { ConfigModule } from '@nestjs/config';
+import { validateEnvironment } from './config/environment.validation';
+import { DatabaseModule } from './database/database.module';
+import { RedisCacheModule } from './common/cache/redis-cache.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      validate: validateEnvironment,
+    }),
+    DatabaseModule,
+    RedisCacheModule,
     StarterModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,

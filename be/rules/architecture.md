@@ -27,7 +27,7 @@ The starter module under `src/modules/app/` demonstrates controller/service wiri
 - Controllers validate HTTP input, call services, and return response DTOs. No database queries or business rules in controllers.
 - Services implement business rules, resource authorization, transactions, and orchestration. Depend on repository/integration interfaces, not concrete clients or repositories. Keep HTTP request objects and provider payloads out of business logic.
 - Repositories own database queries and persistence, implementing interfaces declared in `interfaces/`. They do not call controllers or external AI APIs.
-- Entities define module-owned business data and relationships. ORM decorators are allowed after an ORM is chosen. Never return entities directly as public responses.
+- Entities define module-owned business data and relationships. TypeORM decorators define persistence metadata. Never return entities directly as public responses.
 - DTOs define external request/response shapes. Services may accept validated request data or explicit service inputs; keep transport decorators/status handling out of service logic. Mappers construct public responses explicitly.
 - Integrations implement external capability interfaces. Provider request/response schemas belong in `integrations/<provider>/contracts/`, separate from public HTTP DTOs.
 - Controllers depend on services; services depend on interfaces; repositories/clients implement interfaces. Wire implementations with constructor injection in the owning module. Use symbol or abstract-class tokens because TypeScript interfaces do not exist at runtime.
@@ -43,7 +43,7 @@ The starter module under `src/modules/app/` demonstrates controller/service wiri
 
 ## Persistence and consistency
 
-No ORM is selected yet. Choose one only when needed; version migrations and disable automatic production schema synchronization. Enforce uniqueness and critical invariants in database constraints as well as services.
+TypeORM with PostgreSQL is configured in `src/database/database.module.ts`. Feature modules register entities using `TypeOrmModule.forFeature`; repository implementations inject TypeORM repositories while services depend on module-local interfaces. Version migrations and keep automatic schema synchronization disabled. Enforce uniqueness and critical invariants in database constraints as well as services.
 
 Services define transaction boundaries through repository/database abstractions. Keep network/AI calls outside DB transactions. Use an outbox when committed changes must reliably trigger jobs/events; make consumers idempotent. Bound queries, avoid N+1 relation loading, and handle concurrent updates deliberately.
 

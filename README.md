@@ -13,7 +13,7 @@ This repository is an initial project scaffold. It does not yet serve a complete
 | PostgreSQL | Local PostgreSQL 17 service with persistent storage and a health check. |
 | Redis | Local Redis 7 service with append-only persistence. |
 
-The backend currently has no database/Redis integration, authentication, migrations, or application API beyond the starter route. Setting connection variables does not implement these features.
+The backend configures PostgreSQL through TypeORM and Redis through Nest CacheModule/Keyv. Business entities, migrations, authentication, and application APIs beyond the starter route are not implemented.
 
 ## Backend agent guidance
 
@@ -76,9 +76,7 @@ POSTGRES_PASSWORD=<team-provided-password>
 
 Compose uses these values to initialize a **local PostgreSQL container**. It does not connect to a separately hosted shared database. To use a remote database later, the backend connection configuration and Compose settings must be adapted.
 
-The backend start scripts also require `be/.env`. Create that file locally, even if it is empty. If your team uses NestJS Observe, add the supplied `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` there. Without them, the code falls back to placeholder values; telemetry setup is not verified.
-
-`be/.env.example` lists proposed application settings, but currently includes an invalid opening `<CodeBlock ...>` line. Remove that line if copying it into `be/.env`, and replace example credentials with your local values.
+Nest ConfigModule loads `be/.env` when present; Compose environment variables take precedence. The file is optional inside Docker. For host development, copy `be/.env.example` to `be/.env`, replace database placeholders with the team-provided values, and use localhost hosts. Compose supplies its own database credentials and internal hosts `postgres` and `redis`. Keep any Observe keys in your local environment; telemetry connectivity remains unverified.
 
 ## Start the backend development environment
 
@@ -105,8 +103,9 @@ Expected response: `Hello World!`
 | PostgreSQL from the host | `localhost:5432` |
 | PostgreSQL from Compose containers | `postgres:5432` |
 | Redis from Compose containers | `redis:6379` |
+| Redis from the host | `localhost:6379` |
 
-Redis has no host port mapping. PostgreSQL is published on host port 5432; stop any conflicting local database or change the mapping before starting Compose.
+Redis is published on loopback port 6379 for host development. PostgreSQL is published on host port 5432; stop any conflicting local database or change the mapping before starting Compose.
 
 Plain `docker compose up -d` starts only PostgreSQL and Redis. The backend and frontend services require their respective profiles.
 
@@ -142,7 +141,7 @@ npm test -- --runInBand
 npm run test:e2e -- --runInBand
 ```
 
-During the repository review, backend lint and TypeScript checking passed. Unit and end-to-end tests failed under the installed Node.js 22 runtime with an ESM loading error; rerun them under Node.js 24. A full build was blocked by permissions on existing `be/dist` artifacts. Container startup has not been verified because Docker socket access was denied in the review environment.
+Use Node.js 24 for checks; host Node.js 22 has an ESM test-loading incompatibility. Existing `be/dist` ownership may block rebuilding on this host. The starter HTTP e2e test imports only its feature module and does not verify live database/cache connectivity. Full Compose verification requires Docker socket access.
 
 ## Stop services
 
@@ -151,3 +150,21 @@ docker compose --profile backend --profile frontend down
 ```
 
 Named volumes retain database data and backend dependencies. Adding `--volumes` deletes those volumes, including the local database data.
+
+## Database and Redis configuration
+
+PostgreSQL is configured in `be/src/database/database.module.ts` using `TypeOrmModule.forRootAsync` and validated `ConfigService` values. Redis caching is configured in `be/src/common/cache/redis-cache.module.ts` using Nest CacheModule and the Keyv Redis adapter.
+
+- Required database settings: `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`.
+- Database defaults: port 5432, pool size 10, connect timeout 5000 ms, TLS disabled. `DATABASE_SSL=true` enables certificate-verified TLS; use the deployment's trusted CA configuration for private certificates.
+- Redis defaults: localhost:6379, database 0, connect timeout 5000 ms, TLS disabled. Optional `REDIS_USERNAME`/`REDIS_PASSWORD` support authenticated instances; `REDIS_TLS=true` enables TLS. Compose's local Redis has no authentication configured.
+- Cache TTL is in milliseconds (`CACHE_TTL_MS=60000`), and keys use the `tourism:cache` namespace. Redis connects on first cache access; application startup alone does not prove Redis availability. CacheModule disconnects its stores during shutdown, and Nest shutdown hooks are enabled.
+- PostgreSQL connects during startup with bounded retries. TypeORM `synchronize` and automatic migration execution are disabled. No schema is created automatically; add reviewed migrations when entities are introduced. A standalone migration CLI data source is not configured yet.
+
+Feature modules register their own entities using `TypeOrmModule.forFeature([Entity])`. Inject TypeORM repositories into the module's repository implementations; services consume repository interfaces. Do not inject TypeORM repositories directly into controllers or bypass another module's services.
+
+For caching, inject `CACHE_MANAGER` from `@nestjs/cache-manager` with the `Cache` type from `cache-manager` into the service/integration that needs it. Use `get`, `set`, and `del` with explicit, tenant-aware keys. A cache is not a durable store for critical workflow state or distributed locks.
+
+For host development, start infrastructure with `docker compose up -d postgres redis`, configure `be/.env` using the shared database values and localhost hosts, then run `npm ci` and `npm run start:dev` inside `be/`. For Docker development, refresh the dependency volume after pulling dependency updates using the command above, then run `docker compose --profile backend up --build -d`.
+
+References: [Nest TypeORM](https://docs.nestjs.com/data/typeorm), [Nest configuration](https://docs.nestjs.com/application/configuration), [Nest caching](https://docs.nestjs.com/techniques/caching).
