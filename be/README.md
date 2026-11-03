@@ -46,6 +46,23 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Amenities API
+
+The backend exposes amenity management at `/api/v1/amenities` with create,
+paginated list, detail, partial update, and delete operations. Write endpoints
+are currently unauthenticated because an authentication/authorization module
+has not been implemented yet.
+
+Apply pending database migrations before using persistence-backed endpoints:
+
+```bash
+npm run migration:show
+npm run migration:run
+```
+
+List query parameters are `page`, `limit`, `search`, `sortBy`, and `sortOrder`.
+The maximum page size is 100.
+
 ## Run tests
 
 ```bash
