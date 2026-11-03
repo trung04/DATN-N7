@@ -78,6 +78,19 @@ currency code, defaulting to `VND`. Operational statuses are `AVAILABLE`,
 Room list query parameters are `page`, `limit`, `search`, `hotelId`, `roomType`,
 `operationalStatus`, `sortBy`, and `sortOrder`.
 
+## Users API
+
+User management is available at `/api/v1/users` with create, paginated list,
+detail, partial update, password reset, and delete operations. Usernames and
+emails are normalized to lowercase and are unique case-insensitively.
+Passwords are accepted only as write-only request fields and stored as bcrypt
+hashes; password hashes and Google account identifiers are never returned.
+
+List filters include `search`, `status`, `gender`, and `isEmailVerified`.
+Password reset uses `PUT /api/v1/users/:userId/password`. These management
+routes remain unauthenticated until the authentication and authorization module
+is implemented.
+
 ## Run tests
 
 ```bash
