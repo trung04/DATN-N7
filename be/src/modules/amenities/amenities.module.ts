@@ -16,5 +16,6 @@ import { AmenitiesService } from './services/amenities.service';
       useClass: TypeOrmAmenityRepository,
     },
   ],
+  exports: [AmenitiesService],
 })
 export class AmenitiesModule {}

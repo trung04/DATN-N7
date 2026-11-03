@@ -24,6 +24,7 @@ export interface CreateAmenityData {
 
 export interface AmenityRepository {
   findById(id: string): Promise<AmenityEntity | null>;
+  findByIds(ids: string[]): Promise<AmenityEntity[]>;
   findByCode(code: string): Promise<AmenityEntity | null>;
   findPage(options: FindAmenitiesOptions): Promise<AmenityPage>;
   create(data: CreateAmenityData): Promise<AmenityEntity>;

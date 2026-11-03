@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { AmenityEntity } from '../entities/amenity.entity';
 import { AmenityCodeConflictException } from '../exceptions/amenity.exceptions';
 import {
@@ -19,6 +19,11 @@ export class TypeOrmAmenityRepository implements AmenityRepository {
 
   findById(id: string): Promise<AmenityEntity | null> {
     return this.repository.findOneBy({ id });
+  }
+
+  findByIds(ids: string[]): Promise<AmenityEntity[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.repository.findBy({ id: In(ids) });
   }
 
   findByCode(code: string): Promise<AmenityEntity | null> {

@@ -3,8 +3,11 @@ import { config as loadEnvironment } from 'dotenv';
 import { DataSource } from 'typeorm';
 import { validateEnvironment } from '../config/environment.validation';
 import { AmenityEntity } from '../modules/amenities/entities/amenity.entity';
+import { RoomAmenityEntity } from '../modules/rooms/entities/room-amenity.entity';
+import { RoomEntity } from '../modules/rooms/entities/room.entity';
 import { CreateAmenities1793696400000 } from './migrations/1793696400000-CreateAmenities';
 import { RemoveAmenityType1793696500000 } from './migrations/1793696500000-RemoveAmenityType';
+import { CreateRooms1793696600000 } from './migrations/1793696600000-CreateRooms';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -17,8 +20,12 @@ export default new DataSource({
   password: environment.DATABASE_PASSWORD as string,
   database: environment.DATABASE_NAME as string,
   ssl: environment.DATABASE_SSL ? { rejectUnauthorized: true } : false,
-  entities: [AmenityEntity],
-  migrations: [CreateAmenities1793696400000, RemoveAmenityType1793696500000],
+  entities: [AmenityEntity, RoomEntity, RoomAmenityEntity],
+  migrations: [
+    CreateAmenities1793696400000,
+    RemoveAmenityType1793696500000,
+    CreateRooms1793696600000,
+  ],
   synchronize: false,
   logging: false,
 });
