@@ -103,6 +103,18 @@ Bank name, account number, and account holder are nullable. List queries support
 `search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
 unauthenticated until the authentication and authorization module is available.
 
+## Places API
+
+Place management is available at `/api/v1/places` with create, paginated list,
+detail, partial update, and delete operations. Coordinates are optional but
+latitude and longitude must be supplied or cleared together. Country codes use
+the ISO alpha-2 format and timezone values must be valid IANA identifiers.
+
+The database generates `search_document` and indexes it for full-text search.
+`averageRating` is read-only through this API and defaults to zero until a
+review capability owns rating aggregation. List filters include `search`,
+`status`, `countryCode`, `provinceCode`, and `minRating`.
+
 ## Run tests
 
 ```bash
