@@ -91,6 +91,18 @@ Password reset uses `PUT /api/v1/users/:userId/password`. These management
 routes remain unauthenticated until the authentication and authorization module
 is implemented.
 
+## Hotel Owners API
+
+Hotel owner profiles are available at `/api/v1/hotel-owners` with create,
+paginated list, detail, partial update, and delete operations. Each profile uses
+`userId` as both its resource identifier and database primary key, enforcing a
+one-to-one relationship with an existing user. Removing a user also removes the
+related hotel owner profile.
+
+Bank name, account number, and account holder are nullable. List queries support
+`search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
+unauthenticated until the authentication and authorization module is available.
+
 ## Run tests
 
 ```bash

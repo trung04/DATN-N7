@@ -22,5 +22,6 @@ import { UsersService } from './services/users.service';
       useClass: BcryptPasswordHasher,
     },
   ],
+  exports: [UsersService],
 })
 export class UsersModule {}
