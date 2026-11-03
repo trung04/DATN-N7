@@ -15,7 +15,13 @@ This repository is an initial project scaffold. It does not yet serve a complete
 
 The backend currently has no database/Redis integration, authentication, migrations, or application API beyond the starter route. Setting connection variables does not implement these features.
 
-## Requirements
+## Backend agent guidance
+
+Start with [be/AGENTS.md](be/AGENTS.md). It links the project conventions for [layered modules](be/rules/architecture.md), [REST APIs](be/rules/rest-api.md), and [AI service communication](be/rules/ai-services.md).
+
+Reusable workflows are available as [nestjs-feature](be/skills/nestjs-feature/SKILL.md) and [ai-service-integration](be/skills/ai-service-integration/SKILL.md). Ask your agent to read the relevant `SKILL.md` before the task. These repository-local files are not automatically installed skills in every agent tool. The rules guide new implementation; they do not mean the starter already provides those capabilities.
+
+## Development requirements
 
 - Docker Engine or Docker Desktop with Docker Compose.
 - Git.
