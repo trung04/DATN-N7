@@ -13,7 +13,7 @@ These are conventions for new business endpoints; the starter `GET /` does not i
 
 - Validate body, query, and path values at runtime using an approach compatible with installed NestJS. Reject unknown body fields; explicitly convert query values and enforce bounds. Install validation libraries deliberately; do not assume they exist.
 - Request DTOs expose only writable fields. Explicitly map response DTOs; do not return ORM records, password hashes, tokens, or provider payloads.
-- Guards authenticate; use cases authorize the specific resource/action and tenant/owner. Identity must come from trusted authentication context, not caller-supplied identity fields.
+- Guards authenticate; services authorize the specific resource/action and tenant/owner. Identity must come from trusted authentication context, not caller-supplied identity fields.
 - Default list convention: `page=1`, `limit=20`, maximum `limit=100`, positive integers, deterministic sorting with an identifier tie-breaker. Whitelist filters/sort fields. Use documented opaque cursors instead for large/changing datasets when appropriate.
 - Single responses are resource objects. Page-based collections use `{ "data": [], "meta": { "page": 1, "limit": 20, "total": 0 } }`. Document a separate cursor schema when used. Avoid redundant success wrappers.
 - Use UTC ISO 8601 timestamps; document date-only/timezone semantics. Represent money with currency and integer minor units or a documented decimal representation.
@@ -21,7 +21,7 @@ These are conventions for new business endpoints; the starter `GET /` does not i
 ## Errors and compatibility
 
 - Adopt RFC 9457 `application/problem+json` errors: `type`, `title`, `status`, safe `detail`, and occurrence `instance` where available. Add stable `code`, `traceId`, and structured validation `errors` where needed. Do not make clients parse human-readable messages.
-- Add central exception mapping when implementing this contract. Domain/application errors remain transport-neutral; presentation maps them to HTTP. Never expose stacks, SQL, secrets, or raw upstream responses.
+- Add central exception mapping when implementing this contract. Business exceptions remain transport-neutral; common HTTP filters map them to HTTP. Never expose stacks, SQL, secrets, or raw upstream responses.
 - When OpenAPI is added, maintain schemas, auth requirements, pagination, examples, and error cases alongside endpoints. Document implemented behavior, not planned features.
 - Keep changes within a version backward-compatible. Version breaking contracts explicitly. Test validation, status codes, serialization, ownership, and failure cases.
 - For retryable creation/job submission, define idempotency-key scope, input fingerprint, concurrent requests, retention, and replay behavior. Enforce it persistently; reject reuse with different input.

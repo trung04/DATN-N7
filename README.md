@@ -23,6 +23,38 @@ Reusable workflows are available as [nestjs-feature](be/skills/nestjs-feature/SK
 
 ## Development requirements
 
+Backend source follows this structure:
+
+```text
+be/src/
+  main.ts
+  app.module.ts                 # Root composition and telemetry
+  config/
+  database/migrations/
+  common/
+    decorators/
+    guards/
+    filters/
+    interceptors/
+    pipes/
+    dto/
+  modules/
+    app/                        # Existing starter; GET / → Hello World!
+      app.module.ts
+      controllers/
+      services/
+      repositories/
+      entities/
+      dtos/requests/
+      dtos/responses/
+      interfaces/
+      integrations/
+      mappers/
+      exceptions/
+```
+
+New business modules follow the same module-local layout. Controllers call services, services use repository/integration interfaces, and concrete repositories/clients are wired in the module. Empty folders are retained with `.gitkeep` as a skeleton; no database or AI functionality is implemented by those placeholders. Tests are colocated as `*.spec.ts`, with HTTP/cross-module tests under `be/test/`.
+
 - Docker Engine or Docker Desktop with Docker Compose.
 - Git.
 - For running the backend outside Docker: Node.js 24 and npm. Docker uses Node.js 24.

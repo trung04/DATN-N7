@@ -4,9 +4,9 @@
 
 This backend is a NestJS modular monolith. Read [architecture](rules/architecture.md), [REST contracts](rules/rest-api.md), and, when calling AI APIs, [AI service integration](rules/ai-services.md) before editing the relevant code.
 
-- Organize by business capability, with presentation, application, domain, and infrastructure layers inside each feature.
-- Controllers call use cases; use cases depend on ports; infrastructure implements ports. Domain rules must not depend on NestJS, HTTP, ORM models, provider SDKs, or environment variables.
-- Export narrow application contracts from modules. Never access another module's tables/repositories directly. Keep dependencies acyclic instead of defaulting to `forwardRef()`.
+- Organize by business capability, with controllers, services, repositories, entities, `dtos/requests`, `dtos/responses`, interfaces, integrations, mappers, and exceptions inside each module.
+- Controllers call services; services depend on repository/integration interfaces; repositories and external clients implement those interfaces. Business rules stay in services/entities, not controllers or database adapters.
+- Export only services required by other modules. Never access another module's tables/repositories directly. Keep dependencies acyclic instead of defaulting to `forwardRef()`.
 - These rules describe the target architecture. The current code is a starter: persistence, authentication, API validation, OpenAPI, queues, and AI clients are not implemented. Add infrastructure only when needed by the requested feature.
 - Inspect installed dependencies before selecting APIs. Docker targets Node.js 24. Use explicit runtime DI tokens for TypeScript interfaces.
 - Test business rules and observable contracts, including authorization, validation, and integration failures. Routine tests must not require production data or paid AI calls.

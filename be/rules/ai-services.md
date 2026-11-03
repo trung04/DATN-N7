@@ -4,7 +4,7 @@ Apply when a feature needs AI; do not add SDKs, queues, or separate services pre
 
 ## Contracts and boundaries
 
-- Define a capability port such as `ItineraryGenerator` in the calling module's application layer. Bind an infrastructure adapter through Nest DI. Controllers/domain code must not depend on provider SDKs or provider JSON.
+- Define a capability interface such as `ItineraryGenerator` in the calling module's `interfaces/`. Services consume it; an AI client in `integrations/ai/` implements it through Nest DI. Keep external schemas in `integrations/ai/contracts/` and conversions in `mappers/`. Controllers, services, and entities must not depend on provider SDKs or provider JSON.
 - Define internal request/result types and failure categories. Validate upstream payloads at runtime and map them into internal types. TypeScript alone does not validate network data.
 - For team-owned AI services, agree on a versioned OpenAPI/JSON schema contract covering auth, request IDs, payload limits, locale/units/timezones, sync/job/stream behavior, errors, and compatibility. Keep contract fixtures/tests; never share ORM entities across services.
 - Validate base URL, credentials, model selection, and deadlines in configuration. Use Compose DNS names for other containers, not `localhost`. Keep credentials server-side and use deployment-appropriate service authentication.
@@ -28,7 +28,7 @@ Apply when a feature needs AI; do not add SDKs, queues, or separate services pre
 ## Verification and operations
 
 - Use fake HTTP servers/transport stubs to test request contracts, valid/malformed output, 401/403, 429 with retry hints, 5xx, deadlines, aborts, and retry exhaustion. Assert bounded retries and cancellation.
-- Test use cases with fake capability ports. Keep routine tests offline and deterministic; optional live tests require supplied test credentials and explicit cost limits.
+- Test services with fake integration interfaces. Keep routine tests offline and deterministic; optional live tests require supplied test credentials and explicit cost limits.
 - Record trace/request IDs, latency, failure category, retry count, usage/cost when available, and model/prompt/schema versions without sensitive content. Propagate trace context using supported headers rather than forwarding arbitrary caller headers.
 - Document environment settings, startup/service discovery, contract versions, and failure behavior. AI generation calls do not belong in health probes.
 
