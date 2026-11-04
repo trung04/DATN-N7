@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Service — Trang thử nghiệm</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#20252b;font:15px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:24px auto;padding:0 16px}h1{font-size:24px;margin:0}h2{font-size:19px;margin:0 0 12px}h3{font-size:16px;margin:12px 0 6px}p{margin:8px 0}label{display:block;margin:10px 0 4px;font-weight:600}input,select,textarea,button{font:inherit}input:not([type=checkbox]),select,textarea{width:100%;padding:8px;border:1px solid #b7bec8;border-radius:4px;background:white}textarea{min-height:84px;resize:vertical}button{padding:8px 14px;border:1px solid #9ca8b7;border-radius:4px;background:white;cursor:pointer}button.primary{background:#185ca1;color:white;border-color:#185ca1}button:disabled{opacity:.55;cursor:wait}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid #83b9ee;outline-offset:2px}.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.three{grid-template-columns:repeat(3,minmax(0,1fr))}.box{background:white;border:1px solid #d5dae1;border-radius:6px;padding:18px;margin:14px 0}.actions,nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}nav button[aria-selected=true]{background:#185ca1;color:white}.muted{color:#596372;font-size:13px}.check{font-weight:400;display:flex;align-items:center;gap:7px}.status{white-space:pre-wrap;margin-top:12px}.error{color:#a51d22}.ok{color:#176338}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:350px;overflow:auto;background:#f4f5f7;padding:12px;font-size:12px}.card{border:1px solid #dbe0e6;padding:12px;margin:10px 0;border-radius:4px}.card img{width:150px;height:105px;object-fit:cover}.warnings{background:#fff7df;padding:10px;margin:10px 0;font-size:13px}#preview{max-width:100%;max-height:260px;object-fit:contain;display:none;margin:10px 0}section[hidden]{display:none}.bubble{padding:10px;border:1px solid #d5dae1;border-radius:4px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}.bubble.user{background:#edf4fc}a{color:#185ca1}details{margin:12px 0}summary{cursor:pointer}@media(max-width:650px){.row,.three{grid-template-columns:1fr}main{margin-top:12px}.box{padding:13px}}
+</style>
+</head>
+<body><main>
+<h1>AI Service — Trang thử nghiệm</h1>
+<p class="muted">Chọn chức năng, nhập dữ liệu và xem kết quả API thật. <a href="/docs" target="_blank" rel="noopener">Swagger</a></p>
+<div class="box">
+<div class="row"><div><label for="apiKey">API key (nếu có)</label><input id="apiKey" type="password" autocomplete="off" placeholder="X-API-Key — bỏ trống nếu chưa cấu hình"></div><div><label for="userId">User ID thử nghiệm</label><input id="userId" value="demo-user" maxlength="128"></div></div>
+<div class="actions"><button id="health">Kiểm tra dịch vụ</button><button id="catalog">Xem số địa điểm</button></div>
+<div id="globalStatus" class="status" role="status" aria-live="polite"></div>
+<p class="muted">Key chỉ giữ trong trang đang mở, không lưu vào trình duyệt. Nút lưu/index/chỉnh lịch sẽ ghi dữ liệu thật.</p>
+</div>
+<nav aria-label="Chức năng">
+<button data-tab="images" aria-selected="true">Ảnh CLIP</button><button data-tab="places" aria-selected="false">Tìm địa điểm</button><button data-tab="recommend" aria-selected="false">Recommendation</button><button data-tab="chat" aria-selected="false">Chat</button><button data-tab="trips" aria-selected="false">Lịch trình</button>
+</nav>
+
+<section id="images" class="box">
+<h2>Upload ảnh và tìm ảnh tương tự</h2>
+<form id="imageForm"><label for="imageFile">Chọn ảnh JPEG / PNG / WebP (tối đa 8 MB)</label><input id="imageFile" type="file" accept="image/jpeg,image/png,image/webp" required><img id="preview" alt="Ảnh bạn vừa chọn">
+<label class="check"><input id="indexImage" type="checkbox">Lưu ảnh vào collection để tìm kiếm</label>
+<div class="row"><div><label for="imageId">Image ID (cần khi lưu)</label><input id="imageId" placeholder="photo-test-1" maxlength="128"></div><div><label for="placeId">Place ID (cần khi lưu)</label><input id="placeId" placeholder="place-123" maxlength="128"></div></div>
+<div class="row"><div><label for="imageCity">Thành phố (tùy chọn)</label><input id="imageCity" placeholder="Đà Nẵng"></div><div><label for="imageType">Loại địa điểm</label><select id="imageType"><option value="">Không lọc / không đặt</option><option>Attraction</option><option>Restaurant</option><option>Hotel</option></select></div></div>
+<label for="imageUrl">URL ảnh để hiển thị kết quả (không bắt buộc)</label><input id="imageUrl" type="url" placeholder="https://..."><p class="muted">API xử lý file đã chọn. URL chỉ lưu làm metadata, không tải ảnh từ URL này.</p>
+<div class="actions"><button class="primary" type="submit">Tạo embedding ảnh</button><button id="searchImage" type="button">Tìm bằng ảnh đã chọn</button><button id="imageCollection" type="button">Thông tin collection</button></div></form>
+<p class="muted">Mặc định chỉ tạo vector, chưa lưu. Muốn tìm được ảnh, cần lưu ít nhất một ảnh trước. Tìm bằng ảnh không lưu ảnh truy vấn.</p>
+<div id="imageStatus" class="status" role="status" aria-live="polite"></div><div id="imageResult"></div>
+<details><summary>JSON phản hồi</summary><pre id="imageJson"></pre></details>
+</section>
+
+<section id="places" class="box" hidden><h2>Tìm địa điểm bằng ngôn ngữ tự nhiên</h2>
+<form id="placeForm"><label for="placeQuery">Bạn muốn tìm gì?</label><textarea id="placeQuery" required placeholder="Tìm khách sạn ở Đà Nẵng có hồ bơi gần biển"></textarea>
+<div class="row"><div><label for="searchCity">Thành phố bắt buộc (tùy chọn)</label><input id="searchCity" placeholder="Đà Nẵng"></div><div><label for="searchType">Loại địa điểm bắt buộc</label><select id="searchType"><option value="">Tự nhận diện</option><option>Hotel</option><option>Restaurant</option><option>Attraction</option></select></div></div>
+<label class="check"><input id="inferFilters" type="checkbox" checked>Tự nhận diện bộ lọc từ câu</label><button class="primary" type="submit">Tìm địa điểm</button></form>
+<div id="placeStatus" class="status" role="status" aria-live="polite"></div><div id="placeResult"></div><details><summary>JSON phản hồi</summary><pre id="placeJson"></pre></details>
+</section>
+
+<section id="recommend" class="box" hidden><h2>Gợi ý theo sở thích và lịch sử</h2>
+<form id="recForm"><div class="row"><div><label for="recCity">Thành phố</label><input id="recCity" placeholder="Đà Nẵng"></div><div><label for="recType">Loại địa điểm</label><select id="recType"><option value="">Tất cả</option><option>Attraction</option><option>Restaurant</option><option>Hotel</option></select></div></div>
+<label for="recPreferences">Sở thích, ngăn cách bằng dấu phẩy</label><input id="recPreferences" placeholder="biển, thiên nhiên, cà phê"><label for="recQuery">Nhu cầu lần này (tùy chọn)</label><input id="recQuery" placeholder="Muốn tìm nơi yên tĩnh"><label class="check"><input id="exploration" type="checkbox">Bật khám phá</label><button class="primary" type="submit">Lấy gợi ý</button></form>
+<p class="muted">Dùng User ID phía trên. Nút “Quan tâm” ghi sự kiện favorite thật để lần gợi ý sau có tín hiệu cá nhân.</p>
+<div id="recStatus" class="status" role="status" aria-live="polite"></div><div id="recResult"></div><details><summary>JSON phản hồi</summary><pre id="recJson"></pre></details>
+</section>
+
+<section id="chat" class="box" hidden><h2>Chat điều phối</h2><p class="muted">Thử “1+1 bằng bao nhiêu?”, tìm địa điểm, hoặc “Lập lịch Đà Nẵng 2 ngày”. Thiếu ngày khởi hành, hệ thống sẽ hỏi lại.</p>
+<div id="chatHistory" aria-live="polite"></div><form id="chatForm"><label for="chatMessage">Tin nhắn</label><textarea id="chatMessage" required placeholder="Nhập yêu cầu..."></textarea><label class="check"><input id="useLlm" type="checkbox">Dùng Gemini (cần cấu hình key/model, có thể phát sinh phí)</label><div class="actions"><button class="primary" type="submit">Gửi</button><button id="resetChat" type="button">Hội thoại mới</button></div></form>
+<div id="chatStatus" class="status" role="status"></div><div id="chatExtra"></div><details><summary>JSON phản hồi</summary><pre id="chatJson"></pre></details>
+</section>
+
+<section id="trips" class="box" hidden><h2>Tạo và xem lịch trình</h2>
+<form id="tripForm"><div class="row three"><div><label for="tripCity">Thành phố</label><input id="tripCity" value="Đà Nẵng" required></div><div><label for="tripDate">Ngày bắt đầu</label><input id="tripDate" type="date" required></div><div><label for="tripDays">Số ngày</label><input id="tripDays" type="number" value="2" min="1" max="14" required></div></div>
+<div class="row three"><div><label for="tripStops">Số điểm/ngày</label><input id="tripStops" type="number" value="3" min="1" max="6" required></div><div><label for="tripStart">Bắt đầu mỗi ngày</label><input id="tripStart" type="time" value="09:00" required></div><div><label for="tripEnd">Kết thúc mỗi ngày</label><input id="tripEnd" type="time" value="18:00" required></div></div>
+<label for="tripPreferences">Sở thích, ngăn cách bằng dấu phẩy</label><input id="tripPreferences" placeholder="biển, văn hóa, cà phê"><div class="row"><div><label for="tripLat">Vĩ độ nơi xuất phát (tùy chọn)</label><input id="tripLat" type="number" step="any" min="-90" max="90" placeholder="16.05"></div><div><label for="tripLon">Kinh độ nơi xuất phát (tùy chọn)</label><input id="tripLon" type="number" step="any" min="-180" max="180" placeholder="108.2"></div></div>
+<label class="check"><input id="tripReturn" type="checkbox">Quay về nơi xuất phát mỗi ngày (cần tọa độ)</label><button class="primary" type="submit">Tạo và lưu lịch trình</button></form>
+<p class="muted">Nếu chưa cấu hình routing, thời gian/quãng đường sẽ được ghi là ước tính. Chưa tối ưu ngân sách.</p>
+<div class="row"><div><label for="loadTripId">Trip ID đã lưu</label><input id="loadTripId" placeholder="Dán trip_id để đọc lại"></div><div class="actions" style="align-self:end"><button id="loadTrip">Đọc lịch</button><button id="validateTrip">Kiểm tra lịch đang xem</button></div></div>
+<div id="tripStatus" class="status" role="status" aria-live="polite"></div><div id="tripResult"></div><details><summary>JSON phản hồi</summary><pre id="tripJson"></pre></details>
+</section>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+let selectedUrl=null,conversationId=null,lastTrip=null;
+const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+const user=()=>{const v=$('userId').value.trim();if(!v)throw Error('Nhập User ID phía trên.');return v;};
+const values=id=>$(id).value.split(',').map(v=>v.trim()).filter(Boolean);
+function status(id,text,error=false){const n=$(id);n.textContent=text;n.className='status '+(error?'error':'ok');}
+async function api(path,body,method='POST'){
+ if(location.protocol==='file:')throw Error('Mở trang tại http://localhost:9000/demo, không mở file HTML trực tiếp.');
+ const headers={};const key=$('apiKey').value.trim();if(key)headers['X-API-Key']=key;
+ const options={method,headers};if(body!==undefined){if(body instanceof FormData)options.body=body;else{headers['Content-Type']='application/json';options.body=JSON.stringify(body);}}
+ const response=await fetch(path,options);const text=await response.text();let data;try{data=JSON.parse(text);}catch{data={detail:text.slice(0,500)};}
+ if(!response.ok)throw Error('HTTP '+response.status+': '+(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail||data)));
+ return data;
+}
+async function run(section,work){
+ const buttons=[...$(section).querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);status(section==='images'?'imageStatus':section==='places'?'placeStatus':section==='recommend'?'recStatus':section==='chat'?'chatStatus':'tripStatus','Đang xử lý… Lần gọi model đầu có thể lâu hơn.');
+ const sid={images:'imageStatus',places:'placeStatus',recommend:'recStatus',chat:'chatStatus',trips:'tripStatus'}[section];
+ try{await work();}catch(error){status(sid,error.message||String(error),true);}finally{buttons.forEach(b=>b.disabled=false);}
+}
+function json(id,data){$(id).textContent=JSON.stringify(data,null,2);}
+function notices(target,data){const items=[...(data.warnings||[]),...(data.unsupported_requirements||[])];if(items.length){const box=node('div',undefined,'warnings');items.forEach(w=>box.append(node('p',w)));target.append(box);}}
+function picture(target,url){if(!url)return;try{const u=new URL(url,location.href);if(!['http:','https:'].includes(u.protocol))return;const img=node('img');img.src=u.href;img.alt='Ảnh địa điểm';img.loading='lazy';img.referrerPolicy='no-referrer';img.onerror=()=>img.remove();target.append(img);}catch{}}
+function cards(target,items){for(const p of items){const card=node('div',undefined,'card');card.append(node('strong',p.name||p.image_id||p.place_id));picture(card,p.image_url);card.append(node('p','ID: '+p.place_id+(p.city?' · '+p.city:'')+(p.score!==undefined?' · Điểm: '+Number(p.score).toFixed(4):'')));if(p.reasons)card.append(node('p',p.reasons.join('; '),'muted'));target.append(card);}}
+document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(b=>{b.setAttribute('aria-selected',String(b===button));$(b.dataset.tab).hidden=b!==button;});});
+$('health').onclick=async()=>{try{const d=await api('/health',undefined,'GET');status('globalStatus','Dịch vụ: '+d.status+' · Model văn bản: '+d.model);}catch(e){status('globalStatus',e.message,true);}};
+$('catalog').onclick=async()=>{try{const d=await api('/api/v1/places?limit=1',undefined,'GET');status('globalStatus','Catalog có '+d.total+' địa điểm. '+(d.total?'Có thể thử tìm kiếm và lập lịch.':'Cần nạp địa điểm qua API /places/batch hoặc script index_places.py trước khi thử search/recommendation/planner.'));}catch(e){status('globalStatus',e.message,true);}};
+$('imageFile').onchange=()=>{if(selectedUrl)URL.revokeObjectURL(selectedUrl);const file=$('imageFile').files[0];$('preview').style.display=file?'block':'none';if(file){selectedUrl=URL.createObjectURL(file);$('preview').src=selectedUrl;}};
+$('indexImage').onchange=()=>{$('imageId').required=$('placeId').required=$('indexImage').checked;};
+function imageForm(){const file=$('imageFile').files[0];if(!file)throw Error('Hãy chọn ảnh trước.');if(file.size>8000000)throw Error('Ảnh vượt 8 MB. Chọn ảnh nhỏ hơn.');const form=new FormData();form.append('file',file);for(const [id,key] of [['imageCity','city'],['imageType','place_type']])if($(id).value.trim())form.append(key,$(id).value.trim());return form;}
+$('imageForm').onsubmit=e=>{e.preventDefault();run('images',async()=>{const form=imageForm();form.append('index',String($('indexImage').checked));for(const [id,key] of [['imageId','image_id'],['placeId','place_id'],['imageUrl','image_url']])if($(id).value.trim())form.append(key,$(id).value.trim());const d=await api('/api/v1/embeddings/image/upload',form);json('imageJson',d);$('imageResult').replaceChildren(node('p','Model: '+d.model+' · '+d.dimensions+' chiều · Độ dài vector: '+Math.sqrt(d.embedding.reduce((s,v)=>s+v*v,0)).toFixed(4)));status('imageStatus',d.indexed?'Đã tạo vector và lưu vào Qdrant.':'Đã tạo vector. Chưa lưu ảnh vào collection.');});};
+$('searchImage').onclick=()=>run('images',async()=>{const form=imageForm();form.append('limit','10');const d=await api('/api/v1/search/images/upload',form);json('imageJson',d);$('imageResult').replaceChildren();cards($('imageResult'),d.results);status('imageStatus','Tìm thấy '+d.total+' ảnh.'+(d.total?'':' Hãy lưu/index ảnh trước nếu collection đang rỗng.'));});
+$('imageCollection').onclick=()=>run('images',async()=>{const d=await api('/api/v1/search/images/collection',undefined,'GET');json('imageJson',d);status('imageStatus',d.collection+' · '+d.dimensions+' chiều · '+d.points_count+' ảnh.');});
+$('placeForm').onsubmit=e=>{e.preventDefault();run('places',async()=>{const filters={};if($('searchCity').value.trim())filters.city=$('searchCity').value.trim();if($('searchType').value)filters.place_type=$('searchType').value;const d=await api('/api/v1/search/places',{query:$('placeQuery').value.trim(),filters,infer_filters:$('inferFilters').checked,limit:10});json('placeJson',d);const out=$('placeResult');out.replaceChildren(node('p','Bộ lọc áp dụng: '+JSON.stringify(d.applied_filters)));notices(out,d);cards(out,d.results);status('placeStatus','Tổng '+d.total+' kết quả.'+(d.total?'':' Kiểm tra catalog hoặc điều kiện lọc.'));});};
+let stopRecommendationTracking=()=>{};
+function trackRecommendations(container,response,uid){
+ stopRecommendationTracking();
+ if(!('IntersectionObserver' in window))return;
+ const timers=new Map(),attempted=new Set();
+ const observer=new IntersectionObserver(entries=>{
+  for(const entry of entries){
+   const id=entry.target.dataset.placeId;
+   if(!entry.isIntersecting||entry.intersectionRatio<0.5){clearTimeout(timers.get(id));timers.delete(id);continue;}
+   if(attempted.has(id)||timers.has(id))continue;
+   timers.set(id,setTimeout(()=>{
+    timers.delete(id);
+    let currentUser;try{currentUser=user();}catch{return;}
+    if(document.visibilityState!=='visible'||currentUser!==uid)return;
+    attempted.add(id);observer.unobserve(entry.target);
+    api('/api/v1/impressions',{event_id:crypto.randomUUID(),request_id:response.request_id,
+      user_id:uid,place_ids:[id],occurred_at:new Date().toISOString()})
+      .catch(e=>status('recStatus','Không ghi nhận được hiển thị: '+e.message,true));
+   },750));
+  }
+ },{threshold:0.5});
+ container.querySelectorAll('.card').forEach((card,i)=>{card.dataset.placeId=response.recommendations[i].place_id;observer.observe(card);});
+ stopRecommendationTracking=()=>{observer.disconnect();timers.forEach(clearTimeout);timers.clear();};
+}
+$('recForm').onsubmit=e=>{e.preventDefault();run('recommend',async()=>{const uid=user(),body={user_id:uid,limit:10,exploration:$('exploration').checked};if($('recCity').value.trim())body.city=$('recCity').value.trim();if($('recType').value)body.place_type=$('recType').value;if(values('recPreferences').length)body.preferences=values('recPreferences');if($('recQuery').value.trim())body.query=$('recQuery').value.trim();const d=await api('/api/v1/recommendations',body);json('recJson',d);const out=$('recResult');out.replaceChildren(node('p','Chiến lược: '+d.strategy));cards(out,d.recommendations);out.querySelectorAll('.card').forEach((card,i)=>{const p=d.recommendations[i],button=node('button','Quan tâm');button.onclick=async()=>{button.disabled=true;try{await api('/api/v1/interactions',{event_id:crypto.randomUUID(),user_id:uid,place_id:p.place_id,request_id:d.request_id,interaction_type:'favorite',occurred_at:new Date().toISOString()});button.textContent='Đã ghi nhận';}catch(e){status('recStatus',e.message,true);button.disabled=false;}};card.append(button);});trackRecommendations(out,d,uid);status('recStatus','Có '+d.total+' gợi ý.');});};
+function time(value){return value?value.slice(11,16):'';}
+function renderTrip(trip,target){lastTrip=trip;$('loadTripId').value=trip.trip_id;target.replaceChildren(node('p','Trip ID: '+trip.trip_id+' · Phiên bản '+trip.version+' · '+trip.status));notices(target,trip);for(const day of trip.days){const card=node('div',undefined,'card');card.append(node('h3','Ngày '+day.day+' — '+day.date));if(!day.activities.length)card.append(node('p','Chưa xếp được địa điểm cho ngày này.'));for(const a of day.activities){const line=node('div');line.append(node('strong',time(a.start_time)+'–'+time(a.end_time)+' · '+a.name));line.append(node('p','Di chuyển: '+a.travel_time_from_previous+' phút · ID: '+a.place_id,'muted'));if(a.notes.length)line.append(node('p',a.notes.join('; '),'muted'));const remove=node('button','Bỏ điểm này khỏi ngày '+day.day);remove.onclick=()=>run(target.id==='chatExtra'?'chat':'trips',async()=>{if(user()!==trip.user_id)throw Error('User ID hiện tại khác chủ lịch trình.');const d=await api('/api/v1/trips/'+encodeURIComponent(trip.trip_id)+'/days/'+day.day,{user_id:trip.user_id,expected_version:trip.version,remove_place_ids:[a.place_id]},'PATCH');json('tripJson',d);renderTrip(d,target);status(target.id==='chatExtra'?'chatStatus':'tripStatus','Đã lưu thay đổi. Các ngày khác giữ nguyên.');});line.append(remove);card.append(line);}card.append(node('p','Tổng di chuyển: '+day.total_distance_km+' km / '+day.total_travel_minutes+' phút'));if(day.return_leg)card.append(node('p','Về nơi xuất phát lúc '+time(day.return_leg.arrival_time),'muted'));target.append(card);}}
+$('tripForm').onsubmit=e=>{e.preventDefault();run('trips',async()=>{const body={user_id:user(),city:$('tripCity').value.trim(),start_date:$('tripDate').value,days:Number($('tripDays').value),stops_per_day:Number($('tripStops').value),daily_window:{start:$('tripStart').value,end:$('tripEnd').value},return_to_start:$('tripReturn').checked};if(values('tripPreferences').length)body.preferences=values('tripPreferences');if($('tripLat').value!==''||$('tripLon').value!==''){if($('tripLat').value===''||$('tripLon').value==='')throw Error('Nhập cả vĩ độ và kinh độ.');body.start_location={latitude:Number($('tripLat').value),longitude:Number($('tripLon').value)};}if(body.return_to_start&&!body.start_location)throw Error('Cần tọa độ nơi xuất phát để quay về.');const d=await api('/api/v1/trips',body);json('tripJson',d);renderTrip(d,$('tripResult'));status('tripStatus','Đã tạo và lưu lịch trình: '+d.status);});};
+$('loadTrip').onclick=()=>run('trips',async()=>{const id=$('loadTripId').value.trim();if(!id)throw Error('Nhập Trip ID.');const d=await api('/api/v1/trips/'+encodeURIComponent(id)+'?user_id='+encodeURIComponent(user()),undefined,'GET');json('tripJson',d);renderTrip(d,$('tripResult'));status('tripStatus','Đã đọc lịch đã lưu.');});
+$('validateTrip').onclick=()=>run('trips',async()=>{if(!lastTrip)throw Error('Tạo hoặc đọc lịch trước.');const d=await api('/api/v1/trips/'+encodeURIComponent(lastTrip.trip_id)+'/validation?user_id='+encodeURIComponent(user()),undefined,'GET');json('tripJson',d);status('tripStatus','Kiểm tra: '+d.status+(d.errors.length?' — '+d.errors.join('; '):''),!d.valid);});
+$('chatForm').onsubmit=e=>{e.preventDefault();run('chat',async()=>{const message=$('chatMessage').value.trim();if(!message)throw Error('Nhập tin nhắn.');const body={user_id:user(),message,use_llm:$('useLlm').checked};if(conversationId)body.conversation_id=conversationId;const d=await api('/api/v1/chat',body);conversationId=d.conversation_id;$('chatHistory').append(node('div','Bạn: '+message,'bubble user'),node('div','AI: '+(d.message||(d.result&&d.result.answer)||('Đã trả kết quả '+d.intent)),'bubble'));$('chatMessage').value='';json('chatJson',d);const out=$('chatExtra');out.replaceChildren();if(d.trip)renderTrip(d.trip,out);else if(d.result&&d.result.results){notices(out,d.result);cards(out,d.result.results);}else if(d.result&&d.result.facts){for(const fact of d.result.facts)out.append(node('pre',JSON.stringify(fact,null,2)));notices(out,d.result);}status('chatStatus','Nhánh: '+d.intent+' · Hội thoại: '+conversationId);});};
+$('resetChat').onclick=()=>{conversationId=null;$('chatHistory').replaceChildren();$('chatExtra').replaceChildren();$('chatJson').textContent='';status('chatStatus','Đã bắt đầu hội thoại mới.');};
+$('tripDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+window.addEventListener('beforeunload',()=>{if(selectedUrl)URL.revokeObjectURL(selectedUrl);});
+$('health').click();
+</script></body></html>

@@ -23,3 +23,14 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# AI runtime, caches and local datasets
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.venv/
+**/.cache/
+ai/data/
+ai/model_artifacts/
+**/*.sqlite*
+**/server.*.log

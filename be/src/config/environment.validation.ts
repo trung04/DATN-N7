@@ -35,6 +35,21 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_DB', 0, 0, 15);
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
+  integer('AI_TIMEOUT_MS', 15000, 1, 120000);
+  config.AI_BASE_URL ??= 'http://localhost:9000';
+  try {
+    const url = new URL(String(config.AI_BASE_URL));
+    if (
+      typeof config.AI_BASE_URL !== 'string' ||
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username || url.password || url.search || url.hash || url.pathname !== '/'
+    ) throw new Error('invalid');
+    config.AI_BASE_URL = url.origin;
+  } catch {
+    throw new Error('AI_BASE_URL must be an HTTP(S) origin without credentials');
+  }
+  config.AI_API_KEY ??= '';
+  if (typeof config.AI_API_KEY !== 'string') throw new Error('AI_API_KEY must be a string');
   config.REDIS_HOST ??= 'localhost';
   if (typeof config.REDIS_HOST !== 'string' || !config.REDIS_HOST.trim()) {
     throw new Error('REDIS_HOST must be nonempty');

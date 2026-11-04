@@ -31,6 +31,10 @@ describe('environment validation', () => {
     ['DATABASE_SSL', '1'],
     ['REDIS_HOST', ''],
     ['DATABASE_PASSWORD', ''],
+    ['AI_BASE_URL', 'file:///tmp/test'],
+    ['AI_BASE_URL', 'http://user:secret@ai:9000'],
+    ['AI_BASE_URL', 'http://ai:9000/path'],
+    ['AI_TIMEOUT_MS', '0'],
   ])('rejects invalid %s', (key, value) => {
     expect(() => validateEnvironment({ ...database, [key]: value })).toThrow(
       key,
@@ -39,5 +43,12 @@ describe('environment validation', () => {
 
   it('fails on missing database credentials', () => {
     expect(() => validateEnvironment({})).toThrow('DATABASE_HOST is required');
+  });
+
+  it('accepts Compose DNS and preserves a private AI key', () => {
+    const result = validateEnvironment({ ...database, AI_BASE_URL: 'http://ai:9000/', AI_API_KEY: 'test-only' });
+    expect(result.AI_BASE_URL).toBe('http://ai:9000');
+    expect(result.AI_API_KEY).toBe('test-only');
+    expect(result.AI_TIMEOUT_MS).toBe(15000);
   });
 });
