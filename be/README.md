@@ -115,6 +115,19 @@ The database generates `search_document` and indexes it for full-text search.
 review capability owns rating aggregation. List filters include `search`,
 `status`, `countryCode`, `provinceCode`, and `minRating`.
 
+## Cancellation Policies API
+
+Cancellation policy management is available at
+`/api/v1/cancellation-policies` with create, paginated list, detail, partial
+update, and delete operations. Policies belong directly to `hotelId`; there is
+no hotel-owner user identifier in the database or API contract. Policy names
+are unique per hotel without case sensitivity.
+
+`cancellationWindow` is an optional number of days from 0 to 3650 and
+`cancellationFeeRate` is an optional percentage from 0 to 100. The hotel foreign
+key is deferred until the Hotels module exists. List queries support `search`,
+`hotelId`, `sortBy`, and `sortOrder`.
+
 ## Run tests
 
 ```bash
