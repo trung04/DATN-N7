@@ -46,6 +46,88 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Amenities API
+
+The backend exposes amenity management at `/api/v1/amenities` with create,
+paginated list, detail, partial update, and delete operations. Write endpoints
+are currently unauthenticated because an authentication/authorization module
+has not been implemented yet.
+
+Apply pending database migrations before using persistence-backed endpoints:
+
+```bash
+npm run migration:show
+npm run migration:run
+```
+
+List query parameters are `page`, `limit`, `search`, `sortBy`, and `sortOrder`.
+The maximum page size is 100.
+
+## Rooms API
+
+Room management is available at `/api/v1/rooms`. A room belongs to a hotel by
+`hotelId` and can be associated with up to 50 amenities through `amenityIds`.
+The hotel foreign key is intentionally deferred until the hotel module exists;
+amenity identifiers are validated through `AmenitiesService` and persisted in
+the `room_amenities` join table.
+
+Prices use an exact `numeric(12,2)` database column and include a three-letter
+currency code, defaulting to `VND`. Operational statuses are `AVAILABLE`,
+`MAINTENANCE`, and `OUT_OF_SERVICE`.
+
+Room list query parameters are `page`, `limit`, `search`, `hotelId`, `roomType`,
+`operationalStatus`, `sortBy`, and `sortOrder`.
+
+## Users API
+
+User management is available at `/api/v1/users` with create, paginated list,
+detail, partial update, password reset, and delete operations. Usernames and
+emails are normalized to lowercase and are unique case-insensitively.
+Passwords are accepted only as write-only request fields and stored as bcrypt
+hashes; password hashes and Google account identifiers are never returned.
+
+List filters include `search`, `status`, `gender`, and `isEmailVerified`.
+Password reset uses `PUT /api/v1/users/:userId/password`. These management
+routes remain unauthenticated until the authentication and authorization module
+is implemented.
+
+## Hotel Owners API
+
+Hotel owner profiles are available at `/api/v1/hotel-owners` with create,
+paginated list, detail, partial update, and delete operations. Each profile uses
+`userId` as both its resource identifier and database primary key, enforcing a
+one-to-one relationship with an existing user. Removing a user also removes the
+related hotel owner profile.
+
+Bank name, account number, and account holder are nullable. List queries support
+`search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
+unauthenticated until the authentication and authorization module is available.
+
+## Places API
+
+Place management is available at `/api/v1/places` with create, paginated list,
+detail, partial update, and delete operations. Coordinates are optional but
+latitude and longitude must be supplied or cleared together. Country codes use
+the ISO alpha-2 format and timezone values must be valid IANA identifiers.
+
+The database generates `search_document` and indexes it for full-text search.
+`averageRating` is read-only through this API and defaults to zero until a
+review capability owns rating aggregation. List filters include `search`,
+`status`, `countryCode`, `provinceCode`, and `minRating`.
+
+## Cancellation Policies API
+
+Cancellation policy management is available at
+`/api/v1/cancellation-policies` with create, paginated list, detail, partial
+update, and delete operations. Policies belong directly to `hotelId`; there is
+no hotel-owner user identifier in the database or API contract. Policy names
+are unique per hotel without case sensitivity.
+
+`cancellationWindow` is an optional number of days from 0 to 3650 and
+`cancellationFeeRate` is an optional percentage from 0 to 100. The hotel foreign
+key is deferred until the Hotels module exists. List queries support `search`,
+`hotelId`, `sortBy`, and `sortOrder`.
+
 ## Run tests
 
 ```bash
