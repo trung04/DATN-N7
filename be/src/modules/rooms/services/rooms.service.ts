@@ -61,7 +61,7 @@ export class RoomsService {
     const amenityIds = [
       ...new Set(page.items.flatMap((item) => item.amenityIds)),
     ];
-    const amenities = await this.amenitiesService.findByIds(amenityIds);
+    const amenities = await this.amenitiesService.findExistingByIds(amenityIds);
     const amenitiesById = new Map(
       amenities.map((amenity) => [amenity.id, amenity]),
     );
@@ -78,7 +78,9 @@ export class RoomsService {
   async findById(id: string): Promise<RoomWithAmenities> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
-    const amenities = await this.amenitiesService.findByIds(result.amenityIds);
+    const amenities = await this.amenitiesService.findExistingByIds(
+      result.amenityIds,
+    );
     return { room: result.room, amenities };
   }
 
@@ -108,7 +110,10 @@ export class RoomsService {
     }
 
     const targetAmenityIds = input.amenityIds ?? current.amenityIds;
-    const amenities = await this.amenitiesService.findByIds(targetAmenityIds);
+    const amenities =
+      input.amenityIds === undefined
+        ? await this.amenitiesService.findExistingByIds(targetAmenityIds)
+        : await this.amenitiesService.findByIds(targetAmenityIds);
     this.applyUpdate(room, input, hotelId, roomNumber);
     const saved = await this.repository.save(room, input.amenityIds);
     return { room: saved.room, amenities };

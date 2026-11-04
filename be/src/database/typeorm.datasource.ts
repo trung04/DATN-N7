@@ -7,11 +7,15 @@ import { RoomAmenityEntity } from '../modules/rooms/entities/room-amenity.entity
 import { RoomEntity } from '../modules/rooms/entities/room.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
 import { HotelOwnerEntity } from '../modules/hotel-owners/entities/hotel-owner.entity';
+import { ItineraryEntity } from '../modules/itineraries/entities/itinerary.entity';
+import { StopoverEntity } from '../modules/stopovers/entities/stopover.entity';
+import { ActivityEntity } from '../modules/activities/entities/activity.entity';
 import { CreateAmenities1793696400000 } from './migrations/1793696400000-CreateAmenities';
 import { RemoveAmenityType1793696500000 } from './migrations/1793696500000-RemoveAmenityType';
 import { CreateRooms1793696600000 } from './migrations/1793696600000-CreateRooms';
 import { CreateUsers1793696700000 } from './migrations/1793696700000-CreateUsers';
 import { CreateHotelOwners1793696800000 } from './migrations/1793696800000-CreateHotelOwners';
+import { AddUserRolesSoftDeleteAndItineraries1793696900000 } from './migrations/1793696900000-AddUserRolesSoftDeleteAndItineraries';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -30,6 +34,9 @@ export default new DataSource({
     RoomAmenityEntity,
     UserEntity,
     HotelOwnerEntity,
+    ItineraryEntity,
+    StopoverEntity,
+    ActivityEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -37,6 +44,7 @@ export default new DataSource({
     CreateRooms1793696600000,
     CreateUsers1793696700000,
     CreateHotelOwners1793696800000,
+    AddUserRolesSoftDeleteAndItineraries1793696900000,
   ],
   synchronize: false,
   logging: false,

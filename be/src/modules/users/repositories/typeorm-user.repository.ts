@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
-import { UserEntity } from '../entities/user.entity';
+import { UserEntity, UserStatus } from '../entities/user.entity';
 import {
   GoogleAccountConflictException,
   UserEmailConflictException,
@@ -58,6 +58,9 @@ export class TypeOrmUserRepository implements UserRepository {
     if (options.status) {
       query.andWhere('user.status = :status', { status: options.status });
     }
+    if (options.role) {
+      query.andWhere('user.role = :role', { role: options.role });
+    }
     if (options.gender) {
       query.andWhere('user.gender = :gender', { gender: options.gender });
     }
@@ -101,7 +104,10 @@ export class TypeOrmUserRepository implements UserRepository {
   }
 
   async delete(user: UserEntity): Promise<void> {
-    await this.repository.remove(user);
+    await this.repository.update(user.id, {
+      status: UserStatus.DEACTIVATED,
+      deletedAt: new Date(),
+    });
   }
 
   private rethrowIdentityConflict(
