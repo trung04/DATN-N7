@@ -35,6 +35,7 @@ class Settings:
 
 @dataclass(frozen=True)
 class RankingConfig:
+    mode: str = "content_rating"
     content_weight: float = 0.60
     quality_weight: float = 0.20
     distance_weight: float = 0.10
@@ -50,6 +51,8 @@ class RankingConfig:
     repeat_penalty: float = 0.05
 
     def __post_init__(self):
+        if self.mode not in {"content_rating", "hybrid"}:
+            raise ValueError("REC_MODE must be content_rating or hybrid")
         for name in ("content_weight", "quality_weight", "distance_weight", "collaborative_weight", "diversity_penalty"):
             if not math.isfinite(getattr(self, name)) or getattr(self, name) < 0:
                 raise ValueError(f"{name} phải hữu hạn và không âm")
@@ -69,5 +72,6 @@ class RankingConfig:
         for name, field in cls.__dataclass_fields__.items():
             value = env("REC_" + name.upper())
             if value is not None:
-                values[name] = int(value) if isinstance(field.default, int) else float(value)
+                values[name] = (value if isinstance(field.default, str) else
+                                int(value) if isinstance(field.default, int) else float(value))
         return cls(**values)

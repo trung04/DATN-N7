@@ -15,10 +15,18 @@ router.include_router(recommendation_router)
 router.include_router(trip_router)
 logger=logging.getLogger(__name__)
 
+@router.get("/",include_in_schema=False)
 @router.get("/demo",include_in_schema=False)
 def demo_page():
     return FileResponse(Path(__file__).resolve().parents[1]/"static"/"demo.html",media_type="text/html",
         headers={"Cache-Control":"no-store"})
+
+@router.get("/demo-assets/{filename}", include_in_schema=False)
+def demo_asset(filename: str):
+    if filename not in {"explore.css", "explore.js"}:
+        raise HTTPException(404, "Không tìm thấy tài nguyên")
+    return FileResponse(Path(__file__).resolve().parents[1]/"static"/filename,
+                        headers={"Cache-Control":"no-store"})
 
 @router.get("/health")
 def health(request: Request):

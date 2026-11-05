@@ -25,6 +25,8 @@ Nếu đã có `.env` được cấu hình thì giữ nguyên, không sao chép 
 
 Backend gọi nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Backend hiện chỉ có starter route và kết nối PostgreSQL/Redis. Controller nghiệp vụ, phân quyền người dùng và client nghiệp vụ AI chưa được triển khai.
 
+Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/RECOMMENDATION_CONTENT_RATING.md).
+
 Frontend upstream thiếu source, index.html, cấu hình TypeScript và lockfile nên chưa build được. Frontend nằm trong profile tùy chọn `frontend`, không bật mặc định; AI demo vẫn sử dụng được.
 
 ## Lưu trữ

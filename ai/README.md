@@ -7,6 +7,8 @@ Mã AI nằm trong `ai/`, cùng một Git với `be/` và `fe/`. Chạy Docker t
 - Backend gọi nội bộ: `http://ai:9000`, header `X-API-Key` dùng `AI_API_KEY` của backend (cùng `AI_SERVICE_API_KEY` trong root .env).
 - Backend chỉ có scaffold; nghiệp vụ/end-user authorization chưa được triển khai. Không tự proxy tất cả AI endpoint ra public.
 
+- Recommendation hiện dùng [Content-based + Bayesian rating](RECOMMENDATION_CONTENT_RATING.md), không đọc tương tác hay dùng ItemKNN. Chế độ hybrid cũ được giữ riêng cho giai đoạn sau.
+
 Các tài liệu module: [Recommendation](RECOMMENDATION.md), [tìm địa điểm](PLACE_SEARCH.md), [ảnh CLIP](IMAGE_SEARCH.md), [lịch trình](TRIP_PLANNER.md).
 
 ## Lưu trữ

@@ -61,7 +61,8 @@ def main():
             parser.error("Labels contain unknown places; evaluate new-item cold start separately")
         from app.modules.semantic_search.embedding_service import EmbeddingService
         encoder = EmbeddingService()
-        cfg = RankingConfig.from_env()
+        # This evaluator compares the deferred behavioral hybrid variants explicitly.
+        cfg = replace(RankingConfig.from_env(), mode="hybrid")
         model = RecommendationService(store, encoder, None, config=cfg)
         model.content = ExactRetrieval()
         if any(r["model"] != model.model or not r["vector"] or not r["content_hash"] for r in store.places()):

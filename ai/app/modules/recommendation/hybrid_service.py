@@ -34,10 +34,11 @@ class RecommendationService:
         self.config = config or RankingConfig.from_env()
         self.content = ContentBasedRecommender(qdrant, embedding, collection, vector_name)
         self.model = f"{embedding.model_name}:{embedding.dimensions}:{DOCUMENT_VERSION}"
-        artifact_path=env("REC_ITEM_KNN_MODEL_PATH")
+        artifact_path=env("REC_ITEM_KNN_MODEL_PATH") if self.config.mode == "hybrid" else None
         self.trained_collaborative=TrainedItemKNN.load(artifact_path) if artifact_path else None
         fingerprint=self.trained_collaborative.fingerprint if self.trained_collaborative else ""
-        self.version = "hybrid-v2-" + hashlib.sha256((self.model + ELIGIBILITY_VERSION + RANKING_VERSION + json.dumps(self.config.__dict__, sort_keys=True)+fingerprint).encode()).hexdigest()[:10]
+        prefix = "content-rating-v1-" if self.config.mode == "content_rating" else "hybrid-v2-"
+        self.version = prefix + hashlib.sha256((self.model + ELIGIBILITY_VERSION + RANKING_VERSION + json.dumps(self.config.__dict__, sort_keys=True)+fingerprint).encode()).hexdigest()[:10]
         self.lock = threading.RLock()
 
     def _text(self, place):
@@ -110,6 +111,12 @@ class RecommendationService:
         return vector if vector is not None and vector.shape==(self.embedding.dimensions,) else None
 
     def recommend(self, request, *, now=None, log=True):
+        if self.config.mode == "content_rating":
+            from .content_rating import recommend_content_rating
+            return recommend_content_rating(self, request, now=now, log=log)
+        return self._recommend_hybrid(request, now=now, log=log)
+
+    def _recommend_hybrid(self, request, *, now=None, log=True):
         now = now or datetime.now(timezone.utc)
         rows = self.store.places()
         events = self.store.events()
@@ -266,9 +273,18 @@ class RecommendationService:
 
     def status(self):
         rows = self.store.places()
+        active_config = ({"content_weight": self.config.content_weight / (self.config.content_weight + self.config.quality_weight),
+                          "quality_weight": self.config.quality_weight / (self.config.content_weight + self.config.quality_weight),
+                          "prior_strength": self.config.prior_strength,
+                          "candidate_limit": self.config.candidate_limit,
+                          "max_interest_groups": self.config.max_interest_groups}
+                         if self.config.mode == "content_rating" else self.config.__dict__)
         return {"collection":self.content.collection,"vector_name":self.content.vector_name,
                 "document_version":DOCUMENT_VERSION,"reviews_in_place_vector":False,
                 "places": len(rows), "pending_index": sum(not r["indexed"] or r["model"] != self.model or not r["content_hash"] for r in rows),
-                "embedding_model": self.model, "model_version": self.version, "ranking_config": self.config.__dict__,
-                "collaborative_source":"trained_item_knn" if self.trained_collaborative else "online_item_knn",
-                "learning": "Profile updates on each request; ItemKNN uses a configured trained artifact or live co-interactions. No automatic ranking-weight training."}
+                "embedding_model": self.model, "model_version": self.version, "ranking_config": active_config,
+                "mode":self.config.mode,
+                "collaborative_source":("trained_item_knn" if self.trained_collaborative else "online_item_knn") if self.config.mode == "hybrid" else "disabled",
+                "active_ranking_config": active_config,
+                "learning": ("Explicit preferences/query and aggregate place ratings only; no behavioral history, ItemKNN, distance scoring, repeat penalty or exploration."
+                             if self.config.mode == "content_rating" else "Profile updates on each request; ItemKNN uses a configured trained artifact or live co-interactions. No automatic ranking-weight training.")}

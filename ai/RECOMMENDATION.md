@@ -1,4 +1,10 @@
-# Recommendation v2
+# Recommendation
+
+**Chế độ đang sử dụng: Content-based + Bayesian rating.** Xem [thiết kế và công thức hiện tại](RECOMMENDATION_CONTENT_RATING.md). Luồng mặc định không đọc hành vi, không dùng ItemKNN, không chấm điểm khoảng cách hoặc giảm lặp/khám phá.
+
+Phần bên dưới giữ làm tài liệu cho **chế độ hybrid phát triển sau**, chỉ được chọn rõ bằng `REC_MODE=hybrid` khi chạy native; Compose của đồ án hiện cố định `content_rating`. Không coi các tính năng bên dưới là thuật toán đang bật.
+
+## Thiết kế hybrid lưu cho giai đoạn sau
 
 Hệ thống đề xuất theo nội dung, chất lượng và ngữ cảnh; thêm ItemKNN khi có dữ liệu hỗ trợ. Giữ API cũ, không thêm endpoint cho từng bước nội bộ.
 

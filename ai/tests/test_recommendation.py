@@ -50,7 +50,8 @@ class APITests(unittest.TestCase):
         self.env = patch.dict(os.environ, {"RECOMMENDATION_API_KEY": "", "RECOMMENDATION_COLLECTION": "test_places"})
         self.env.start()
         self.app = create_app(embedding=self.embedding, qdrant=self.qdrant,
-            db_path=self.temp.name + "/db.sqlite", ranking_config=RankingConfig(diversity_penalty=0))
+            db_path=self.temp.name + "/db.sqlite", ranking_config=getattr(
+                self, "ranking_config", RankingConfig(mode="hybrid", diversity_penalty=0)))
         self.client = TestClient(self.app)
         self.client.__enter__()
 

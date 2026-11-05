@@ -165,7 +165,7 @@ class RecommendationRequest(Contract):
     exclude_place_ids: list[Identifier] = Field(default_factory=list, max_length=500)
     exclude_seen: bool = False
     limit: int = Field(10, ge=1, le=100)
-    exploration: bool = True
+    exploration: bool = Field(False, description="Reserved for hybrid mode; ignored in content_rating mode")
 
     @model_validator(mode="after")
     def location(self):
@@ -184,6 +184,8 @@ class RecommendationItem(Contract):
     score: float
     content_score: float | None = None
     quality_score: float
+    rating: float | None = None
+    review_count: int | None = None
     distance_score: float | None = None
     distance_km: float | None = None
     collaborative_score: float | None = None
@@ -219,3 +221,4 @@ class RecommendationResponse(Contract):
     retrieval: str
     recommendations: list[RecommendationItem]
     diagnostics: dict[str,object] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)

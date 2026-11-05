@@ -45,6 +45,12 @@ def list_places(city: str | None = None, place_type: str | None = None,
 def upsert_reviews(body: ReviewBatch, svc=Depends(service)):
     return svc.upsert_reviews(body.reviews)
 
+@router.get("/places/{place_id}/reviews")
+def place_reviews(place_id: Identifier, svc=Depends(service)):
+    svc.store.place(place_id)
+    items = svc.store.reviews(place_id)
+    return {"total": len(items), "items": items}
+
 @router.post("/embeddings/image", response_model=ImageEmbeddingResponse)
 def image_embedding(body: ImageEmbeddingRequest, request: Request):
     return request.app.state.image_search.embed(body)
