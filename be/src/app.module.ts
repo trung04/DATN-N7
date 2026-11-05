@@ -11,6 +11,9 @@ import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
 import { RoomsModule } from './modules/rooms/rooms.module';
 import { UsersModule } from './modules/users/users.module';
 import { HotelOwnersModule } from './modules/hotel-owners/hotel-owners.module';
+import { ItinerariesModule } from './modules/itineraries/itineraries.module';
+import { StopoversModule } from './modules/stopovers/stopovers.module';
+import { ActivitiesModule } from './modules/activities/activities.module';
 import { PlacesModule } from './modules/places/places.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
@@ -29,6 +32,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RoomsModule,
     UsersModule,
     HotelOwnersModule,
+    ItinerariesModule,
+    StopoversModule,
+    ActivitiesModule,
     PlacesModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,

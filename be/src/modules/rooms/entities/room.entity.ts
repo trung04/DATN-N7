@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
@@ -22,6 +23,7 @@ const decimalNumberTransformer: ValueTransformer = {
 @Entity({ name: 'rooms' })
 @Index('UQ_rooms_hotel_room_number', ['hotelId', 'roomNumber'], {
   unique: true,
+  where: '"deleted_at" IS NULL',
 })
 @Index('IDX_rooms_hotel_id', ['hotelId'])
 @Index('IDX_rooms_operational_status', ['operationalStatus'])
@@ -64,4 +66,7 @@ export class RoomEntity {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 }

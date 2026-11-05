@@ -1,4 +1,9 @@
-import { UserEntity, UserGender, UserStatus } from '../entities/user.entity';
+import {
+  UserEntity,
+  UserGender,
+  UserRole,
+  UserStatus,
+} from '../entities/user.entity';
 
 export const USER_REPOSITORY = Symbol('USER_REPOSITORY');
 
@@ -10,6 +15,7 @@ export interface FindUsersOptions {
   limit: number;
   search?: string;
   status?: UserStatus;
+  role?: UserRole;
   gender?: UserGender;
   isEmailVerified?: boolean;
   sortBy: UserSortField;
@@ -33,6 +39,7 @@ export interface CreateUserData {
   dateOfBirth: string | null;
   gender: UserGender | null;
   status: UserStatus;
+  role: UserRole;
   isEmailVerified: boolean;
 }
 

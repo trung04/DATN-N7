@@ -59,6 +59,14 @@ export class TypeOrmHotelOwnerRepository implements HotelOwnerRepository {
 
   async create(data: CreateHotelOwnerData): Promise<HotelOwnerEntity> {
     try {
+      const deleted = await this.repository.findOne({
+        where: { userId: data.userId },
+        withDeleted: true,
+      });
+      if (deleted?.deletedAt) {
+        Object.assign(deleted, data, { deletedAt: null });
+        return await this.repository.save(deleted);
+      }
       return await this.repository.save(this.repository.create(data));
     } catch (error) {
       this.rethrowPersistenceConflict(error, data.userId);
@@ -70,7 +78,7 @@ export class TypeOrmHotelOwnerRepository implements HotelOwnerRepository {
   }
 
   async delete(hotelOwner: HotelOwnerEntity): Promise<void> {
-    await this.repository.remove(hotelOwner);
+    await this.repository.softRemove(hotelOwner);
   }
 
   private rethrowPersistenceConflict(error: unknown, userId: string): never {

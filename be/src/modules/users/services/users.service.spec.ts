@@ -1,4 +1,4 @@
-import { UserEntity, UserStatus } from '../entities/user.entity';
+import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
   InvalidDateOfBirthException,
@@ -22,6 +22,7 @@ const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
     dateOfBirth: null,
     gender: null,
     status: UserStatus.ACTIVE,
+    role: UserRole.TOURIST,
     isEmailVerified: false,
     createdAt: new Date('2026-11-03T00:00:00.000Z'),
     updatedAt: new Date('2026-11-03T00:00:00.000Z'),
@@ -76,6 +77,7 @@ describe('UsersService', () => {
         email: 'traveler@example.com',
         passwordHash: '$2b$12$hashed',
         isEmailVerified: false,
+        role: UserRole.TOURIST,
       }),
     );
     expect(createUser.mock.calls[0][0]).not.toHaveProperty('password');

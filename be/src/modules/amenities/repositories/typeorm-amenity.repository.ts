@@ -75,7 +75,7 @@ export class TypeOrmAmenityRepository implements AmenityRepository {
   }
 
   async delete(amenity: AmenityEntity): Promise<void> {
-    await this.repository.remove(amenity);
+    await this.repository.softRemove(amenity);
   }
 
   private rethrowCodeConflict(error: unknown, code: string): never {

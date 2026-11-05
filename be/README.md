@@ -86,7 +86,8 @@ emails are normalized to lowercase and are unique case-insensitively.
 Passwords are accepted only as write-only request fields and stored as bcrypt
 hashes; password hashes and Google account identifiers are never returned.
 
-List filters include `search`, `status`, `gender`, and `isEmailVerified`.
+List filters include `search`, `status`, `role`, `gender`, and
+`isEmailVerified`.
 Password reset uses `PUT /api/v1/users/:userId/password`. These management
 routes remain unauthenticated until the authentication and authorization module
 is implemented.
@@ -96,13 +97,28 @@ is implemented.
 Hotel owner profiles are available at `/api/v1/hotel-owners` with create,
 paginated list, detail, partial update, and delete operations. Each profile uses
 `userId` as both its resource identifier and database primary key, enforcing a
-one-to-one relationship with an existing user. Removing a user also removes the
-related hotel owner profile.
+one-to-one relationship with an existing user. User and hotel-owner deletion
+are independent soft-delete operations.
 
 Bank name, account number, and account holder are nullable. List queries support
 `search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
 unauthenticated until the authentication and authorization module is available.
 
+## Itinerary Management API
+
+Itineraries are managed at `/api/v1/itineraries`. Ordered stopovers are nested
+under `/api/v1/itineraries/:itineraryId/stopovers`, and ordered activities are
+managed at `/api/v1/stopovers/:stopoverId/activities`. All three resources
+support create, paginated list, detail, partial update, and soft delete.
+
+Itinerary date ranges, stopover/activity timestamp ranges, active child order,
+currency, cost, and pagination inputs are validated at the API and database
+boundaries. `placeId` remains a UUID without a foreign key until the places
+module is implemented.
+
+Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
+default to `TOURIST`. Deleting any currently implemented entity sets its
+`deleted_at` timestamp, and normal repository queries omit deleted records.
 ## Places API
 
 Place management is available at `/api/v1/places` with create, paginated list,

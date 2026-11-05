@@ -62,6 +62,11 @@ export class AmenitiesService {
     return uniqueIds.map((id) => byId.get(id)!);
   }
 
+  async findExistingByIds(ids: string[]): Promise<AmenityEntity[]> {
+    const uniqueIds = [...new Set(ids)];
+    return uniqueIds.length === 0 ? [] : this.repository.findByIds(uniqueIds);
+  }
+
   async update(
     id: string,
     input: UpdateAmenityRequest,

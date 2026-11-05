@@ -3,7 +3,7 @@ import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
-import { UserEntity } from '../entities/user.entity';
+import { UserEntity, UserRole } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
   GoogleAccountConflictException,
@@ -49,6 +49,7 @@ export class UsersService {
       dateOfBirth: input.dateOfBirth ?? null,
       gender: input.gender ?? null,
       status: input.status,
+      role: UserRole.TOURIST,
       isEmailVerified: false,
     });
   }
@@ -59,6 +60,7 @@ export class UsersService {
       limit: input.limit,
       search: input.search,
       status: input.status,
+      role: input.role,
       gender: input.gender,
       isEmailVerified: input.isEmailVerified,
       sortBy: input.sortBy,
