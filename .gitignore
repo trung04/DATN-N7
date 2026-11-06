@@ -6,6 +6,7 @@
 **/build/
 
 # Environment
+.env
 **/.env
 **/.env.*
 !.env.example
