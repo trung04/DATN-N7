@@ -30,7 +30,7 @@ export interface UserPage {
 export interface CreateUserData {
   username: string;
   email: string;
-  passwordHash: string;
+  passwordHash: string | null;
   googleAccountId: string | null;
   firstName: string | null;
   lastName: string | null;

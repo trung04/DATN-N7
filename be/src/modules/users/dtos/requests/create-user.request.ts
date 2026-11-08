@@ -3,7 +3,6 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
@@ -39,13 +38,6 @@ export class CreateUserRequest {
   @Matches(/[A-Za-z]/, { message: 'password must contain a letter' })
   @Matches(/[0-9]/, { message: 'password must contain a number' })
   password: string;
-
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  googleAccountId?: string;
 
   @IsOptional()
   @Transform(trim)

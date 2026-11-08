@@ -40,7 +40,10 @@ export class TypeOrmUserRepository implements UserRepository {
   }
 
   findByGoogleAccountId(googleAccountId: string): Promise<UserEntity | null> {
-    return this.repository.findOneBy({ googleAccountId });
+    return this.repository.findOne({
+      where: { googleAccountId },
+      withDeleted: true,
+    });
   }
 
   async findPage(options: FindUsersOptions): Promise<UserPage> {

@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
-import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 import { InvalidSessionException } from '../exceptions/auth.exceptions';
+import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 import { AuthService } from '../services/auth.service';
 
 export const ACCESS_COOKIE = 'login_access';
