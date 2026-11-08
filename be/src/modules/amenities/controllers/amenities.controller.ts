@@ -12,7 +12,15 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import {
+  ApiCreateOperation,
+  ApiDeleteOperation,
+  ApiDetailOperation,
+  ApiListOperation,
+  ApiUpdateOperation,
+} from '../../../common/openapi/api-crud.decorator';
 import { CreateAmenityRequest } from '../dtos/requests/create-amenity.request';
 import { ListAmenitiesRequest } from '../dtos/requests/list-amenities.request';
 import { UpdateAmenityRequest } from '../dtos/requests/update-amenity.request';
@@ -23,11 +31,13 @@ import {
 import { AmenityMapper } from '../mappers/amenity.mapper';
 import { AmenitiesService } from '../services/amenities.service';
 
+@ApiTags('Amenities')
 @Controller({ path: 'amenities', version: '1' })
 export class AmenitiesController {
   constructor(private readonly amenitiesService: AmenitiesService) {}
 
   @Post()
+  @ApiCreateOperation('Create an amenity', AmenityResponse)
   async create(
     @Body() input: CreateAmenityRequest,
     @Res({ passthrough: true }) response: Response,
@@ -38,6 +48,7 @@ export class AmenitiesController {
   }
 
   @Get()
+  @ApiListOperation('List amenities', AmenityListResponse)
   async findPage(
     @Query() query: ListAmenitiesRequest,
   ): Promise<AmenityListResponse> {
@@ -51,6 +62,7 @@ export class AmenitiesController {
   }
 
   @Get(':amenityId')
+  @ApiDetailOperation('Get an amenity', AmenityResponse, 'amenityId')
   async findById(
     @Param('amenityId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<AmenityResponse> {
@@ -58,6 +70,7 @@ export class AmenitiesController {
   }
 
   @Patch(':amenityId')
+  @ApiUpdateOperation('Update an amenity', AmenityResponse, 'amenityId')
   async update(
     @Param('amenityId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdateAmenityRequest,
@@ -69,6 +82,7 @@ export class AmenitiesController {
 
   @Delete(':amenityId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiDeleteOperation('Delete an amenity', 'amenityId')
   async delete(
     @Param('amenityId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<void> {

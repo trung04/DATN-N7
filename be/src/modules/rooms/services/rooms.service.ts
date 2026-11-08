@@ -82,6 +82,16 @@ export class RoomsService {
     return { room: result.room, amenities };
   }
 
+  async findEntitiesByIds(ids: string[]): Promise<RoomEntity[]> {
+    const uniqueIds = [...new Set(ids)];
+    const rooms = await this.repository.findByIds(uniqueIds);
+    const roomsById = new Map(rooms.map((room) => [room.id, room]));
+    for (const id of uniqueIds) {
+      if (!roomsById.has(id)) throw new RoomNotFoundException(id);
+    }
+    return uniqueIds.map((id) => roomsById.get(id)!);
+  }
+
   async update(
     id: string,
     input: UpdateRoomRequest,

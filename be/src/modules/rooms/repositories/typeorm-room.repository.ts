@@ -35,6 +35,14 @@ export class TypeOrmRoomRepository implements RoomRepository {
     return { room, amenityIds: amenityIds.get(id) ?? [] };
   }
 
+  findByIds(ids: string[]): Promise<RoomEntity[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.roomRepository.find({
+      where: { id: In(ids) },
+      order: { id: 'ASC' },
+    });
+  }
+
   findByHotelAndNumber(
     hotelId: string,
     roomNumber: string,
