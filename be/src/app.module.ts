@@ -17,6 +17,7 @@ import { ActivitiesModule } from './modules/activities/activities.module';
 import { PlacesModule } from './modules/places/places.module';
 import { CancellationPoliciesModule } from './modules/cancellation-policies/cancellation-policies.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
+import { HotelsModule } from './modules/hotels/hotels.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -37,6 +38,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ItinerariesModule,
     StopoversModule,
     ActivitiesModule,
+    HotelsModule,
     PlacesModule,
     CancellationPoliciesModule,
     BookingsModule,
