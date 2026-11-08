@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CancellationPoliciesModule } from '../cancellation-policies/cancellation-policies.module';
 import { RoomsModule } from '../rooms/rooms.module';
-import { HotelsModule } from '../hotels/hotels.module';
 import { BookingsController } from './controllers/bookings.controller';
 import { VnpayCallbacksController } from './controllers/vnpay-callbacks.controller';
 import { BookingEntity } from './entities/booking.entity';
@@ -25,7 +24,6 @@ import { BookingsService } from './services/bookings.service';
     ]),
     CancellationPoliciesModule,
     RoomsModule,
-    HotelsModule,
   ],
   controllers: [BookingsController, VnpayCallbacksController],
   providers: [

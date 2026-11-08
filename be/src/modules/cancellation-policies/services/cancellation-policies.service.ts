@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { HotelsService } from '../../hotels/services/hotels.service';
 import { CreateCancellationPolicyRequest } from '../dtos/requests/create-cancellation-policy.request';
 import { ListCancellationPoliciesRequest } from '../dtos/requests/list-cancellation-policies.request';
 import { UpdateCancellationPolicyRequest } from '../dtos/requests/update-cancellation-policy.request';
@@ -20,13 +19,11 @@ export class CancellationPoliciesService {
   constructor(
     @Inject(CANCELLATION_POLICY_REPOSITORY)
     private readonly repository: CancellationPolicyRepository,
-    private readonly hotelsService: HotelsService,
   ) {}
 
   async create(
     input: CreateCancellationPolicyRequest,
   ): Promise<CancellationPolicyEntity> {
-    await this.hotelsService.assertActive(input.hotelId);
     const name = input.name.trim();
     if (await this.repository.findByHotelAndName(input.hotelId, name)) {
       throw new CancellationPolicyNameConflictException(input.hotelId, name);

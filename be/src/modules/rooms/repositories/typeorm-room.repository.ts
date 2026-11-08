@@ -4,7 +4,6 @@ import {
   DataSource,
   EntityManager,
   In,
-  IsNull,
   QueryFailedError,
   Repository,
 } from 'typeorm';
@@ -142,13 +141,7 @@ export class TypeOrmRoomRepository implements RoomRepository {
   }
 
   async delete(room: RoomEntity): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      await manager.getRepository(RoomAmenityEntity).softDelete({
-        roomId: room.id,
-        deletedAt: IsNull(),
-      });
-      await manager.getRepository(RoomEntity).softRemove(room);
-    });
+    await this.roomRepository.remove(room);
   }
 
   private async findAmenityIds(
@@ -174,7 +167,7 @@ export class TypeOrmRoomRepository implements RoomRepository {
     amenityIds: string[],
   ): Promise<void> {
     const repository = manager.getRepository(RoomAmenityEntity);
-    await repository.softDelete({ roomId, deletedAt: IsNull() });
+    await repository.delete({ roomId });
     if (amenityIds.length > 0) {
       await repository.insert(
         amenityIds.map((amenityId) => ({ roomId, amenityId })),

@@ -1,5 +1,4 @@
 import { ConfigService } from '@nestjs/config';
-import { HotelsService } from '../../hotels/services/hotels.service';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import {
   RoomOperationalStatus,
@@ -129,7 +128,6 @@ describe('BookingsService', () => {
     Pick<CancellationPoliciesService, 'findById'>
   >;
   let roomsService: jest.Mocked<Pick<RoomsService, 'findEntitiesByIds'>>;
-  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
   let service: BookingsService;
   let createBooking: jest.MockedFunction<BookingRepository['create']>;
   let withLockedById: jest.MockedFunction<BookingRepository['withLockedById']>;
@@ -154,7 +152,6 @@ describe('BookingsService', () => {
     };
     cancellationPoliciesService = { findById: jest.fn() };
     roomsService = { findEntitiesByIds: jest.fn() };
-    hotelsService = { assertActive: jest.fn() };
     service = new BookingsService(
       repository,
       codeGenerator,
@@ -166,7 +163,6 @@ describe('BookingsService', () => {
         BOOKING_HOLD_MINUTES: 15,
         IDEMPOTENCY_KEY_TTL_HOURS: 24,
       }),
-      hotelsService as unknown as HotelsService,
     );
   });
 

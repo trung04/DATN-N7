@@ -1,5 +1,4 @@
 import { AmenitiesService } from '../../amenities/services/amenities.service';
-import { HotelsService } from '../../hotels/services/hotels.service';
 import { AmenityEntity } from '../../amenities/entities/amenity.entity';
 import { RoomOperationalStatus, RoomEntity } from '../entities/room.entity';
 import {
@@ -38,7 +37,6 @@ const amenity = (): AmenityEntity =>
 describe('RoomsService', () => {
   let repository: jest.Mocked<RoomRepository>;
   let amenitiesService: jest.Mocked<Pick<AmenitiesService, 'findByIds'>>;
-  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
   let service: RoomsService;
   let createRoom: jest.MockedFunction<RoomRepository['create']>;
   let deleteRoom: jest.MockedFunction<RoomRepository['delete']>;
@@ -56,11 +54,9 @@ describe('RoomsService', () => {
       delete: deleteRoom,
     };
     amenitiesService = { findByIds: jest.fn() };
-    hotelsService = { assertActive: jest.fn() };
     service = new RoomsService(
       repository,
       amenitiesService as unknown as AmenitiesService,
-      hotelsService as unknown as HotelsService,
     );
   });
 

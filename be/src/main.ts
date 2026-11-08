@@ -1,5 +1,4 @@
 import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import { AppModule, ObserveInstrument } from './app.module';
 import { configureHttpApplication } from './common/http/configure-http-application';
 import { configureOpenApi } from './common/openapi/configure-openapi';
@@ -9,10 +8,6 @@ async function bootstrap() {
     instrument: ObserveInstrument,
   });
   configureHttpApplication(app);
-  app.enableCors({
-    origin: app.get(ConfigService).getOrThrow<string>('FRONTEND_ORIGIN'),
-    credentials: true,
-  });
   configureOpenApi(app);
   app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000);

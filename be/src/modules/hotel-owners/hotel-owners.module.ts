@@ -17,6 +17,5 @@ import { HotelOwnersService } from './services/hotel-owners.service';
       useClass: TypeOrmHotelOwnerRepository,
     },
   ],
-  exports: [HotelOwnersService],
 })
 export class HotelOwnersModule {}

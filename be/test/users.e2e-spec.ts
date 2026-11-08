@@ -7,7 +7,6 @@ import { configureHttpApplication } from '../src/common/http/configure-http-appl
 import { UsersController } from '../src/modules/users/controllers/users.controller';
 import {
   UserEntity,
-  UserRole,
   UserStatus,
 } from '../src/modules/users/entities/user.entity';
 import { UserNotFoundException } from '../src/modules/users/exceptions/user.exceptions';
@@ -27,7 +26,6 @@ const entity = Object.assign(new UserEntity(), {
   dateOfBirth: null,
   gender: null,
   status: UserStatus.ACTIVE,
-  role: UserRole.TOURIST,
   isEmailVerified: false,
   createdAt: new Date('2026-11-03T00:00:00.000Z'),
   updatedAt: new Date('2026-11-03T00:00:00.000Z'),
@@ -95,17 +93,6 @@ describe('Users API (e2e)', () => {
         password: 'Password123',
         passwordHash: 'attacker-controlled',
       })
-      .expect(400)
-      .expect('Content-Type', /application\/problem\+json/)
-      .expect(({ body }) => {
-        expect(body.code).toBe('VALIDATION_FAILED');
-      });
-  });
-
-  it('rejects attempts to link a Google account directly', async () => {
-    await request(app.getHttpServer())
-      .patch(`/api/v1/users/${id}`)
-      .send({ googleAccountId: 'attacker-controlled' })
       .expect(400)
       .expect('Content-Type', /application\/problem\+json/)
       .expect(({ body }) => {

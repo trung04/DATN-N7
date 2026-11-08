@@ -1,4 +1,4 @@
-import { Column, DeleteDateColumn, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity({ name: 'hotel_owners' })
 export class HotelOwnerEntity {
@@ -23,7 +23,4 @@ export class HotelOwnerEntity {
     nullable: true,
   })
   bankAccountHolder: string | null;
-
-  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
-  deletedAt: Date | null;
 }

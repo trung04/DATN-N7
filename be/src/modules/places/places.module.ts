@@ -16,6 +16,5 @@ import { PlacesService } from './services/places.service';
       useClass: TypeOrmPlaceRepository,
     },
   ],
-  exports: [PlacesService],
 })
 export class PlacesModule {}

@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AmenitiesService } from '../../amenities/services/amenities.service';
-import { HotelsService } from '../../hotels/services/hotels.service';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
@@ -23,11 +22,9 @@ export class RoomsService {
     @Inject(ROOM_REPOSITORY)
     private readonly repository: RoomRepository,
     private readonly amenitiesService: AmenitiesService,
-    private readonly hotelsService: HotelsService,
   ) {}
 
   async create(input: CreateRoomRequest): Promise<RoomWithAmenities> {
-    await this.hotelsService.assertActive(input.hotelId);
     const roomNumber = this.normalizeRoomNumber(input.roomNumber);
     if (await this.repository.findByHotelAndNumber(input.hotelId, roomNumber)) {
       throw new RoomNumberConflictException(input.hotelId, roomNumber);
@@ -64,7 +61,7 @@ export class RoomsService {
     const amenityIds = [
       ...new Set(page.items.flatMap((item) => item.amenityIds)),
     ];
-    const amenities = await this.amenitiesService.findExistingByIds(amenityIds);
+    const amenities = await this.amenitiesService.findByIds(amenityIds);
     const amenitiesById = new Map(
       amenities.map((amenity) => [amenity.id, amenity]),
     );
@@ -81,9 +78,7 @@ export class RoomsService {
   async findById(id: string): Promise<RoomWithAmenities> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
-    const amenities = await this.amenitiesService.findExistingByIds(
-      result.amenityIds,
-    );
+    const amenities = await this.amenitiesService.findByIds(result.amenityIds);
     return { room: result.room, amenities };
   }
 
@@ -107,9 +102,6 @@ export class RoomsService {
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
     const hotelId = input.hotelId ?? room.hotelId;
-    if (hotelId !== room.hotelId) {
-      await this.hotelsService.assertActive(hotelId);
-    }
     const roomNumber =
       input.roomNumber === undefined
         ? room.roomNumber
@@ -126,10 +118,7 @@ export class RoomsService {
     }
 
     const targetAmenityIds = input.amenityIds ?? current.amenityIds;
-    const amenities =
-      input.amenityIds === undefined
-        ? await this.amenitiesService.findExistingByIds(targetAmenityIds)
-        : await this.amenitiesService.findByIds(targetAmenityIds);
+    const amenities = await this.amenitiesService.findByIds(targetAmenityIds);
     this.applyUpdate(room, input, hotelId, roomNumber);
     const saved = await this.repository.save(room, input.amenityIds);
     return { room: saved.room, amenities };

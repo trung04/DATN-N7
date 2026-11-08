@@ -49,7 +49,6 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (exception instanceof DomainException) {
       const statusByCategory: Record<DomainException['category'], number> = {
         validation: HttpStatus.BAD_REQUEST,
-        unauthorized: HttpStatus.UNAUTHORIZED,
         not_found: HttpStatus.NOT_FOUND,
         conflict: HttpStatus.CONFLICT,
         bad_gateway: HttpStatus.BAD_GATEWAY,
