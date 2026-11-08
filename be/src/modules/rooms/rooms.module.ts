@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AmenitiesModule } from '../amenities/amenities.module';
+import { HotelsModule } from '../hotels/hotels.module';
 import { RoomsController } from './controllers/rooms.controller';
 import { RoomAmenityEntity } from './entities/room-amenity.entity';
 import { RoomEntity } from './entities/room.entity';
@@ -12,6 +13,7 @@ import { RoomsService } from './services/rooms.service';
   imports: [
     TypeOrmModule.forFeature([RoomEntity, RoomAmenityEntity]),
     AmenitiesModule,
+    HotelsModule,
   ],
   controllers: [RoomsController],
   providers: [

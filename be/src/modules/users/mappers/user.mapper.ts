@@ -18,6 +18,7 @@ export class UserMapper {
       dateOfBirth: user.dateOfBirth,
       gender: user.gender,
       status: user.status,
+      role: user.role,
       isEmailVerified: user.isEmailVerified,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),

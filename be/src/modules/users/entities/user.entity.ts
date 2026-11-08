@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
@@ -11,6 +12,13 @@ export enum UserStatus {
   ACTIVE = 'ACTIVE',
   INACTIVE = 'INACTIVE',
   SUSPENDED = 'SUSPENDED',
+  DEACTIVATED = 'DEACTIVATED',
+}
+
+export enum UserRole {
+  TOURIST = 'TOURIST',
+  HOTEL_OWNER = 'HOTEL_OWNER',
+  ADMIN = 'ADMIN',
 }
 
 export enum UserGender {
@@ -32,8 +40,13 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 254 })
   email: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255 })
-  passwordHash: string;
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  passwordHash: string | null;
 
   @Column({
     name: 'google_account_id',
@@ -69,6 +82,9 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 20 })
   status: UserStatus;
 
+  @Column({ type: 'varchar', length: 20 })
+  role: UserRole;
+
   @Column({ name: 'is_email_verified', type: 'boolean', default: false })
   isEmailVerified: boolean;
 
@@ -77,4 +93,7 @@ export class UserEntity {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 }

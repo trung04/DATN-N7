@@ -4,8 +4,10 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 
 export function configureHttpApplication(app: INestApplication): void {
+  app.use(cookieParser());
   app.setGlobalPrefix('api', {
     exclude: [{ path: '', method: RequestMethod.GET }],
   });

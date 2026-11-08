@@ -9,7 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { UserGender, UserStatus } from '../../entities/user.entity';
+import { UserGender, UserRole, UserStatus } from '../../entities/user.entity';
 import type { UserSortField } from '../../interfaces/user.repository.interface';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -49,6 +49,10 @@ export class ListUsersRequest {
   @IsOptional()
   @IsEnum(UserStatus)
   status?: UserStatus;
+
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
 
   @IsOptional()
   @IsEnum(UserGender)

@@ -37,7 +37,7 @@ describe('OpenAPI documentation (e2e)', () => {
           version: '1.0',
         });
         expect(body.paths).toHaveProperty('/');
-        expect(body.components.securitySchemes).toHaveProperty('bearer');
+        expect(body.components.securitySchemes).toHaveProperty('cookie');
       });
   });
 

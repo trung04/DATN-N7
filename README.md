@@ -6,14 +6,14 @@ Development repository: https://github.com/trung04/DATN-N7
 
 This repository is an initial project scaffold. It does not yet serve a complete tourism application.
 
-| Component | Current state |
-| --- | --- |
-| Backend (`be/`) | NestJS starter with `GET /` returning `Hello World!`; development Docker target and watch mode configured. |
+| Component        | Current state                                                                                                                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend (`be/`)  | NestJS modular API with PostgreSQL features and Redis-backed password/Google login sessions.                                                                                            |
 | Frontend (`fe/`) | Package manifest, Dockerfile, and Nginx configuration only. Source files, `index.html`, TypeScript configuration, and `package-lock.json` are missing, so it cannot build or serve yet. |
-| PostgreSQL | Local PostgreSQL 17 service with persistent storage and a health check. |
-| Redis | Local Redis 7 service with append-only persistence. |
+| PostgreSQL       | Local PostgreSQL 17 service with persistent storage and a health check.                                                                                                                 |
+| Redis            | Local Redis 7 service with append-only persistence.                                                                                                                                     |
 
-The backend configures PostgreSQL through TypeORM and Redis through Nest CacheModule/Keyv. Business entities, migrations, authentication, and application APIs beyond the starter route are not implemented.
+The backend configures PostgreSQL through TypeORM, general caching through Keyv, and rotating opaque authentication sessions through Redis. Several business APIs are implemented, though authorization guards are not yet applied to every management route.
 
 ## Backend agent guidance
 
@@ -97,13 +97,13 @@ curl http://localhost:3000/
 
 Expected response: `Hello World!`
 
-| Service | Address |
-| --- | --- |
-| Backend from the host | `http://localhost:3000` |
-| PostgreSQL from the host | `localhost:5432` |
-| PostgreSQL from Compose containers | `postgres:5432` |
-| Redis from Compose containers | `redis:6379` |
-| Redis from the host | `localhost:6379` |
+| Service                            | Address                 |
+| ---------------------------------- | ----------------------- |
+| Backend from the host              | `http://localhost:3000` |
+| PostgreSQL from the host           | `localhost:5432`        |
+| PostgreSQL from Compose containers | `postgres:5432`         |
+| Redis from Compose containers      | `redis:6379`            |
+| Redis from the host                | `localhost:6379`        |
 
 Redis is published on loopback port 6379 for host development. PostgreSQL is published on host port 5432; stop any conflicting local database or change the mapping before starting Compose.
 
@@ -159,6 +159,7 @@ PostgreSQL is configured in `be/src/database/database.module.ts` using `TypeOrmM
 - Database defaults: port 5432, pool size 10, connect timeout 5000 ms, TLS disabled. `DATABASE_SSL=true` enables certificate-verified TLS; use the deployment's trusted CA configuration for private certificates.
 - Redis defaults: localhost:6379, database 0, connect timeout 5000 ms, TLS disabled. Optional `REDIS_USERNAME`/`REDIS_PASSWORD` support authenticated instances; `REDIS_TLS=true` enables TLS. Compose's local Redis has no authentication configured.
 - Cache TTL is in milliseconds (`CACHE_TTL_MS=60000`), and keys use the `tourism:cache` namespace. Redis connects on first cache access; application startup alone does not prove Redis availability. CacheModule disconnects its stores during shutdown, and Nest shutdown hooks are enabled.
+- Authentication uses the `tourism:auth` Redis namespace. Access sessions default to 15 minutes, refresh families to seven days, and Google OAuth state to ten minutes.
 - PostgreSQL connects during startup with bounded retries. TypeORM `synchronize` and automatic migration execution are disabled. No schema is created automatically; add reviewed migrations when entities are introduced. A standalone migration CLI data source is not configured yet.
 
 Feature modules register their own entities using `TypeOrmModule.forFeature([Entity])`. Inject TypeORM repositories into the module's repository implementations; services consume repository interfaces. Do not inject TypeORM repositories directly into controllers or bypass another module's services.

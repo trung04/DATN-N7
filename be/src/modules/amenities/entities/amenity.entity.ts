@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
@@ -8,7 +9,10 @@ import {
 } from 'typeorm';
 
 @Entity({ name: 'amenities' })
-@Index('UQ_amenities_code', ['code'], { unique: true })
+@Index('UQ_amenities_code', ['code'], {
+  unique: true,
+  where: '"deleted_at" IS NULL',
+})
 export class AmenityEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -24,4 +28,7 @@ export class AmenityEntity {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
 }

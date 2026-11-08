@@ -1,4 +1,4 @@
-import { UserGender, UserStatus } from '../../entities/user.entity';
+import { UserGender, UserRole, UserStatus } from '../../entities/user.entity';
 
 export class UserResponse {
   id: string;
@@ -12,6 +12,7 @@ export class UserResponse {
   dateOfBirth: string | null;
   gender: UserGender | null;
   status: UserStatus;
+  role: UserRole;
   isEmailVerified: boolean;
   createdAt: string;
   updatedAt: string;

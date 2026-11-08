@@ -35,6 +35,11 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_DB', 0, 0, 15);
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
+  integer('AUTH_ACCESS_TTL_MS', 900000, 60000, 3600000);
+  integer('AUTH_REFRESH_TTL_MS', 604800000, 3600000, 2592000000);
+  if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {
+    throw new Error('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
+  }
   integer('BOOKING_HOLD_MINUTES', 15, 5, 1440);
   integer('IDEMPOTENCY_KEY_TTL_HOURS', 24, 1, 168);
   const decimal = (key: string, fallback: number, min: number, max: number) => {
@@ -55,6 +60,26 @@ export function validateEnvironment(input: Record<string, unknown>) {
     if (value !== 'true' && value !== 'false')
       throw new Error(`${key} must be true or false`);
     config[key] = value === 'true';
+  }
+  config.FRONTEND_ORIGIN ??= 'http://localhost:5173';
+  validateHttpOrigin(config, 'FRONTEND_ORIGIN');
+
+  const googleKeys = [
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'GOOGLE_REDIRECT_URI',
+  ];
+  if (
+    googleKeys.some(
+      (key) => typeof config[key] === 'string' && config[key].trim(),
+    )
+  ) {
+    for (const key of googleKeys) {
+      if (typeof config[key] !== 'string' || !config[key].trim()) {
+        throw new Error(`${key} is required when Google login is configured`);
+      }
+    }
+    validateHttpUrl(config, 'GOOGLE_REDIRECT_URI');
   }
 
   config.VNPAY_PAYMENT_URL ??=
@@ -90,6 +115,17 @@ export function validateEnvironment(input: Record<string, unknown>) {
     validateHttpUrl(config, 'VNPAY_RETURN_URL');
   }
   return config;
+}
+
+function validateHttpOrigin(
+  config: Record<string, unknown>,
+  key: string,
+): void {
+  validateHttpUrl(config, key);
+  const value = config[key] as string;
+  if (new URL(value).origin !== value) {
+    throw new Error(`${key} must be an HTTP origin without a path`);
+  }
 }
 
 function validateSandboxVnpayUrl(
