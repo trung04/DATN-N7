@@ -35,6 +35,11 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_DB', 0, 0, 15);
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
+  integer('AUTH_ACCESS_TTL_MS', 900000, 60000, 3600000);
+  integer('AUTH_REFRESH_TTL_MS', 604800000, 3600000, 2592000000);
+  if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {
+    throw new Error('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
+  }
   config.REDIS_HOST ??= 'localhost';
   if (typeof config.REDIS_HOST !== 'string' || !config.REDIS_HOST.trim()) {
     throw new Error('REDIS_HOST must be nonempty');
@@ -44,6 +49,22 @@ export function validateEnvironment(input: Record<string, unknown>) {
     if (value !== 'true' && value !== 'false')
       throw new Error(`${key} must be true or false`);
     config[key] = value === 'true';
+  }
+  config.FRONTEND_ORIGIN ??= 'http://localhost:5173';
+  if (typeof config.FRONTEND_ORIGIN !== 'string') {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
+  }
+  let frontendOrigin: URL;
+  try {
+    frontendOrigin = new URL(config.FRONTEND_ORIGIN);
+  } catch {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
+  }
+  if (
+    !['http:', 'https:'].includes(frontendOrigin.protocol) ||
+    frontendOrigin.origin !== config.FRONTEND_ORIGIN
+  ) {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
   }
   return config;
 }

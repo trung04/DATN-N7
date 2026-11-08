@@ -3,7 +3,7 @@ import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
-import { UserEntity, UserRole } from '../entities/user.entity';
+import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
   GoogleAccountConflictException,
@@ -66,6 +66,28 @@ export class UsersService {
       sortBy: input.sortBy,
       sortOrder: input.sortOrder,
     });
+  }
+
+  async validateCredentials(
+    username: string,
+    password: string,
+  ): Promise<UserEntity | null> {
+    const user = await this.repository.findByUsername(
+      this.normalizeUsername(username),
+    );
+    if (
+      !user?.passwordHash ||
+      user.status !== UserStatus.ACTIVE ||
+      !(await this.passwordHasher.verify(password, user.passwordHash))
+    ) {
+      return null;
+    }
+    return user;
+  }
+
+  async findActiveById(id: string): Promise<UserEntity | null> {
+    const user = await this.repository.findById(id);
+    return user?.status === UserStatus.ACTIVE ? user : null;
   }
 
   async findById(id: string): Promise<UserEntity> {

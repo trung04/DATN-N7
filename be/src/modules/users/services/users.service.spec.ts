@@ -51,7 +51,7 @@ describe('UsersService', () => {
       save: saveUser,
       delete: jest.fn(),
     };
-    passwordHasher = { hash: hashPassword };
+    passwordHasher = { hash: hashPassword, verify: jest.fn() };
     service = new UsersService(repository, passwordHasher);
   });
 
@@ -95,6 +95,26 @@ describe('UsersService', () => {
       }),
     ).rejects.toBeInstanceOf(UsernameConflictException);
     expect(hashPassword).not.toHaveBeenCalled();
+  });
+
+  it('validates only active users with a matching password', async () => {
+    const existing = user();
+    repository.findByUsername.mockResolvedValue(existing);
+    passwordHasher.verify.mockResolvedValue(true);
+
+    await expect(
+      service.validateCredentials(' Traveler ', 'Password123'),
+    ).resolves.toBe(existing);
+    expect(repository.findByUsername.mock.calls).toContainEqual(['traveler']);
+    expect(passwordHasher.verify.mock.calls).toContainEqual([
+      'Password123',
+      existing.passwordHash,
+    ]);
+
+    existing.status = UserStatus.SUSPENDED;
+    await expect(
+      service.validateCredentials('traveler', 'Password123'),
+    ).resolves.toBeNull();
   });
 
   it('rejects a future date of birth', async () => {

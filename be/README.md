@@ -50,8 +50,8 @@ $ npm run start:prod
 
 The backend exposes amenity management at `/api/v1/amenities` with create,
 paginated list, detail, partial update, and delete operations. Write endpoints
-are currently unauthenticated because an authentication/authorization module
-has not been implemented yet.
+are currently unauthenticated because authorization guards have not yet been
+applied to them.
 
 Apply pending database migrations before using persistence-backed endpoints:
 
@@ -89,8 +89,8 @@ hashes; password hashes and Google account identifiers are never returned.
 List filters include `search`, `status`, `role`, `gender`, and
 `isEmailVerified`.
 Password reset uses `PUT /api/v1/users/:userId/password`. These management
-routes remain unauthenticated until the authentication and authorization module
-is implemented.
+routes remain unauthenticated until role and resource authorization guards are
+applied.
 
 ## Hotel Owners API
 
@@ -102,7 +102,21 @@ are independent soft-delete operations.
 
 Bank name, account number, and account holder are nullable. List queries support
 `search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
-unauthenticated until the authentication and authorization module is available.
+unauthenticated until role and resource authorization guards are applied.
+
+## Authentication API
+
+`POST /api/v1/auth/login` issues separate opaque `login_access` and
+`login_refresh` HttpOnly cookies. Access tokens expire after 15 minutes by
+default; refresh tokens expire after seven days and rotate on every successful
+`POST /api/v1/auth/refresh`. Reuse of a consumed refresh token revokes its
+session family. `POST /api/v1/auth/logout` revokes the family and clears both
+cookies, while `GET /api/v1/auth/me` returns the active authenticated user.
+
+Refresh and logout requests must include the configured `FRONTEND_ORIGIN` as
+their HTTP `Origin`. Configure `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS`, and
+`FRONTEND_ORIGIN` through the environment. Authentication sessions are stored
+under the `tourism:auth` Redis namespace and require Redis availability.
 
 ## Itinerary Management API
 
