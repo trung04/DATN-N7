@@ -46,6 +46,17 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Swagger / OpenAPI
+
+With the backend running, interactive API documentation is available at:
+
+- Swagger UI: `http://localhost:3000/api/docs`
+- OpenAPI JSON: `http://localhost:3000/api/docs-json`
+- OpenAPI YAML: `http://localhost:3000/api/docs-yaml`
+
+The Bearer JWT scheme is documented for future authentication support. Current
+management endpoints remain unauthenticated until auth guards are implemented.
+
 ## Amenities API
 
 The backend exposes amenity management at `/api/v1/amenities` with create,
@@ -134,6 +145,43 @@ Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
 default to `TOURIST`. Deleting any currently implemented entity sets its
 `deleted_at` timestamp, and normal repository queries omit deleted records.
 
+## Itinerary Management API
+
+Itineraries are managed at `/api/v1/itineraries`. Ordered stopovers are nested
+under `/api/v1/itineraries/:itineraryId/stopovers`, and ordered activities are
+managed at `/api/v1/stopovers/:stopoverId/activities`. All three resources
+support create, paginated list, detail, partial update, and soft delete.
+
+Itinerary date ranges, stopover/activity timestamp ranges, active child order,
+currency, cost, and pagination inputs are validated at the API and database
+boundaries. `placeId` remains a UUID without a foreign key until the places
+module is implemented.
+
+Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
+default to `TOURIST`. Deleting any currently implemented entity sets its
+`deleted_at` timestamp, and normal repository queries omit deleted records.
+
+## Hotels API
+
+Hotel onboarding is available at `/api/v1/hotels`. New hotels start as `DRAFT`;
+owners can update their data and attach documents before submitting them with
+`PUT /api/v1/hotels/:hotelId/submit`. A non-expired `BUSINESS_LICENSE` document
+is required, but rooms and cancellation policies are not required for
+submission.
+
+Admin review uses one endpoint,
+`PATCH /api/v1/admin/hotels/:hotelId/status`, with the actions `APPROVE`,
+`REJECT`, `SUSPEND`, and `REACTIVATE`. Reject and suspend actions require a
+reason, and every submission or review action is recorded in
+`hotel_review_histories`. Approved legal names, tax codes, and documents are
+locked until a later legal-change workflow is implemented. Only `ACTIVE`
+hotels may receive new rooms, cancellation policies, or bookings.
+
+Authentication is not implemented yet. Consequently `ownerUserId` and
+`reviewerUserId` remain explicit transitional inputs and these routes must not
+be exposed publicly until JWT authentication and role guards replace them with
+trusted identity context.
+
 ## Places API
 
 Place management is available at `/api/v1/places` with create, paginated list,
@@ -152,12 +200,76 @@ Cancellation policy management is available at
 `/api/v1/cancellation-policies` with create, paginated list, detail, partial
 update, and delete operations. Policies belong directly to `hotelId`; there is
 no hotel-owner user identifier in the database or API contract. Policy names
-are unique per hotel without case sensitivity.
+are unique per hotel without case sensitivity. New policies may only be added
+to an active hotel.
 
 `cancellationWindow` is an optional number of days from 0 to 3650 and
-`cancellationFeeRate` is an optional percentage from 0 to 100. The hotel foreign
-key is deferred until the Hotels module exists. List queries support `search`,
-`hotelId`, `sortBy`, and `sortOrder`.
+`cancellationFeeRate` is an optional percentage from 0 to 100. List queries
+support `search`, `hotelId`, `sortBy`, and `sortOrder`. The hotel foreign key is
+enforced for new data; existing legacy rows must be backfilled before validating
+the constraint against historical data.
+
+## Bookings API
+
+Booking management is available at `/api/v1/bookings`. Creation initializes a
+unique booking code and pending booking/payment/settlement/refund states. Basic
+guest and booking status changes use `PATCH /api/v1/bookings/:bookingId`.
+Creation accepts `touristId`, one to ten `roomIds`, date-only `checkInDate` and
+`checkOutDate`, guest counts, and guest contact details. The backend verifies
+that rooms are operational, belong to one hotel, use one currency, have enough
+capacity, and are not reserved by another pending or confirmed booking for an
+overlapping stay. Room prices and descriptive values are snapshotted in
+`booking_rooms`; the number of nights, hotel, total amount, payable amount, and
+commission rate are server-managed. `touristId` remains caller-supplied until
+authentication is implemented.
+
+`POST /api/v1/bookings` requires an `Idempotency-Key` header containing a new
+UUID v4. Retrying the same normalized request with the same key returns the
+original booking and sets `Idempotency-Replayed: true`; reusing that key with a
+different body returns `409 IDEMPOTENCY_KEY_REUSED`. Keys are retained in
+PostgreSQL for the configured TTL so retries remain safe across server
+restarts.
+
+Financial workflows use explicit endpoints:
+
+- `PUT /api/v1/bookings/:bookingId/payment/vnpay`
+- `GET /api/v1/payments/vnpay/ipn`
+- `GET /api/v1/payments/vnpay/return`
+- `PUT /api/v1/bookings/:bookingId/settlement`
+- `PUT /api/v1/bookings/:bookingId/refund`
+
+The payment endpoint creates one signed VNPAY Sandbox payment URL and lets the
+customer choose a supported payment method on the VNPAY page.
+Only a checksum-valid VNPAY IPN with matching terminal, booking, and amount can
+change the booking to `PAID` and `CONFIRMED`; there is no public manual payment
+completion endpoint. The return endpoint verifies and displays status but does
+not mutate payment state. Refund requests call the VNPAY Sandbox refund API and
+each booking permits only one refund request.
+
+Add the credentials issued by the VNPAY Sandbox developer portal to `be/.env`:
+
+```dotenv
+VNPAY_TMN_CODE=your_sandbox_terminal_code
+VNPAY_HASH_SECRET=your_sandbox_hash_secret
+VNPAY_RETURN_URL=http://localhost:3000/api/v1/payments/vnpay/return
+VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+VNPAY_REFUND_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
+VNPAY_REFUND_CREATE_BY=system
+BOOKING_COMMISSION_RATE=15
+BOOKING_HOLD_MINUTES=15
+IDEMPOTENCY_KEY_TTL_HOURS=24
+```
+
+Register the public HTTPS IPN URL
+`https://your-api-domain/api/v1/payments/vnpay/ipn` with VNPAY. A localhost or
+tailnet-only IPN address cannot be called by VNPAY; use a public test domain or
+HTTPS tunnel for end-to-end Sandbox testing. Secrets must never be committed.
+
+Settlement commission and partner receivable amounts are calculated by the
+service from the persisted commission rate. Bookings are not hard-deleted;
+cancellation is represented by the `CANCELLED` status. Cancellation-policy and
+hotel foreign keys are enforced for new data. The tourist foreign key remains
+deferred until its owning module exists.
 
 ## Run tests
 
