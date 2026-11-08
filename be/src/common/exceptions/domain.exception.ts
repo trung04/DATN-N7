@@ -1,5 +1,10 @@
 export type DomainExceptionCategory =
   'validation' | 'unauthorized' | 'not_found' | 'conflict';
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'bad_gateway'
+  | 'service_unavailable';
 
 export abstract class DomainException extends Error {
   protected constructor(

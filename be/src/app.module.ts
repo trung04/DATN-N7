@@ -15,6 +15,9 @@ import { ItinerariesModule } from './modules/itineraries/itineraries.module';
 import { StopoversModule } from './modules/stopovers/stopovers.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { PlacesModule } from './modules/places/places.module';
+import { CancellationPoliciesModule } from './modules/cancellation-policies/cancellation-policies.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -36,6 +39,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     StopoversModule,
     ActivitiesModule,
     AuthModule,
+    PlacesModule,
+    CancellationPoliciesModule,
+    BookingsModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,
     // then run `npx @nestjs/observe link` to write your key pair into .env.

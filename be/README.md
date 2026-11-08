@@ -134,6 +134,31 @@ Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
 default to `TOURIST`. Deleting any currently implemented entity sets its
 `deleted_at` timestamp, and normal repository queries omit deleted records.
 
+## Places API
+
+Place management is available at `/api/v1/places` with create, paginated list,
+detail, partial update, and delete operations. Coordinates are optional but
+latitude and longitude must be supplied or cleared together. Country codes use
+the ISO alpha-2 format and timezone values must be valid IANA identifiers.
+
+The database generates `search_document` and indexes it for full-text search.
+`averageRating` is read-only through this API and defaults to zero until a
+review capability owns rating aggregation. List filters include `search`,
+`status`, `countryCode`, `provinceCode`, and `minRating`.
+
+## Cancellation Policies API
+
+Cancellation policy management is available at
+`/api/v1/cancellation-policies` with create, paginated list, detail, partial
+update, and delete operations. Policies belong directly to `hotelId`; there is
+no hotel-owner user identifier in the database or API contract. Policy names
+are unique per hotel without case sensitivity.
+
+`cancellationWindow` is an optional number of days from 0 to 3650 and
+`cancellationFeeRate` is an optional percentage from 0 to 100. The hotel foreign
+key is deferred until the Hotels module exists. List queries support `search`,
+`hotelId`, `sortBy`, and `sortOrder`.
+
 ## Run tests
 
 ```bash

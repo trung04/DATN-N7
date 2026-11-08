@@ -21,5 +21,6 @@ import { RoomsService } from './services/rooms.service';
       useClass: TypeOrmRoomRepository,
     },
   ],
+  exports: [RoomsService],
 })
 export class RoomsModule {}
