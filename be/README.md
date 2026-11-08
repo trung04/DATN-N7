@@ -61,8 +61,8 @@ management endpoints remain unauthenticated until auth guards are implemented.
 
 The backend exposes amenity management at `/api/v1/amenities` with create,
 paginated list, detail, partial update, and delete operations. Write endpoints
-are currently unauthenticated because an authentication/authorization module
-has not been implemented yet.
+are currently unauthenticated because authorization guards have not yet been
+applied to them.
 
 Apply pending database migrations before using persistence-backed endpoints:
 
@@ -100,8 +100,8 @@ hashes; password hashes and Google account identifiers are never returned.
 List filters include `search`, `status`, `role`, `gender`, and
 `isEmailVerified`.
 Password reset uses `PUT /api/v1/users/:userId/password`. These management
-routes remain unauthenticated until the authentication and authorization module
-is implemented.
+routes remain unauthenticated until role and resource authorization guards are
+applied.
 
 ## Hotel Owners API
 
@@ -113,7 +113,37 @@ are independent soft-delete operations.
 
 Bank name, account number, and account holder are nullable. List queries support
 `search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
-unauthenticated until the authentication and authorization module is available.
+unauthenticated until role and resource authorization guards are applied.
+
+## Authentication API
+
+`POST /api/v1/auth/login` issues separate opaque `login_access` and
+`login_refresh` HttpOnly cookies. Access tokens expire after 15 minutes by
+default; refresh tokens expire after seven days and rotate on every successful
+`POST /api/v1/auth/refresh`. Reuse of a consumed refresh token revokes its
+session family. `POST /api/v1/auth/logout` revokes the family and clears both
+cookies, while `GET /api/v1/auth/me` returns the active authenticated user.
+
+Refresh and logout requests must include the configured `FRONTEND_ORIGIN` as
+their HTTP `Origin`. Configure `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS`, and
+`FRONTEND_ORIGIN` through the environment. Authentication sessions are stored
+under the `tourism:auth` Redis namespace and require Redis availability.
+
+## Itinerary Management API
+
+Itineraries are managed at `/api/v1/itineraries`. Ordered stopovers are nested
+under `/api/v1/itineraries/:itineraryId/stopovers`, and ordered activities are
+managed at `/api/v1/stopovers/:stopoverId/activities`. All three resources
+support create, paginated list, detail, partial update, and soft delete.
+
+Itinerary date ranges, stopover/activity timestamp ranges, active child order,
+currency, cost, and pagination inputs are validated at the API and database
+boundaries. `placeId` remains a UUID without a foreign key until the places
+module is implemented.
+
+Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
+default to `TOURIST`. Deleting any currently implemented entity sets its
+`deleted_at` timestamp, and normal repository queries omit deleted records.
 
 ## Itinerary Management API
 

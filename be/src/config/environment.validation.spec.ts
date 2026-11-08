@@ -18,6 +18,9 @@ describe('environment validation', () => {
     expect(result.REDIS_TLS).toBe(false);
     expect(result.REDIS_PORT).toBe(6380);
     expect(result.CACHE_TTL_MS).toBe(60000);
+    expect(result.AUTH_ACCESS_TTL_MS).toBe(900000);
+    expect(result.AUTH_REFRESH_TTL_MS).toBe(604800000);
+    expect(result.FRONTEND_ORIGIN).toBe('http://localhost:5173');
     expect(result.BOOKING_COMMISSION_RATE).toBe(15);
     expect(result.BOOKING_HOLD_MINUTES).toBe(15);
     expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
@@ -32,6 +35,8 @@ describe('environment validation', () => {
     ['REDIS_PORT', '65536'],
     ['DATABASE_POOL_SIZE', '0'],
     ['CACHE_TTL_MS', '-1'],
+    ['AUTH_ACCESS_TTL_MS', '0'],
+    ['AUTH_REFRESH_TTL_MS', '99999999999'],
     ['REDIS_DB', '1.5'],
     ['REDIS_TLS', 'yes'],
     ['DATABASE_SSL', '1'],
@@ -50,6 +55,23 @@ describe('environment validation', () => {
     expect(() => validateEnvironment({})).toThrow('DATABASE_HOST is required');
   });
 
+  it('requires refresh lifetime to exceed access lifetime', () => {
+    expect(() =>
+      validateEnvironment({
+        ...database,
+        AUTH_ACCESS_TTL_MS: '3600000',
+        AUTH_REFRESH_TTL_MS: '3600000',
+      }),
+    ).toThrow('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
+  });
+
+  it('rejects a frontend URL that is not an origin', () => {
+    expect(() =>
+      validateEnvironment({
+        ...database,
+        FRONTEND_ORIGIN: 'https://example.com/path',
+      }),
+    ).toThrow('FRONTEND_ORIGIN');
   it('accepts a complete VNPAY Sandbox configuration', () => {
     const result = validateEnvironment({
       ...database,

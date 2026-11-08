@@ -35,6 +35,11 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_DB', 0, 0, 15);
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
+  integer('AUTH_ACCESS_TTL_MS', 900000, 60000, 3600000);
+  integer('AUTH_REFRESH_TTL_MS', 604800000, 3600000, 2592000000);
+  if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {
+    throw new Error('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
+  }
   integer('BOOKING_HOLD_MINUTES', 15, 5, 1440);
   integer('IDEMPOTENCY_KEY_TTL_HOURS', 24, 1, 168);
   const decimal = (key: string, fallback: number, min: number, max: number) => {
@@ -56,6 +61,21 @@ export function validateEnvironment(input: Record<string, unknown>) {
       throw new Error(`${key} must be true or false`);
     config[key] = value === 'true';
   }
+  config.FRONTEND_ORIGIN ??= 'http://localhost:5173';
+  if (typeof config.FRONTEND_ORIGIN !== 'string') {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
+  }
+  let frontendOrigin: URL;
+  try {
+    frontendOrigin = new URL(config.FRONTEND_ORIGIN);
+  } catch {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
+  }
+  if (
+    !['http:', 'https:'].includes(frontendOrigin.protocol) ||
+    frontendOrigin.origin !== config.FRONTEND_ORIGIN
+  ) {
+    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
 
   config.VNPAY_PAYMENT_URL ??=
     'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';

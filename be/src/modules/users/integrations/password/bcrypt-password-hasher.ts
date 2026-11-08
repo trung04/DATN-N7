@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { hash, truncates } from 'bcryptjs';
+import { compare, hash, truncates } from 'bcryptjs';
 import { PasswordTooLongException } from '../../exceptions/user.exceptions';
 import type { PasswordHasher } from '../../interfaces/password-hasher.interface';
 
@@ -10,5 +10,10 @@ export class BcryptPasswordHasher implements PasswordHasher {
   async hash(password: string): Promise<string> {
     if (truncates(password)) throw new PasswordTooLongException();
     return await hash(password, this.rounds);
+  }
+
+  verify(password: string, passwordHash: string): Promise<boolean> {
+    if (truncates(password)) return Promise.resolve(false);
+    return compare(password, passwordHash);
   }
 }
