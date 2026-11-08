@@ -16,5 +16,6 @@ import { CancellationPoliciesService } from './services/cancellation-policies.se
       useClass: TypeOrmCancellationPolicyRepository,
     },
   ],
+  exports: [CancellationPoliciesService],
 })
 export class CancellationPoliciesModule {}

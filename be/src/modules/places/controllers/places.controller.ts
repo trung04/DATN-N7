@@ -12,7 +12,15 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import {
+  ApiCreateOperation,
+  ApiDeleteOperation,
+  ApiDetailOperation,
+  ApiListOperation,
+  ApiUpdateOperation,
+} from '../../../common/openapi/api-crud.decorator';
 import { CreatePlaceRequest } from '../dtos/requests/create-place.request';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
 import { UpdatePlaceRequest } from '../dtos/requests/update-place.request';
@@ -23,11 +31,13 @@ import {
 import { PlaceMapper } from '../mappers/place.mapper';
 import { PlacesService } from '../services/places.service';
 
+@ApiTags('Places')
 @Controller({ path: 'places', version: '1' })
 export class PlacesController {
   constructor(private readonly placesService: PlacesService) {}
 
   @Post()
+  @ApiCreateOperation('Create a place', PlaceResponse)
   async create(
     @Body() input: CreatePlaceRequest,
     @Res({ passthrough: true }) response: Response,
@@ -38,6 +48,7 @@ export class PlacesController {
   }
 
   @Get()
+  @ApiListOperation('List places', PlaceListResponse)
   async findPage(
     @Query() query: ListPlacesRequest,
   ): Promise<PlaceListResponse> {
@@ -51,6 +62,7 @@ export class PlacesController {
   }
 
   @Get(':placeId')
+  @ApiDetailOperation('Get a place', PlaceResponse, 'placeId')
   async findById(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<PlaceResponse> {
@@ -58,6 +70,7 @@ export class PlacesController {
   }
 
   @Patch(':placeId')
+  @ApiUpdateOperation('Update a place', PlaceResponse, 'placeId')
   async update(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdatePlaceRequest,
@@ -67,6 +80,7 @@ export class PlacesController {
 
   @Delete(':placeId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiDeleteOperation('Delete a place', 'placeId')
   async delete(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<void> {
