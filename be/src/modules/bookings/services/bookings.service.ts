@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
+import { HotelsService } from '../../hotels/services/hotels.service';
 import type { CancellationPolicyEntity } from '../../cancellation-policies/entities/cancellation-policy.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
@@ -78,6 +79,7 @@ export class BookingsService {
     private readonly cancellationPoliciesService: CancellationPoliciesService,
     private readonly roomsService: RoomsService,
     private readonly configService: ConfigService,
+    private readonly hotelsService: HotelsService,
   ) {}
 
   async create(
@@ -95,6 +97,7 @@ export class BookingsService {
 
     const rooms = await this.roomsService.findEntitiesByIds(input.roomIds);
     const hotelId = rooms[0].hotelId;
+    await this.hotelsService.assertActive(hotelId);
     const currency = rooms[0].currency;
     if (rooms.some((room) => room.hotelId !== hotelId)) {
       throw new BookingRoomsHotelMismatchException();

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AmenitiesService } from '../../amenities/services/amenities.service';
+import { HotelsService } from '../../hotels/services/hotels.service';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
@@ -22,9 +23,11 @@ export class RoomsService {
     @Inject(ROOM_REPOSITORY)
     private readonly repository: RoomRepository,
     private readonly amenitiesService: AmenitiesService,
+    private readonly hotelsService: HotelsService,
   ) {}
 
   async create(input: CreateRoomRequest): Promise<RoomWithAmenities> {
+    await this.hotelsService.assertActive(input.hotelId);
     const roomNumber = this.normalizeRoomNumber(input.roomNumber);
     if (await this.repository.findByHotelAndNumber(input.hotelId, roomNumber)) {
       throw new RoomNumberConflictException(input.hotelId, roomNumber);
@@ -102,6 +105,9 @@ export class RoomsService {
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
     const hotelId = input.hotelId ?? room.hotelId;
+    if (hotelId !== room.hotelId) {
+      await this.hotelsService.assertActive(hotelId);
+    }
     const roomNumber =
       input.roomNumber === undefined
         ? room.roomNumber

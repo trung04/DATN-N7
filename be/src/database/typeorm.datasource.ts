@@ -12,6 +12,9 @@ import { CancellationPolicyEntity } from '../modules/cancellation-policies/entit
 import { BookingEntity } from '../modules/bookings/entities/booking.entity';
 import { BookingRoomEntity } from '../modules/bookings/entities/booking-room.entity';
 import { BookingIdempotencyKeyEntity } from '../modules/bookings/entities/booking-idempotency-key.entity';
+import { HotelEntity } from '../modules/hotels/entities/hotel.entity';
+import { HotelDocumentEntity } from '../modules/hotels/entities/hotel-document.entity';
+import { HotelReviewHistoryEntity } from '../modules/hotels/entities/hotel-review-history.entity';
 import { CreateAmenities1793696400000 } from './migrations/1793696400000-CreateAmenities';
 import { RemoveAmenityType1793696500000 } from './migrations/1793696500000-RemoveAmenityType';
 import { CreateRooms1793696600000 } from './migrations/1793696600000-CreateRooms';
@@ -24,6 +27,7 @@ import { UseGenericVnpayPayment1793697200000 } from './migrations/1793697200000-
 import { CompleteBookingStayDetails1793697300000 } from './migrations/1793697300000-CompleteBookingStayDetails';
 import { AddBookingReservationExpiry1793697400000 } from './migrations/1793697400000-AddBookingReservationExpiry';
 import { CreateBookingIdempotencyKeys1793697500000 } from './migrations/1793697500000-CreateBookingIdempotencyKeys';
+import { CreateHotels1793697600000 } from './migrations/1793697600000-CreateHotels';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -47,6 +51,9 @@ export default new DataSource({
     BookingEntity,
     BookingRoomEntity,
     BookingIdempotencyKeyEntity,
+    HotelEntity,
+    HotelDocumentEntity,
+    HotelReviewHistoryEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -61,6 +68,7 @@ export default new DataSource({
     CompleteBookingStayDetails1793697300000,
     AddBookingReservationExpiry1793697400000,
     CreateBookingIdempotencyKeys1793697500000,
+    CreateHotels1793697600000,
   ],
   synchronize: false,
   logging: false,

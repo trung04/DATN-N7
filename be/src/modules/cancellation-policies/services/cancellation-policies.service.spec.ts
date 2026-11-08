@@ -26,6 +26,7 @@ const policy = (
 describe('CancellationPoliciesService', () => {
   let repository: jest.Mocked<CancellationPolicyRepository>;
   let service: CancellationPoliciesService;
+  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
   let createPolicy: jest.MockedFunction<CancellationPolicyRepository['create']>;
   let savePolicy: jest.MockedFunction<CancellationPolicyRepository['save']>;
 
@@ -40,7 +41,11 @@ describe('CancellationPoliciesService', () => {
       save: savePolicy,
       delete: jest.fn(),
     };
-    service = new CancellationPoliciesService(repository);
+    hotelsService = { assertActive: jest.fn() };
+    service = new CancellationPoliciesService(
+      repository,
+      hotelsService as unknown as HotelsService,
+    );
   });
 
   it('normalizes and creates a policy for a hotel', async () => {
@@ -107,3 +112,4 @@ describe('CancellationPoliciesService', () => {
     );
   });
 });
+import { HotelsService } from '../../hotels/services/hotels.service';
