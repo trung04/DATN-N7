@@ -46,6 +46,7 @@ describe('RoomsService', () => {
     deleteRoom = jest.fn();
     repository = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findByHotelAndNumber: jest.fn(),
       findPage: jest.fn(),
       create: createRoom,
@@ -121,6 +122,16 @@ describe('RoomsService', () => {
     await expect(service.findById(room().id)).rejects.toBeInstanceOf(
       RoomNotFoundException,
     );
+  });
+
+  it('returns rooms in the requested order', async () => {
+    const first = room();
+    const second = room({ id: '44444444-4444-4444-8444-444444444444' });
+    repository.findByIds.mockResolvedValue([second, first]);
+
+    await expect(
+      service.findEntitiesByIds([first.id, second.id]),
+    ).resolves.toEqual([first, second]);
   });
 
   it('deletes a room and its owned amenity links', async () => {

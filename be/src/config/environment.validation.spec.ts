@@ -18,7 +18,13 @@ describe('environment validation', () => {
     expect(result.REDIS_TLS).toBe(false);
     expect(result.REDIS_PORT).toBe(6380);
     expect(result.CACHE_TTL_MS).toBe(60000);
+    expect(result.BOOKING_COMMISSION_RATE).toBe(15);
+    expect(result.BOOKING_HOLD_MINUTES).toBe(15);
+    expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
     expect(result.DATABASE_PASSWORD).toBe(database.DATABASE_PASSWORD);
+    expect(result.VNPAY_PAYMENT_URL).toBe(
+      'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+    );
   });
 
   it.each([
@@ -31,6 +37,9 @@ describe('environment validation', () => {
     ['DATABASE_SSL', '1'],
     ['REDIS_HOST', ''],
     ['DATABASE_PASSWORD', ''],
+    ['BOOKING_COMMISSION_RATE', '101'],
+    ['BOOKING_HOLD_MINUTES', '0'],
+    ['IDEMPOTENCY_KEY_TTL_HOURS', '169'],
   ])('rejects invalid %s', (key, value) => {
     expect(() => validateEnvironment({ ...database, [key]: value })).toThrow(
       key,
@@ -39,5 +48,30 @@ describe('environment validation', () => {
 
   it('fails on missing database credentials', () => {
     expect(() => validateEnvironment({})).toThrow('DATABASE_HOST is required');
+  });
+
+  it('accepts a complete VNPAY Sandbox configuration', () => {
+    const result = validateEnvironment({
+      ...database,
+      VNPAY_TMN_CODE: 'SANDBOX01',
+      VNPAY_HASH_SECRET: 'test-only-vnpay-secret',
+      VNPAY_RETURN_URL: 'http://localhost:3000/api/v1/payments/vnpay/return',
+    });
+    expect(result.VNPAY_TMN_CODE).toBe('SANDBOX01');
+  });
+
+  it('rejects a partial VNPAY configuration', () => {
+    expect(() =>
+      validateEnvironment({ ...database, VNPAY_TMN_CODE: 'SANDBOX01' }),
+    ).toThrow('VNPAY_HASH_SECRET');
+  });
+
+  it('rejects a production VNPAY payment URL', () => {
+    expect(() =>
+      validateEnvironment({
+        ...database,
+        VNPAY_PAYMENT_URL: 'https://pay.vnpay.vn/paymentv2/vpcpay.html',
+      }),
+    ).toThrow('VNPAY_PAYMENT_URL');
   });
 });
