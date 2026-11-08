@@ -102,6 +102,17 @@ describe('Users API (e2e)', () => {
       });
   });
 
+  it('rejects attempts to link a Google account directly', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/v1/users/${id}`)
+      .send({ googleAccountId: 'attacker-controlled' })
+      .expect(400)
+      .expect('Content-Type', /application\/problem\+json/)
+      .expect(({ body }) => {
+        expect(body.code).toBe('VALIDATION_FAILED');
+      });
+  });
+
   it('resets a password without returning a body', async () => {
     service.resetPassword.mockResolvedValue(undefined);
 

@@ -1,6 +1,6 @@
 export type DomainExceptionCategory =
-  'validation' | 'unauthorized' | 'not_found' | 'conflict';
   | 'validation'
+  | 'unauthorized'
   | 'not_found'
   | 'conflict'
   | 'bad_gateway'

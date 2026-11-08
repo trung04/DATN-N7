@@ -62,20 +62,25 @@ export function validateEnvironment(input: Record<string, unknown>) {
     config[key] = value === 'true';
   }
   config.FRONTEND_ORIGIN ??= 'http://localhost:5173';
-  if (typeof config.FRONTEND_ORIGIN !== 'string') {
-    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
-  }
-  let frontendOrigin: URL;
-  try {
-    frontendOrigin = new URL(config.FRONTEND_ORIGIN);
-  } catch {
-    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
-  }
+  validateHttpOrigin(config, 'FRONTEND_ORIGIN');
+
+  const googleKeys = [
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'GOOGLE_REDIRECT_URI',
+  ];
   if (
-    !['http:', 'https:'].includes(frontendOrigin.protocol) ||
-    frontendOrigin.origin !== config.FRONTEND_ORIGIN
+    googleKeys.some(
+      (key) => typeof config[key] === 'string' && config[key].trim(),
+    )
   ) {
-    throw new Error('FRONTEND_ORIGIN must be a valid HTTP(S) origin');
+    for (const key of googleKeys) {
+      if (typeof config[key] !== 'string' || !config[key].trim()) {
+        throw new Error(`${key} is required when Google login is configured`);
+      }
+    }
+    validateHttpUrl(config, 'GOOGLE_REDIRECT_URI');
+  }
 
   config.VNPAY_PAYMENT_URL ??=
     'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
@@ -110,6 +115,17 @@ export function validateEnvironment(input: Record<string, unknown>) {
     validateHttpUrl(config, 'VNPAY_RETURN_URL');
   }
   return config;
+}
+
+function validateHttpOrigin(
+  config: Record<string, unknown>,
+  key: string,
+): void {
+  validateHttpUrl(config, key);
+  const value = config[key] as string;
+  if (new URL(value).origin !== value) {
+    throw new Error(`${key} must be an HTTP origin without a path`);
+  }
 }
 
 function validateSandboxVnpayUrl(

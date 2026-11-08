@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
@@ -32,8 +33,7 @@ export class UsersService {
   async create(input: CreateUserRequest): Promise<UserEntity> {
     const username = this.normalizeUsername(input.username);
     const email = this.normalizeEmail(input.email);
-    const googleAccountId = this.normalizeNullable(input.googleAccountId);
-    await this.assertIdentityAvailable(username, email, googleAccountId);
+    await this.assertIdentityAvailable(username, email, null);
     this.assertDateOfBirth(input.dateOfBirth);
 
     const passwordHash = await this.passwordHasher.hash(input.password);
@@ -41,7 +41,7 @@ export class UsersService {
       username,
       email,
       passwordHash,
-      googleAccountId,
+      googleAccountId: null,
       firstName: this.normalizeNullable(input.firstName),
       lastName: this.normalizeNullable(input.lastName),
       displayName: this.normalizeNullable(input.displayName),
@@ -90,6 +90,41 @@ export class UsersService {
     return user?.status === UserStatus.ACTIVE ? user : null;
   }
 
+  findByEmail(email: string): Promise<UserEntity | null> {
+    return this.repository.findByEmail(this.normalizeEmail(email));
+  }
+
+  findByGoogleAccountId(googleAccountId: string): Promise<UserEntity | null> {
+    return this.repository.findByGoogleAccountId(googleAccountId);
+  }
+
+  async createGoogleUser(input: {
+    subject: string;
+    email: string;
+    displayName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+  }): Promise<UserEntity> {
+    const email = this.normalizeEmail(input.email);
+    const username = `g_${createHash('sha256').update(input.subject).digest('hex').slice(0, 24)}`;
+    await this.assertIdentityAvailable(username, email, input.subject);
+    return this.repository.create({
+      username,
+      email,
+      passwordHash: null,
+      googleAccountId: input.subject,
+      firstName: this.normalizeNullable(input.firstName),
+      lastName: this.normalizeNullable(input.lastName),
+      displayName: this.normalizeNullable(input.displayName),
+      phoneNumber: null,
+      dateOfBirth: null,
+      gender: null,
+      status: UserStatus.ACTIVE,
+      role: UserRole.TOURIST,
+      isEmailVerified: true,
+    });
+  }
+
   async findById(id: string): Promise<UserEntity> {
     const user = await this.repository.findById(id);
     if (!user) throw new UserNotFoundException(id);
@@ -117,18 +152,6 @@ export class UsersService {
       }
       if (email !== user.email) user.isEmailVerified = false;
       user.email = email;
-    }
-
-    if (input.googleAccountId !== undefined) {
-      const googleAccountId = this.normalizeNullable(input.googleAccountId);
-      if (googleAccountId) {
-        const duplicate =
-          await this.repository.findByGoogleAccountId(googleAccountId);
-        if (duplicate && duplicate.id !== user.id) {
-          throw new GoogleAccountConflictException();
-        }
-      }
-      user.googleAccountId = googleAccountId;
     }
 
     if (input.dateOfBirth !== undefined) {
@@ -192,7 +215,6 @@ export class UsersService {
     return [
       input.username,
       input.email,
-      input.googleAccountId,
       input.firstName,
       input.lastName,
       input.displayName,

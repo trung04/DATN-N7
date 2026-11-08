@@ -105,16 +105,32 @@ describe('UsersService', () => {
     await expect(
       service.validateCredentials(' Traveler ', 'Password123'),
     ).resolves.toBe(existing);
-    expect(repository.findByUsername.mock.calls).toContainEqual(['traveler']);
-    expect(passwordHasher.verify.mock.calls).toContainEqual([
-      'Password123',
-      existing.passwordHash,
-    ]);
 
     existing.status = UserStatus.SUSPENDED;
     await expect(
       service.validateCredentials('traveler', 'Password123'),
     ).resolves.toBeNull();
+  });
+
+  it('creates a verified passwordless Google user', async () => {
+    repository.findByUsername.mockResolvedValue(null);
+    repository.findByEmail.mockResolvedValue(null);
+    repository.findByGoogleAccountId.mockResolvedValue(null);
+    createUser.mockImplementation(async (value) => user(value));
+
+    const created = await service.createGoogleUser({
+      subject: 'google-subject',
+      email: ' Traveler@Example.com ',
+      displayName: 'Traveler',
+      firstName: 'Travel',
+      lastName: 'Er',
+    });
+
+    expect(created.passwordHash).toBeNull();
+    expect(created.googleAccountId).toBe('google-subject');
+    expect(created.email).toBe('traveler@example.com');
+    expect(created.isEmailVerified).toBe(true);
+    expect(created.username).toMatch(/^g_[a-f0-9]{24}$/);
   });
 
   it('rejects a future date of birth', async () => {

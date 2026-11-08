@@ -3,7 +3,6 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
-  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
@@ -34,13 +33,6 @@ export class UpdateUserRequest {
   @IsEmail()
   @MaxLength(254)
   email?: string;
-
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  googleAccountId?: string | null;
 
   @IsOptional()
   @Transform(trim)

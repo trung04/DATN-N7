@@ -40,8 +40,13 @@ export class UserEntity {
   @Column({ type: 'varchar', length: 254 })
   email: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', length: 255 })
-  passwordHash: string;
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  passwordHash: string | null;
 
   @Column({
     name: 'google_account_id',

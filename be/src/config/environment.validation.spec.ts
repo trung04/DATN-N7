@@ -72,6 +72,8 @@ describe('environment validation', () => {
         FRONTEND_ORIGIN: 'https://example.com/path',
       }),
     ).toThrow('FRONTEND_ORIGIN');
+  });
+
   it('accepts a complete VNPAY Sandbox configuration', () => {
     const result = validateEnvironment({
       ...database,
@@ -96,4 +98,21 @@ describe('environment validation', () => {
       }),
     ).toThrow('VNPAY_PAYMENT_URL');
   });
+
+  it('rejects a partial Google configuration', () => {
+    expect(() =>
+      validateEnvironment({ ...database, GOOGLE_CLIENT_ID: 'client-id' }),
+    ).toThrow('GOOGLE_CLIENT_SECRET');
+  });
+
+  it('accepts a complete Google configuration', () => {
+    const result = validateEnvironment({
+      ...database,
+      GOOGLE_CLIENT_ID: 'client-id',
+      GOOGLE_CLIENT_SECRET: 'test-secret',
+      GOOGLE_REDIRECT_URI: 'http://localhost:3000/api/v1/auth/google/callback',
+    });
+    expect(result.GOOGLE_CLIENT_ID).toBe('client-id');
+  });
+
 });

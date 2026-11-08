@@ -5,18 +5,14 @@ export function configureOpenApi(app: INestApplication): void {
   const config = new DocumentBuilder()
     .setTitle('Tourism Booking API')
     .setDescription(
-      'Backend API for amenities, rooms, users, hotel owners, places, and cancellation policies. Management endpoints are currently unauthenticated until the authentication module is implemented.',
+      'Backend API for tourism booking, management, and authentication.',
     )
     .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Reserved for the upcoming authentication module.',
-      },
-      'bearer',
-    )
+    .addCookieAuth('login_access', {
+      type: 'apiKey',
+      in: 'cookie',
+      description: 'Opaque access-session cookie issued by login.',
+    })
     .addTag('Application', 'Application information')
     .addTag('Amenities', 'Amenity management')
     .addTag('Rooms', 'Room management and amenity assignment')
@@ -25,6 +21,7 @@ export function configureOpenApi(app: INestApplication): void {
     .addTag('Places', 'Destination and place management')
     .addTag('Cancellation Policies', 'Hotel cancellation policy management')
     .addTag('Bookings', 'Booking, payment, settlement, and refund management')
+    .addTag('Authentication', 'Password and Google login sessions')
     .build();
 
   const documentFactory = () =>

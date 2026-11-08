@@ -54,8 +54,21 @@ With the backend running, interactive API documentation is available at:
 - OpenAPI JSON: `http://localhost:3000/api/docs-json`
 - OpenAPI YAML: `http://localhost:3000/api/docs-yaml`
 
-The Bearer JWT scheme is documented for future authentication support. Current
-management endpoints remain unauthenticated until auth guards are implemented.
+The opaque `login_access` cookie is documented. Existing management endpoints
+remain unauthenticated until their role and resource guards are implemented.
+
+## Authentication API
+
+`POST /api/v1/auth/login` issues rotating opaque `login_access` and
+`login_refresh` HttpOnly cookies. `POST /api/v1/auth/refresh` rotates both;
+`POST /api/v1/auth/logout` revokes the session family; and
+`GET /api/v1/auth/me` returns the active authenticated user.
+
+Google login starts at `GET /api/v1/auth/google/start` and returns through
+`GET /api/v1/auth/google/callback`. Configure `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, and the exact `GOOGLE_REDIRECT_URI`. Google identity
+tokens are verified and discarded; only the Google subject is persisted.
+Existing password accounts with the same email are not merged automatically.
 
 ## Amenities API
 
@@ -115,36 +128,6 @@ Bank name, account number, and account holder are nullable. List queries support
 `search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
 unauthenticated until role and resource authorization guards are applied.
 
-## Authentication API
-
-`POST /api/v1/auth/login` issues separate opaque `login_access` and
-`login_refresh` HttpOnly cookies. Access tokens expire after 15 minutes by
-default; refresh tokens expire after seven days and rotate on every successful
-`POST /api/v1/auth/refresh`. Reuse of a consumed refresh token revokes its
-session family. `POST /api/v1/auth/logout` revokes the family and clears both
-cookies, while `GET /api/v1/auth/me` returns the active authenticated user.
-
-Refresh and logout requests must include the configured `FRONTEND_ORIGIN` as
-their HTTP `Origin`. Configure `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS`, and
-`FRONTEND_ORIGIN` through the environment. Authentication sessions are stored
-under the `tourism:auth` Redis namespace and require Redis availability.
-
-## Itinerary Management API
-
-Itineraries are managed at `/api/v1/itineraries`. Ordered stopovers are nested
-under `/api/v1/itineraries/:itineraryId/stopovers`, and ordered activities are
-managed at `/api/v1/stopovers/:stopoverId/activities`. All three resources
-support create, paginated list, detail, partial update, and soft delete.
-
-Itinerary date ranges, stopover/activity timestamp ranges, active child order,
-currency, cost, and pagination inputs are validated at the API and database
-boundaries. `placeId` remains a UUID without a foreign key until the places
-module is implemented.
-
-Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
-default to `TOURIST`. Deleting any currently implemented entity sets its
-`deleted_at` timestamp, and normal repository queries omit deleted records.
-
 ## Itinerary Management API
 
 Itineraries are managed at `/api/v1/itineraries`. Ordered stopovers are nested
@@ -177,10 +160,10 @@ reason, and every submission or review action is recorded in
 locked until a later legal-change workflow is implemented. Only `ACTIVE`
 hotels may receive new rooms, cancellation policies, or bookings.
 
-Authentication is not implemented yet. Consequently `ownerUserId` and
-`reviewerUserId` remain explicit transitional inputs and these routes must not
-be exposed publicly until JWT authentication and role guards replace them with
-trusted identity context.
+Authentication is implemented, but hotel authorization guards are not.
+Consequently `ownerUserId` and `reviewerUserId` remain explicit transitional
+inputs and these routes must not be exposed publicly until guards replace them
+with trusted identity context.
 
 ## Places API
 
@@ -221,7 +204,7 @@ capacity, and are not reserved by another pending or confirmed booking for an
 overlapping stay. Room prices and descriptive values are snapshotted in
 `booking_rooms`; the number of nights, hotel, total amount, payable amount, and
 commission rate are server-managed. `touristId` remains caller-supplied until
-authentication is implemented.
+booking authorization uses the authenticated identity.
 
 `POST /api/v1/bookings` requires an `Idempotency-Key` header containing a new
 UUID v4. Retrying the same normalized request with the same key returns the
