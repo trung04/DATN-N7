@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AmenitiesService } from '../../amenities/services/amenities.service';
 import { HotelsService } from '../../hotels/services/hotels.service';
+import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
@@ -26,7 +27,11 @@ export class RoomsService {
     private readonly hotelsService: HotelsService,
   ) {}
 
-  async create(input: CreateRoomRequest): Promise<RoomWithAmenities> {
+  async create(
+    input: CreateRoomRequest,
+    actor: AuthorizationActor,
+  ): Promise<RoomWithAmenities> {
+    await this.hotelsService.assertManagedBy(input.hotelId, actor);
     await this.hotelsService.assertActive(input.hotelId);
     const roomNumber = this.normalizeRoomNumber(input.roomNumber);
     if (await this.repository.findByHotelAndNumber(input.hotelId, roomNumber)) {
@@ -100,14 +105,17 @@ export class RoomsService {
   async update(
     id: string,
     input: UpdateRoomRequest,
+    actor: AuthorizationActor,
   ): Promise<RoomWithAmenities> {
     if (this.isEmptyUpdate(input)) throw new EmptyRoomUpdateException();
 
     const current = await this.repository.findById(id);
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
+    await this.hotelsService.assertManagedBy(room.hotelId, actor);
     const hotelId = input.hotelId ?? room.hotelId;
     if (hotelId !== room.hotelId) {
+      await this.hotelsService.assertManagedBy(hotelId, actor);
       await this.hotelsService.assertActive(hotelId);
     }
     const roomNumber =
@@ -135,9 +143,10 @@ export class RoomsService {
     return { room: saved.room, amenities };
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
+    await this.hotelsService.assertManagedBy(result.room.hotelId, actor);
     await this.repository.delete(result.room);
   }
 

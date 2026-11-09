@@ -54,8 +54,9 @@ With the backend running, interactive API documentation is available at:
 - OpenAPI JSON: `http://localhost:3000/api/docs-json`
 - OpenAPI YAML: `http://localhost:3000/api/docs-yaml`
 
-The opaque `login_access` cookie is documented. Existing management endpoints
-remain unauthenticated until their role and resource guards are implemented.
+The opaque `login_access` cookie is documented. Protected endpoints use this
+session cookie and return `401` for an invalid session or `403` when the active
+user lacks the required role or resource ownership.
 
 ## Authentication API
 
@@ -70,12 +71,17 @@ Google login starts at `GET /api/v1/auth/google/start` and returns through
 tokens are verified and discarded; only the Google subject is persisted.
 Existing password accounts with the same email are not merged automatically.
 
+Authorization is deny-by-default. Public reads are marked explicitly; admin
+management uses `ADMIN`, hotel management uses `HOTEL_OWNER`, and booking
+access is scoped to the booking tourist, the owning hotel account, or an
+administrator as appropriate. Caller-supplied owner, tourist, and reviewer
+identifiers are rejected in favor of the authenticated session identity.
+
 ## Amenities API
 
 The backend exposes amenity management at `/api/v1/amenities` with create,
-paginated list, detail, partial update, and delete operations. Write endpoints
-are currently unauthenticated because authorization guards have not yet been
-applied to them.
+paginated list, detail, partial update, and delete operations. Reads are public;
+write endpoints require `ADMIN`.
 
 Apply pending database migrations before using persistence-backed endpoints:
 
@@ -112,9 +118,9 @@ hashes; password hashes and Google account identifiers are never returned.
 
 List filters include `search`, `status`, `role`, `gender`, and
 `isEmailVerified`.
-Password reset uses `PUT /api/v1/users/:userId/password`. These management
-routes remain unauthenticated until role and resource authorization guards are
-applied.
+Password reset uses `PUT /api/v1/users/:userId/password`. User management routes
+require `ADMIN`; an administrator may also change a user's role through the
+user update endpoint.
 
 ## Hotel Owners API
 
@@ -125,8 +131,9 @@ one-to-one relationship with an existing user. User and hotel-owner deletion
 are independent soft-delete operations.
 
 Bank name, account number, and account holder are nullable. List queries support
-`search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
-unauthenticated until role and resource authorization guards are applied.
+`search`, `userId`, `sortBy`, and `sortOrder`. Creating, listing, or deleting
+profiles requires `ADMIN`; an owner may read and update only their own profile.
+Creating a profile promotes a non-admin user to `HOTEL_OWNER`.
 
 ## Itinerary Management API
 
@@ -160,10 +167,11 @@ reason, and every submission or review action is recorded in
 locked until a later legal-change workflow is implemented. Only `ACTIVE`
 hotels may receive new rooms, cancellation policies, or bookings.
 
-Authentication is implemented, but hotel authorization guards are not.
-Consequently `ownerUserId` and `reviewerUserId` remain explicit transitional
-inputs and these routes must not be exposed publicly until guards replace them
-with trusted identity context.
+Public hotel reads expose only `ACTIVE` hotels. Owner management endpoints use
+the authenticated `HOTEL_OWNER` identity, and `/api/v1/hotels/mine` lists the
+current owner's hotels in every workflow state. `ownerUserId` is not accepted
+when creating a hotel. Admin review requires `ADMIN`, and `reviewerUserId` is
+derived from the active session rather than the request body.
 
 ## Places API
 
@@ -197,14 +205,15 @@ the constraint against historical data.
 Booking management is available at `/api/v1/bookings`. Creation initializes a
 unique booking code and pending booking/payment/settlement/refund states. Basic
 guest and booking status changes use `PATCH /api/v1/bookings/:bookingId`.
-Creation accepts `touristId`, one to ten `roomIds`, date-only `checkInDate` and
+Creation accepts one to ten `roomIds`, date-only `checkInDate` and
 `checkOutDate`, guest counts, and guest contact details. The backend verifies
 that rooms are operational, belong to one hotel, use one currency, have enough
 capacity, and are not reserved by another pending or confirmed booking for an
 overlapping stay. Room prices and descriptive values are snapshotted in
 `booking_rooms`; the number of nights, hotel, total amount, payable amount, and
-commission rate are server-managed. `touristId` remains caller-supplied until
-booking authorization uses the authenticated identity.
+commission rate are server-managed. `touristId` is derived from the authenticated
+session. Tourists can access only their own bookings; hotel owners may list or
+view bookings for hotels they own, while settlement and refund are admin-only.
 
 `POST /api/v1/bookings` requires an `Idempotency-Key` header containing a new
 UUID v4. Retrying the same normalized request with the same key returns the

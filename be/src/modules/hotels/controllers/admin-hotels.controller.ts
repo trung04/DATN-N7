@@ -8,6 +8,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../authorization/decorators/roles.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { UserEntity, UserRole } from '../../users/entities/user.entity';
 import {
   ApiDetailOperation,
   ApiListOperation,
@@ -24,6 +27,7 @@ import { HotelMapper } from '../mappers/hotel.mapper';
 import { HotelsService } from '../services/hotels.service';
 
 @ApiTags('Admin Hotels')
+@Roles(UserRole.ADMIN)
 @Controller({ path: 'admin/hotels', version: '1' })
 export class AdminHotelsController {
   constructor(private readonly hotelsService: HotelsService) {}
@@ -63,9 +67,12 @@ export class AdminHotelsController {
   @Patch(':hotelId/status')
   @ApiUpdateOperation('Review or change hotel status', HotelResponse, 'hotelId')
   async review(
+    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: ReviewHotelRequest,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(await this.hotelsService.review(id, input));
+    return HotelMapper.toResponse(
+      await this.hotelsService.review(id, user.id, input),
+    );
   }
 }
