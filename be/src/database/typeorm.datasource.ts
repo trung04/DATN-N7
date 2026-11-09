@@ -32,6 +32,7 @@ import { CompleteBookingStayDetails1793697300000 } from './migrations/1793697300
 import { AddBookingReservationExpiry1793697400000 } from './migrations/1793697400000-AddBookingReservationExpiry';
 import { CreateBookingIdempotencyKeys1793697500000 } from './migrations/1793697500000-CreateBookingIdempotencyKeys';
 import { CreateHotels1793697600000 } from './migrations/1793697600000-CreateHotels';
+import { AlignAuthenticationSchema1793898000000 } from './migrations/1793898000000-AlignAuthenticationSchema';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -77,6 +78,7 @@ export default new DataSource({
     AddBookingReservationExpiry1793697400000,
     CreateBookingIdempotencyKeys1793697500000,
     CreateHotels1793697600000,
+    AlignAuthenticationSchema1793898000000,
   ],
   synchronize: false,
   logging: false,
