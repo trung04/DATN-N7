@@ -1,6 +1,18 @@
 /** Never include secret values in configuration errors. */
 export function validateEnvironment(input: Record<string, unknown>) {
   const config = { ...input };
+  for (const [postgresKey, databaseKey] of Object.entries({
+    POSTGRES_HOST: 'DATABASE_HOST',
+    POSTGRES_PORT: 'DATABASE_PORT',
+    POSTGRES_NAME: 'DATABASE_NAME',
+    POSTGRES_USER: 'DATABASE_USER',
+    POSTGRES_PASSWORD: 'DATABASE_PASSWORD',
+    POSTGRES_SSL: 'DATABASE_SSL',
+    POSTGRES_POOL_SIZE: 'DATABASE_POOL_SIZE',
+    POSTGRES_CONNECT_TIMEOUT_MS: 'DATABASE_CONNECT_TIMEOUT_MS',
+  })) {
+    config[databaseKey] ??= config[postgresKey];
+  }
   for (const key of [
     'DATABASE_HOST',
     'DATABASE_NAME',

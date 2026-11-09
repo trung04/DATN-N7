@@ -30,6 +30,27 @@ describe('environment validation', () => {
     );
   });
 
+  it('accepts POSTGRES aliases used by the deployment configuration', () => {
+    const result = validateEnvironment({
+      POSTGRES_HOST: 'database.internal',
+      POSTGRES_PORT: '5433',
+      POSTGRES_NAME: 'tourism_test',
+      POSTGRES_USER: 'test',
+      POSTGRES_PASSWORD: 'test-only-secret',
+      POSTGRES_SSL: 'false',
+      POSTGRES_POOL_SIZE: '12',
+      POSTGRES_CONNECT_TIMEOUT_MS: '10000',
+    });
+
+    expect(result.DATABASE_HOST).toBe('database.internal');
+    expect(result.DATABASE_PORT).toBe(5433);
+    expect(result.DATABASE_NAME).toBe('tourism_test');
+    expect(result.DATABASE_USER).toBe('test');
+    expect(result.DATABASE_SSL).toBe(false);
+    expect(result.DATABASE_POOL_SIZE).toBe(12);
+    expect(result.DATABASE_CONNECT_TIMEOUT_MS).toBe(10000);
+  });
+
   it.each([
     ['DATABASE_PORT', '5432abc'],
     ['REDIS_PORT', '65536'],
@@ -114,5 +135,4 @@ describe('environment validation', () => {
     });
     expect(result.GOOGLE_CLIENT_ID).toBe('client-id');
   });
-
 });
