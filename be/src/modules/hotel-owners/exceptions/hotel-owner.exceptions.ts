@@ -20,6 +20,16 @@ export class HotelOwnerConflictException extends DomainException {
   }
 }
 
+export class HotelOwnerRoleConflictException extends DomainException {
+  constructor() {
+    super(
+      'An administrator account cannot become a hotel owner.',
+      'HOTEL_OWNER_ROLE_CONFLICT',
+      'conflict',
+    );
+  }
+}
+
 export class EmptyHotelOwnerUpdateException extends DomainException {
   constructor() {
     super(

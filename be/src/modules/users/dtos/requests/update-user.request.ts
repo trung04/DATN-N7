@@ -9,7 +9,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { UserGender, UserStatus } from '../../entities/user.entity';
+import { UserGender, UserRole, UserStatus } from '../../entities/user.entity';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -72,4 +72,8 @@ export class UpdateUserRequest {
   @IsOptional()
   @IsEnum(UserStatus)
   status?: UserStatus;
+
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
 }

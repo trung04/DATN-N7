@@ -13,7 +13,7 @@ This repository is an initial project scaffold. It does not yet serve a complete
 | PostgreSQL       | Local PostgreSQL 17 service with persistent storage and a health check.                                                                                                                 |
 | Redis            | Local Redis 7 service with append-only persistence.                                                                                                                                     |
 
-The backend configures PostgreSQL through TypeORM, general caching through Keyv, and rotating opaque authentication sessions through Redis. Several business APIs are implemented, though authorization guards are not yet applied to every management route.
+The backend configures PostgreSQL through TypeORM, general caching through Keyv, and rotating opaque authentication sessions through Redis. Global session and role guards protect management APIs, while service-level ownership checks scope hotels, rooms, policies, and bookings to the authenticated user.
 
 ## Backend agent guidance
 

@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../../authorization/decorators/public.decorator';
 import {
   VnpayIpnResponse,
   VnpayReturnResponse,
@@ -7,6 +8,7 @@ import {
 import { BookingsService } from '../services/bookings.service';
 
 @ApiTags('Bookings')
+@Public()
 @Controller({ path: 'payments/vnpay', version: '1' })
 export class VnpayCallbacksController {
   constructor(private readonly bookingsService: BookingsService) {}

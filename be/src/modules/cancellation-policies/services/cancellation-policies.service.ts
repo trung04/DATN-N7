@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { HotelsService } from '../../hotels/services/hotels.service';
+import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { CreateCancellationPolicyRequest } from '../dtos/requests/create-cancellation-policy.request';
 import { ListCancellationPoliciesRequest } from '../dtos/requests/list-cancellation-policies.request';
 import { UpdateCancellationPolicyRequest } from '../dtos/requests/update-cancellation-policy.request';
@@ -25,7 +26,9 @@ export class CancellationPoliciesService {
 
   async create(
     input: CreateCancellationPolicyRequest,
+    actor: AuthorizationActor,
   ): Promise<CancellationPolicyEntity> {
+    await this.hotelsService.assertManagedBy(input.hotelId, actor);
     await this.hotelsService.assertActive(input.hotelId);
     const name = input.name.trim();
     if (await this.repository.findByHotelAndName(input.hotelId, name)) {
@@ -63,11 +66,13 @@ export class CancellationPoliciesService {
   async update(
     id: string,
     input: UpdateCancellationPolicyRequest,
+    actor: AuthorizationActor,
   ): Promise<CancellationPolicyEntity> {
     if (this.isEmptyUpdate(input)) {
       throw new EmptyCancellationPolicyUpdateException();
     }
     const policy = await this.findById(id);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
 
     if (input.name !== undefined) {
       const name = input.name.trim();
@@ -93,8 +98,9 @@ export class CancellationPoliciesService {
     return this.repository.save(policy);
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const policy = await this.findById(id);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
     await this.repository.delete(policy);
   }
 

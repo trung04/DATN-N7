@@ -21,9 +21,6 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class CreateBookingRequest {
-  @IsUUID('4')
-  touristId: string;
-
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(10)
