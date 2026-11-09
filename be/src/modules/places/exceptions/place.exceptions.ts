@@ -29,7 +29,7 @@ export class EmptyPlaceUpdateException extends DomainException {
 export class CoordinatePairRequiredException extends DomainException {
   constructor() {
     super(
-      'Latitude and longitude must both be provided or both be null.',
+      'Latitude and longitude are required.',
       'PLACE_COORDINATE_PAIR_REQUIRED',
       'validation',
     );
