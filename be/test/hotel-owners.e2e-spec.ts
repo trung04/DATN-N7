@@ -5,7 +5,7 @@ import { App } from 'supertest/types';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
 import { configureHttpApplication } from '../src/common/http/configure-http-application';
 import { HotelOwnersController } from '../src/modules/hotel-owners/controllers/hotel-owners.controller';
-import { HotelOwnerEntity } from '../src/modules/hotel-owners/entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../src/modules/users/entities/hotel-owner.entity';
 import { HotelOwnerNotFoundException } from '../src/modules/hotel-owners/exceptions/hotel-owner.exceptions';
 import { HotelOwnersService } from '../src/modules/hotel-owners/services/hotel-owners.service';
 import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
