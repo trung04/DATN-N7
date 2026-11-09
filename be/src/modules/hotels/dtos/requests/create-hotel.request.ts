@@ -16,9 +16,6 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class CreateHotelRequest {
-  @IsUUID('4')
-  ownerUserId: string;
-
   @IsOptional()
   @IsUUID('4')
   placeId?: string | null;

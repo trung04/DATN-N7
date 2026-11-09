@@ -23,7 +23,7 @@ const hotelOwner = (
 
 describe('HotelOwnersService', () => {
   let repository: jest.Mocked<HotelOwnerRepository>;
-  let usersService: jest.Mocked<Pick<UsersService, 'findById'>>;
+  let usersService: jest.Mocked<Pick<UsersService, 'findById' | 'assignRole'>>;
   let service: HotelOwnersService;
   let createHotelOwner: jest.MockedFunction<HotelOwnerRepository['create']>;
   let saveHotelOwner: jest.MockedFunction<HotelOwnerRepository['save']>;
@@ -38,7 +38,7 @@ describe('HotelOwnersService', () => {
       save: saveHotelOwner,
       delete: jest.fn(),
     };
-    usersService = { findById: jest.fn() };
+    usersService = { findById: jest.fn(), assignRole: jest.fn() };
     service = new HotelOwnersService(
       repository,
       usersService as unknown as UsersService,
@@ -67,6 +67,7 @@ describe('HotelOwnersService', () => {
       bankAccountNumber: '123456789',
       bankAccountHolder: 'NGUYEN VAN A',
     });
+    expect(usersService.assignRole).toHaveBeenCalledWith(userId, 'HOTEL_OWNER');
   });
 
   it('rejects a second owner profile for the same user', async () => {

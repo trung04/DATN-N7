@@ -131,6 +131,13 @@ export class UsersService {
     return user;
   }
 
+  async assignRole(id: string, role: UserRole): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (user.role === role) return user;
+    user.role = role;
+    return this.repository.save(user);
+  }
+
   async update(id: string, input: UpdateUserRequest): Promise<UserEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyUserUpdateException();
     const user = await this.findById(id);
@@ -168,6 +175,7 @@ export class UsersService {
       user.phoneNumber = this.normalizeNullable(input.phoneNumber);
     if (input.gender !== undefined) user.gender = input.gender;
     if (input.status !== undefined) user.status = input.status;
+    if (input.role !== undefined) user.role = input.role;
 
     return this.repository.save(user);
   }
@@ -222,6 +230,7 @@ export class UsersService {
       input.dateOfBirth,
       input.gender,
       input.status,
+      input.role,
     ].every((value) => value === undefined);
   }
 

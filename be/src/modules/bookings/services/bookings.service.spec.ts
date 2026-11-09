@@ -1,5 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { HotelsService } from '../../hotels/services/hotels.service';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+import { UserRole } from '../../users/entities/user.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import {
   RoomOperationalStatus,
@@ -57,7 +59,6 @@ const room = (overrides: Partial<RoomEntity> = {}): RoomEntity =>
 const createInput = (
   overrides: Partial<CreateBookingRequest> = {},
 ): CreateBookingRequest => ({
-  touristId,
   roomIds: [roomId],
   checkInDate: '2026-12-01',
   checkOutDate: '2026-12-03',
@@ -129,7 +130,9 @@ describe('BookingsService', () => {
     Pick<CancellationPoliciesService, 'findById'>
   >;
   let roomsService: jest.Mocked<Pick<RoomsService, 'findEntitiesByIds'>>;
-  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
+  let hotelsService: jest.Mocked<
+    Pick<HotelsService, 'assertActive' | 'assertManagedBy'>
+  >;
   let service: BookingsService;
   let createBooking: jest.MockedFunction<BookingRepository['create']>;
   let withLockedById: jest.MockedFunction<BookingRepository['withLockedById']>;
@@ -154,7 +157,7 @@ describe('BookingsService', () => {
     };
     cancellationPoliciesService = { findById: jest.fn() };
     roomsService = { findEntitiesByIds: jest.fn() };
-    hotelsService = { assertActive: jest.fn() };
+    hotelsService = { assertActive: jest.fn(), assertManagedBy: jest.fn() };
     service = new BookingsService(
       repository,
       codeGenerator,
@@ -184,6 +187,7 @@ describe('BookingsService', () => {
 
     await expect(
       service.create(
+        touristId,
         createInput({
           guestName: ' Nguyen Van A ',
           guestEmail: ' Guest@Example.com ',
@@ -221,7 +225,7 @@ describe('BookingsService', () => {
     repository.findByIdempotencyKey.mockResolvedValue(saved);
 
     await expect(
-      service.create(createInput(), idempotencyKey),
+      service.create(touristId, createInput(), idempotencyKey),
     ).resolves.toEqual({ booking: saved, replayed: true });
     expect(roomsService.findEntitiesByIds).not.toHaveBeenCalled();
     expect(createBooking).not.toHaveBeenCalled();
@@ -234,7 +238,7 @@ describe('BookingsService', () => {
     roomsService.findEntitiesByIds.mockResolvedValue([room()]);
 
     await expect(
-      service.create(createInput({ adultCount: 1 }), idempotencyKey),
+      service.create(touristId, createInput({ adultCount: 1 }), idempotencyKey),
     ).rejects.toBeInstanceOf(BookingPolicyHotelMismatchException);
   });
 
@@ -243,6 +247,7 @@ describe('BookingsService', () => {
 
     await expect(
       service.create(
+        touristId,
         createInput({ checkInDate: '2026-12-03', checkOutDate: '2026-12-03' }),
         idempotencyKey,
       ),
@@ -256,6 +261,7 @@ describe('BookingsService', () => {
 
     await expect(
       service.create(
+        touristId,
         createInput({ adultCount: 2, childCount: 1 }),
         idempotencyKey,
       ),
@@ -268,7 +274,7 @@ describe('BookingsService', () => {
     ]);
 
     await expect(
-      service.create(createInput(), idempotencyKey),
+      service.create(touristId, createInput(), idempotencyKey),
     ).rejects.toBeInstanceOf(BookingRoomNotOperationalException);
   });
 
@@ -280,6 +286,17 @@ describe('BookingsService', () => {
     await expect(
       service.update(bookingId, { bookingStatus: BookingStatus.CONFIRMED }),
     ).rejects.toBeInstanceOf(InvalidBookingTransitionException);
+  });
+
+  it('does not expose a booking to another tourist', async () => {
+    repository.findById.mockResolvedValue(booking());
+
+    await expect(
+      service.findByIdForActor(bookingId, {
+        id: '99999999-9999-4999-8999-999999999999',
+        role: UserRole.TOURIST,
+      }),
+    ).rejects.toBeInstanceOf(AuthorizationDeniedException);
   });
 
   it('does not manually confirm an unpaid booking', async () => {

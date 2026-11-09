@@ -14,6 +14,8 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../authorization/decorators/roles.decorator';
+import { UserRole } from '../entities/user.entity';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -35,6 +37,7 @@ import { UserMapper } from '../mappers/user.mapper';
 import { UsersService } from '../services/users.service';
 
 @ApiTags('Users')
+@Roles(UserRole.ADMIN)
 @Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

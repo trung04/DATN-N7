@@ -2,6 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { HotelsService } from '../../hotels/services/hotels.service';
+import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+import { UserRole } from '../../users/entities/user.entity';
 import type { CancellationPolicyEntity } from '../../cancellation-policies/entities/cancellation-policy.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
@@ -83,10 +86,11 @@ export class BookingsService {
   ) {}
 
   async create(
+    touristId: string,
     input: CreateBookingRequest,
     idempotencyKey: string,
   ): Promise<CreatedBookingResult> {
-    const requestHash = this.fingerprintCreateRequest(input);
+    const requestHash = this.fingerprintCreateRequest(touristId, input);
     const replayedBooking = await this.repository.findByIdempotencyKey(
       idempotencyKey,
       requestHash,
@@ -148,7 +152,7 @@ export class BookingsService {
     return this.repository.create(
       {
         hotelId,
-        touristId: input.touristId,
+        touristId,
         bookingCode: this.codeGenerator.generate(),
         checkInDate: input.checkInDate,
         checkOutDate: input.checkOutDate,
@@ -195,9 +199,12 @@ export class BookingsService {
     );
   }
 
-  private fingerprintCreateRequest(input: CreateBookingRequest): string {
+  private fingerprintCreateRequest(
+    touristId: string,
+    input: CreateBookingRequest,
+  ): string {
     const canonicalRequest = {
-      touristId: input.touristId,
+      touristId,
       roomIds: [...input.roomIds].sort(),
       checkInDate: input.checkInDate,
       checkOutDate: input.checkOutDate,
@@ -239,9 +246,37 @@ export class BookingsService {
     });
   }
 
+  async findPageForActor(
+    input: ListBookingsRequest,
+    actor: AuthorizationActor,
+  ): Promise<BookingPage> {
+    if (actor.role === UserRole.ADMIN) return this.findPage(input);
+
+    if (actor.role === UserRole.HOTEL_OWNER && input.hotelId) {
+      await this.hotelsService.assertManagedBy(input.hotelId, actor);
+      const scoped = Object.assign(new ListBookingsRequest(), input);
+      scoped.touristId = undefined;
+      return this.findPage(scoped);
+    }
+
+    const scoped = Object.assign(new ListBookingsRequest(), input);
+    scoped.hotelId = undefined;
+    scoped.touristId = actor.id;
+    return this.findPage(scoped);
+  }
+
   async findById(id: string): Promise<BookingEntity> {
     const booking = await this.repository.findById(id);
     if (!booking) throw new BookingNotFoundException(id);
+    return booking;
+  }
+
+  async findByIdForActor(
+    id: string,
+    actor: AuthorizationActor,
+  ): Promise<BookingEntity> {
+    const booking = await this.findById(id);
+    await this.assertCanView(booking, actor);
     return booking;
   }
 
@@ -294,6 +329,27 @@ export class BookingsService {
     }
 
     return this.repository.save(booking);
+  }
+
+  async updateForActor(
+    id: string,
+    input: UpdateBookingRequest,
+    actor: AuthorizationActor,
+  ): Promise<BookingEntity> {
+    const booking = await this.findById(id);
+    this.assertCanModify(booking, actor);
+    return this.update(id, input);
+  }
+
+  async createVnpayPaymentForActor(
+    id: string,
+    input: CreateVnpayPaymentRequest,
+    customerIp: string,
+    actor: AuthorizationActor,
+  ): Promise<CreatedVnpayPayment> {
+    const booking = await this.findById(id);
+    this.assertCanModify(booking, actor);
+    return this.createVnpayPayment(id, input, customerIp);
   }
 
   async createVnpayPayment(
@@ -526,6 +582,29 @@ export class BookingsService {
     });
     if (!updated) throw new BookingNotFoundException(id);
     return updated;
+  }
+
+  private async assertCanView(
+    booking: BookingEntity,
+    actor: AuthorizationActor,
+  ): Promise<void> {
+    if (actor.role === UserRole.ADMIN || booking.touristId === actor.id) {
+      return;
+    }
+    if (actor.role === UserRole.HOTEL_OWNER) {
+      await this.hotelsService.assertManagedBy(booking.hotelId, actor);
+      return;
+    }
+    throw new AuthorizationDeniedException();
+  }
+
+  private assertCanModify(
+    booking: BookingEntity,
+    actor: AuthorizationActor,
+  ): void {
+    if (actor.role !== UserRole.ADMIN && booking.touristId !== actor.id) {
+      throw new AuthorizationDeniedException();
+    }
   }
 
   private async resolveCancellationPolicy(

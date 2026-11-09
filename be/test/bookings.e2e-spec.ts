@@ -18,6 +18,9 @@ import {
   IdempotencyKeyReusedException,
 } from '../src/modules/bookings/exceptions/booking.exceptions';
 import { BookingsService } from '../src/modules/bookings/services/bookings.service';
+import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
+import { UserRole } from '../src/modules/users/entities/user.entity';
+import type { NextFunction, Response } from 'express';
 
 const bookingId = '11111111-1111-4111-8111-111111111111';
 const hotelId = '22222222-2222-4222-8222-222222222222';
@@ -80,10 +83,10 @@ describe('Bookings API (e2e)', () => {
   let app: INestApplication<App>;
   const service = {
     create: jest.fn(),
-    findPage: jest.fn(),
-    findById: jest.fn(),
-    update: jest.fn(),
-    createVnpayPayment: jest.fn(),
+    findPageForActor: jest.fn(),
+    findByIdForActor: jest.fn(),
+    updateForActor: jest.fn(),
+    createVnpayPaymentForActor: jest.fn(),
     handleVnpayIpn: jest.fn(),
     getVnpayReturn: jest.fn(),
     settle: jest.fn(),
@@ -98,6 +101,19 @@ describe('Bookings API (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(
+      (
+        currentRequest: AuthenticatedRequest,
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        currentRequest.authUser = {
+          id: touristId,
+          role: UserRole.TOURIST,
+        } as never;
+        next();
+      },
+    );
     configureHttpApplication(app);
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
@@ -114,7 +130,6 @@ describe('Bookings API (e2e)', () => {
       .post('/api/v1/bookings')
       .set('Idempotency-Key', idempotencyKey)
       .send({
-        touristId,
         roomIds: [roomId],
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
@@ -141,6 +156,7 @@ describe('Bookings API (e2e)', () => {
       });
 
     expect(service.create).toHaveBeenCalledWith(
+      touristId,
       expect.objectContaining({
         guestName: 'Nguyen Van A',
         guestEmail: 'Guest@Example.com',
@@ -157,7 +173,6 @@ describe('Bookings API (e2e)', () => {
       .post('/api/v1/bookings')
       .set('Idempotency-Key', idempotencyKey)
       .send({
-        touristId,
         roomIds: [roomId],
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
@@ -179,6 +194,25 @@ describe('Bookings API (e2e)', () => {
       .expect(400);
   });
 
+  it('does not allow callers to create a booking for another tourist', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Idempotency-Key', idempotencyKey)
+      .send({
+        touristId: '99999999-9999-4999-8999-999999999999',
+        roomIds: [roomId],
+        checkInDate: '2026-12-01',
+        checkOutDate: '2026-12-03',
+        adultCount: 2,
+        childCount: 0,
+        guestName: 'Guest',
+        guestEmail: 'guest@example.com',
+        guestPhone: '0912345678',
+      })
+      .expect(400)
+      .expect(({ body }) => expect(body.code).toBe('VALIDATION_FAILED'));
+  });
+
   it('rejects reuse of a key with a different request body', async () => {
     service.create.mockRejectedValue(new IdempotencyKeyReusedException());
 
@@ -186,7 +220,6 @@ describe('Bookings API (e2e)', () => {
       .post('/api/v1/bookings')
       .set('Idempotency-Key', idempotencyKey)
       .send({
-        touristId,
         roomIds: [roomId],
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
@@ -207,7 +240,6 @@ describe('Bookings API (e2e)', () => {
       .post('/api/v1/bookings')
       .set('Idempotency-Key', idempotencyKey)
       .send({
-        touristId,
         roomIds: [roomId],
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
@@ -233,7 +265,7 @@ describe('Bookings API (e2e)', () => {
       paymentCreatedAt: new Date('2026-11-04T01:00:00.000Z'),
       paymentExpiresAt: new Date('2026-11-04T01:15:00.000Z'),
     });
-    service.createVnpayPayment.mockResolvedValue({
+    service.createVnpayPaymentForActor.mockResolvedValue({
       booking: pendingBooking,
       paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?signed=1',
     });
@@ -249,10 +281,11 @@ describe('Bookings API (e2e)', () => {
         expect(body.paymentUrl).toContain('sandbox.vnpayment.vn');
       });
 
-    expect(service.createVnpayPayment).toHaveBeenCalledWith(
+    expect(service.createVnpayPaymentForActor).toHaveBeenCalledWith(
       bookingId,
       expect.objectContaining({ locale: 'vn' }),
       expect.any(String),
+      expect.objectContaining({ id: touristId }),
     );
   });
 
@@ -283,7 +316,9 @@ describe('Bookings API (e2e)', () => {
   });
 
   it('maps a missing booking to problem details', async () => {
-    service.findById.mockRejectedValue(new BookingNotFoundException(bookingId));
+    service.findByIdForActor.mockRejectedValue(
+      new BookingNotFoundException(bookingId),
+    );
 
     await request(app.getHttpServer())
       .get(`/api/v1/bookings/${bookingId}`)
