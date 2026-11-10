@@ -1,6 +1,22 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios'
 import { DomainError } from '@/lib/errors'
+import type { Hotel, RoomType } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
+
+interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
+interface BackendHotel {
+  id: string; name: string; description: string | null; address: string
+  starRating: number | null; checkInTime: string
+}
+interface BackendRoom {
+  id: string; hotelId: string; maxOccupancy: number; pricePerNight: number
+  description: string | null; roomType: string
+  amenities: Array<{ id: string; code: string; name: string }>
+}
+interface BackendCancellationPolicy {
+  id: string; hotelId: string; cancellationWindow: number | null
+  cancellationFeeRate: number | null; description: string | null
+}
 
 const baseURL = import.meta.env.VITE_API_BASE_URL
 const client = axios.create({ baseURL, withCredentials: true, timeout: 15000, headers: { 'Content-Type': 'application/json' } })
@@ -10,16 +26,60 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
   try { return (await client.request<T>(config)).data }
   catch (error) {
     if (error instanceof AxiosError) {
-      const response = error.response?.data as { message?: string; code?: string } | undefined
-      throw new DomainError(response?.code ?? 'HTTP_ERROR', response?.message ?? (error.response ? 'Máy chủ trả về lỗi. Vui lòng thử lại.' : 'Không thể kết nối máy chủ.'), error.response?.status ?? 0)
+      const response = error.response?.data as { detail?: string; message?: string; code?: string } | undefined
+      throw new DomainError(response?.code ?? 'HTTP_ERROR', response?.detail ?? response?.message ?? (error.response ? 'Máy chủ trả về lỗi. Vui lòng thử lại.' : 'Không thể kết nối máy chủ.'), error.response?.status ?? 0)
     }
     throw error
   }
 }
 
-// The paths below are a proposed contract. No backend is bundled with this app.
+async function publicCatalog() {
+  const [hotelPage, roomPage, policyPage] = await Promise.all([
+    request<Page<BackendHotel>>({ method: 'GET', url: '/hotels', params: { page: 1, limit: 100 } }),
+    request<Page<BackendRoom>>({ method: 'GET', url: '/rooms', params: { page: 1, limit: 100 } }),
+    request<Page<BackendCancellationPolicy>>({ method: 'GET', url: '/cancellation-policies', params: { page: 1, limit: 100 } }),
+  ])
+  const rooms: RoomType[] = roomPage.data.map(room => ({
+    id: room.id,
+    hotelId: room.hotelId,
+    name: room.roomType,
+    description: room.description ?? '',
+    capacity: room.maxOccupancy,
+    area: 0,
+    bed: 'Chưa cập nhật',
+    basePrice: room.pricePerNight,
+    amenities: room.amenities.map(amenity => amenity.name),
+  }))
+  const hotels: Hotel[] = hotelPage.data.map(hotel => {
+    const address = hotel.address.split(',').map(part => part.trim()).filter(Boolean)
+    const hotelRooms = rooms.filter(room => room.hotelId === hotel.id)
+    const policy = policyPage.data.find(item => item.hotelId === hotel.id)
+    return {
+      id: hotel.id,
+      name: hotel.name,
+      city: address.at(-1) ?? hotel.address,
+      area: address.length >= 3 ? address.at(-2) ?? '' : address.at(-1) ?? '',
+      address: hotel.address,
+      description: hotel.description ?? '',
+      stars: hotel.starRating ?? 0,
+      amenities: [...new Set(hotelRooms.flatMap(room => room.amenities))],
+      partnerId: '',
+      cancellationPolicy: policy?.description ?? 'Chưa có chính sách hủy.',
+      cancellationTerms: {
+        freeUntilHours: policy?.cancellationWindow ?? 0,
+        lateFeeRate: (policy?.cancellationFeeRate ?? 0) / 100,
+        checkInHour: Number.parseInt(hotel.checkInTime.slice(0, 2), 10),
+      },
+    }
+  })
+  return {
+    destinations: [], hotels, rooms, inventory: [], availability: [],
+    restaurants: [], reviews: [], categories: [], services: [],
+  }
+}
+
 export const api: MockRepository = {
-  publicData: () => request({ method: 'GET', url: '/catalog' }),
+  publicData: publicCatalog,
   touristData: userId => request({ method: 'GET', url: '/users/' + userId + '/overview' }),
   partnerData: userId => request({ method: 'GET', url: '/partners/by-user/' + userId + '/overview' }),
   adminData: () => request({ method: 'GET', url: '/admin/overview' }),
