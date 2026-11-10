@@ -1,23 +1,19 @@
 from app.core.config import env
-from .schemas import ImageEmbeddingRequest, ImageEmbeddingResponse, ImageSearchRequest
+from .schemas import ImageEmbeddingResponse
 """CLIP image embeddings and a separate Qdrant image-search collection."""
 import base64
 import binascii
 import io
 import logging
-import os
 import threading
 import uuid
 import warnings
 
 import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import Field, model_validator
+from fastapi import HTTPException
 from qdrant_client import models
 
-from app.core.auth import authorize
-from app.modules.recommendation.schemas import Contract, Identifier, Text
 
 logger = logging.getLogger(__name__)
 

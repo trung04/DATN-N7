@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
 from app.main import create_app
-from app.modules.recommendation.schemas import InteractionData, RecommendationRequest
-from app.modules.recommendation.hybrid_service import RankingConfig, aggregate_events
+from app.modules.recommendation.schemas import RecommendationRequest
+from app.core.config import RankingConfig
 
 
 class FakeEmbedding:
@@ -51,7 +51,7 @@ class APITests(unittest.TestCase):
         self.env.start()
         self.app = create_app(embedding=self.embedding, qdrant=self.qdrant,
             db_path=self.temp.name + "/db.sqlite", ranking_config=getattr(
-                self, "ranking_config", RankingConfig(mode="hybrid", diversity_penalty=0)))
+                self, "ranking_config", RankingConfig()))
         self.client = TestClient(self.app)
         self.client.__enter__()
 
@@ -67,14 +67,10 @@ class APITests(unittest.TestCase):
         return r.json()
 
     def recommend(self, **kwargs):
-        r = self.client.post("/api/v1/recommendations", json={"user_id": "u", "exploration": False, **kwargs})
+        r = self.client.post("/api/v1/recommendations", json={"user_id": "u", **kwargs})
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()
 
-    def event(self, pid, kind="favorite", uid="u", **kwargs):
-        return self.client.post("/api/v1/interactions", json={
-            "event_id": f"{uid}-{pid}-{kind}", "user_id": uid, "place_id": pid,
-            "interaction_type": kind, "occurred_at": datetime.now(timezone.utc).isoformat(), **kwargs})
 
     def test_existing_embeddings_and_health(self):
         self.assertEqual(self.client.get("/health").status_code, 200)
@@ -124,7 +120,7 @@ class APITests(unittest.TestCase):
 
     def test_backend_embedding_pending_index_and_auth(self):
         with patch.object(self.qdrant, "upsert", side_effect=RuntimeError("offline")):
-            with self.assertLogs("app.modules.recommendation.hybrid_service", level="ERROR"):
+            with self.assertLogs("app.modules.recommendation.service", level="ERROR"):
                 response = self.client.post("/api/v1/embeddings/place", json=place("a"))
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["indexed"])
@@ -137,9 +133,8 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.recommend()["total"], 0)
         self.seed(place("a"))
         result = self.recommend()
-        self.assertEqual(result["strategy"], "quality_context_fallback")
+        self.assertEqual(result["strategy"], "rating_fallback")
         self.assertIsNone(result["recommendations"][0]["content_score"])
-        self.assertIsNone(result["recommendations"][0]["collaborative_score"])
 
     def test_hard_filters_not_relaxed(self):
         self.seed(place("a"), place("b", city="Huế"), place("c", place_type="Hotel"))
@@ -162,50 +157,12 @@ class APITests(unittest.TestCase):
         self.client.put("/api/v1/users/u/preferences", json={"preferences": ["núi"]})
         self.assertEqual(self.recommend()["recommendations"][0]["place_id"], "b")
         self.assertEqual(self.recommend(preferences=["biển"])["recommendations"][0]["place_id"], "a")
-        self.assertEqual(self.recommend(preferences=[])["strategy"], "quality_context_fallback")
+        self.assertEqual(self.recommend(preferences=[])["strategy"], "rating_fallback")
 
-    def test_event_idempotency_conflict_and_missing_place(self):
-        self.seed(place("a"))
-        body = {"event_id": "e", "user_id": "u", "place_id": "a", "interaction_type": "click",
-                "occurred_at": datetime.now(timezone.utc).isoformat()}
-        self.assertTrue(self.client.post("/api/v1/interactions", json=body).json()["created"])
-        self.assertFalse(self.client.post("/api/v1/interactions", json=body).json()["created"])
-        self.assertEqual(self.client.post("/api/v1/interactions", json={**body, "interaction_type": "booking"}).status_code, 409)
-        self.assertEqual(self.event("missing").status_code, 404)
-        self.assertEqual(len(self.app.state.recommendation.store.events("u")), 1)
 
-    def test_concurrent_duplicate_events(self):
-        from concurrent.futures import ThreadPoolExecutor
-        self.seed(place("a"))
-        event = InteractionData(event_id="concurrent", user_id="u", place_id="a", interaction_type="click",
-                                occurred_at=datetime.now(timezone.utc))
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda _: self.app.state.recommendation.store.add_event(event), range(8)))
-        self.assertEqual(sum(results), 1)
 
-    def test_feedback_updates_profile_and_dismiss_excludes(self):
-        self.seed(place("a", tags=["biển"]), place("b", tags=["núi"]))
-        self.assertEqual(self.event("b").status_code, 200)
-        self.assertEqual(self.recommend()["recommendations"][0]["place_id"], "b")
-        self.event("b", "dismiss")
-        self.assertEqual([x["place_id"] for x in self.recommend()["recommendations"]], ["a"])
 
-    def test_impression_link_validation(self):
-        self.seed(place("a"))
-        result = self.recommend()
-        self.assertEqual(self.client.get("/api/v1/recommendations/" + result["request_id"]).json(), result)
-        self.assertEqual(self.event("a", request_id=result["request_id"]).status_code, 200)
-        self.assertEqual(self.event("a", uid="other", request_id=result["request_id"]).status_code, 409)
 
-    def test_visible_impressions_idempotent_and_validated(self):
-        self.seed(place("a"), place("b"))
-        result = self.recommend(limit=1)
-        body = {"event_id": "visible-1", "request_id": result["request_id"], "user_id": "u",
-                "place_ids": [result["recommendations"][0]["place_id"]],
-                "occurred_at": datetime.now(timezone.utc).isoformat()}
-        self.assertTrue(self.client.post("/api/v1/impressions", json=body).json()["created"])
-        self.assertFalse(self.client.post("/api/v1/impressions", json=body).json()["created"])
-        self.assertEqual(self.client.post("/api/v1/impressions", json={**body, "event_id": "bad", "place_ids": ["not-shown"]}).status_code, 409)
 
     def test_catalog_pagination_and_soft_deactivation(self):
         self.seed(place("a"), place("b"), place("c", active=False))
@@ -259,22 +216,7 @@ class APITests(unittest.TestCase):
         self.assertGreater(next(x["quality_score"] for x in items if x["place_id"] == "b"),
                            next(x["quality_score"] for x in items if x["place_id"] == "a"))
 
-    def test_exploration_respects_filters_and_no_duplicates(self):
-        self.seed(*[place(str(i)) for i in range(15)], place("outside", city="Huế"))
-        result = self.recommend(city="Đà Nẵng", limit=10, exploration=True)
-        self.assertEqual(result["total"], 10)
-        self.assertEqual(len({x["place_id"] for x in result["recommendations"]}), 10)
-        self.assertTrue(any(x["is_exploration"] for x in result["recommendations"]))
-        self.assertTrue(all(x["city"] == "Đà Nẵng" for x in result["recommendations"]))
 
-    def test_collaborative_activates_only_with_support(self):
-        self.seed(place("a"), place("b"), place("c"))
-        self.event("a", uid="u")
-        self.assertIsNone(self.recommend()["recommendations"][0]["collaborative_score"])
-        for uid in ["v", "w"]:
-            self.event("a", uid=uid)
-            self.event("b", uid=uid)
-        self.assertEqual(self.recommend()["strategy"], "adaptive_hybrid")
 
     def test_api_key(self):
         with patch.dict(os.environ, {"RECOMMENDATION_API_KEY": "secret-test"}):
@@ -283,42 +225,17 @@ class APITests(unittest.TestCase):
 
     def test_database_survives_restart(self):
         self.seed(place("a"))
-        self.event("a")
         from app.database.sqlite import Store
         restarted = Store(self.temp.name + "/db.sqlite")
         self.assertEqual(len(restarted.places()), 1)
-        self.assertEqual(len(restarted.events()), 1)
+        self.assertEqual(restarted.place("a")["id"], "a")
 
     def test_invalid_schema(self):
         self.assertEqual(self.client.post("/api/v1/places/batch", json={"places": [place("a", rating=6)]}).status_code, 422)
         self.seed(place("a"))
-        self.assertEqual(self.event("a", "rating").status_code, 422)
-        future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-        self.assertEqual(self.event("a", occurred_at=future).status_code, 422)
         self.assertEqual(self.client.post("/api/v1/recommendations", json={"user_id": " ", "limit": 0}).status_code, 422)
 
 
-class MathTests(unittest.TestCase):
-    def test_metrics_known_ranking(self):
-        from app.modules.recommendation.evaluation import ranking_metrics
-        values = ranking_metrics(["a", "b", "c"], {"a", "c"}, 3)
-        self.assertEqual(values["recall"], 1)
-        self.assertAlmostEqual(values["precision"], 2/3)
-        self.assertGreater(values["ndcg"], 0.9)
-        self.assertEqual(ranking_metrics(["a"], {"b"}, 1)["ndcg"], 0)
-
-    def test_decay_daily_cap_and_unfavorite(self):
-        now = datetime.now(timezone.utc)
-        def event(i, kind="click", dt=now):
-            return {"event_id": str(i), "user_id": "u", "place_id": "p", "interaction_type": kind, "occurred_at": dt.isoformat()}
-        recent, _ = aggregate_events([event(i) for i in range(100)], now, 90)
-        capped, _ = aggregate_events([event(i) for i in range(3)], now, 90)
-        self.assertEqual(recent, capped)
-        old, _ = aggregate_events([event(0, dt=now-timedelta(days=90))], now, 90)
-        fresh, _ = aggregate_events([event(0)], now, 90)
-        self.assertAlmostEqual(old[("u", "p")], fresh[("u", "p")]/2)
-        result, _ = aggregate_events([event(0, "favorite", now-timedelta(seconds=1)), event(1, "unfavorite")], now, 90)
-        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":

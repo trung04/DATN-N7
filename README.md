@@ -38,7 +38,7 @@ Session đăng nhập dùng `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS` và `FRO
 
 PostgreSQL và Redis được publish trên loopback, mặc định lần lượt 5432 và 6379. Dịch vụ backend trong container dùng tên `postgres` và `redis`; chạy trên host dùng `localhost`. Redis cache dùng namespace `tourism:cache`, session dùng `tourism:auth`.
 
-Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/RECOMMENDATION_CONTENT_RATING.md).
+Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/README.md#recommendation).
 
 Frontend upstream thiếu source, index.html, cấu hình TypeScript và lockfile nên chưa build được. Frontend nằm trong profile tùy chọn `frontend`, không bật mặc định; AI demo vẫn sử dụng được.
 
@@ -71,6 +71,6 @@ Sau khi sửa mã, chạy lại `docker compose up -d --build`; cấu hình khô
 
 Backend dùng Node.js 24. Trong `be/`: `npm ci`, `npm run lint`, `npm run build`, `npm test -- --runInBand`, `npm run test:e2e -- --runInBand`. Đọc [AGENTS](be/AGENTS.md), [kiến trúc](be/rules/architecture.md), [REST](be/rules/rest-api.md) và [skill AI integration](be/skills/ai-service-integration/SKILL.md) trước khi thêm module.
 
-AI: cài requirements.txt và requirements-dev.txt rồi từ `ai/` chạy `python -m unittest discover -s tests -q`. Xem [Recommendation](ai/RECOMMENDATION.md), [search](ai/PLACE_SEARCH.md), [CLIP](ai/IMAGE_SEARCH.md), [trip planner](ai/TRIP_PLANNER.md). Hợp đồng [OpenAPI](ai/contracts/openapi.json); runtime tại `/openapi.json`.
+AI: cài requirements.txt và requirements-dev.txt rồi từ `ai/` chạy `python -m unittest discover -s tests -q`. Xem [Recommendation](ai/README.md#recommendation), [search](ai/README.md#tim-dia-diem), [CLIP](ai/README.md#tim-anh), [trip planner](ai/README.md#lich-trinh). Hợp đồng [OpenAPI](ai/contracts/openapi.json); runtime tại `/openapi.json`.
 
 Root `.env` được bỏ khỏi Git index trong nhánh tích hợp, chỉ commit template placeholder. Việc này không xóa bí mật đã có trong lịch sử upstream; khóa từng chia sẻ cần được thay tại nơi cấp khóa.

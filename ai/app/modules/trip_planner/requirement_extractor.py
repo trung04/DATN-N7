@@ -1,13 +1,10 @@
 """Rule extraction plus an opt-in Gemini structured-output adapter (no place generation)."""
 import json
-import os
 import re
 from typing import Literal
 from datetime import date
-from urllib.request import Request, urlopen
-from fastapi import HTTPException
 from pydantic import Field
-from app.modules.semantic_search.text_search import folded, negative_before
+from app.modules.semantic_search.text_utils import folded, negative_before
 from app.modules.recommendation.schemas import Contract, Text
 from .schemas import TripRequest
 

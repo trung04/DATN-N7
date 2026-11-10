@@ -1,11 +1,7 @@
 from app.core.auth import authorize
 from app.api.dependencies import service
-import os
-import secrets
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from .schemas import (Identifier, ImpressionData, InteractionData, PlaceBatch, PlaceData,
-                      PlaceEmbeddingResponse, PlaceEmbeddingBatchResponse, RecommendationRequest,
-                      RecommendationResponse, ReviewBatch, UserPreferences)
+from fastapi import APIRouter, Depends, Query
+from .schemas import Identifier, RecommendationRequest, RecommendationResponse, UserPreferences
 
 
 router = APIRouter(prefix="/api/v1", tags=["Recommendation"], dependencies=[Depends(authorize)])
@@ -22,26 +18,14 @@ def get_preferences(user_id: Identifier, svc=Depends(service)):
     return {"user_id": user_id, "preferences": svc.store.preferences(user_id)}
 
 
-@router.post("/interactions")
-def interaction(body: InteractionData, svc=Depends(service)):
-    created = svc.store.add_event(body)
-    return {"event_id": body.event_id, "created": created}
-
-
-@router.post("/impressions")
-def visible_impression(body: ImpressionData, svc=Depends(service)):
-    """Client confirms which delivered items actually became visible."""
-    return {"event_id": body.event_id, "created": svc.store.add_exposure(body)}
-
-
 @router.post("/recommendations", response_model=RecommendationResponse)
 def recommendations(body: RecommendationRequest, svc=Depends(service)):
     return svc.recommend(body)
 
 
 @router.get("/recommendations/{request_id}", response_model=RecommendationResponse)
-def impression(request_id: Identifier, svc=Depends(service)):
-    return svc.store.impression(request_id)
+def get_recommendation(request_id: Identifier, svc=Depends(service)):
+    return svc.store.recommendation(request_id)
 
 
 @router.post("/recommendation/reindex")

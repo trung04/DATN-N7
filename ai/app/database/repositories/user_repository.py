@@ -1,5 +1,4 @@
 import json
-from app.core.exceptions import Conflict, NotFound
 
 class UserRepository:
     def preferences(self, user_id):

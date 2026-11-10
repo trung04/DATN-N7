@@ -1,10 +1,7 @@
 import json
-from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Request
-from app.modules.semantic_search.text_search import folded
 from app.core.auth import authorize
 from app.modules.recommendation.schemas import Identifier
-from app.database.sqlite import Conflict
 from .schemas import TripRequest, TripResponse, DayEdit, ExtractRequest, ChatRequest, RouteMatrixRequest
 from .itinerary_optimizer import PlanningEngine
 from app.database.repositories.trip_repository import TripRepository

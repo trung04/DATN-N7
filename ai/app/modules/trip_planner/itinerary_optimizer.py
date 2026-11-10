@@ -3,14 +3,10 @@ from .itinerary_formatter import format_plan
 """Greedy insertion + constrained 2-opt. Heuristic, not globally optimal or real-time traffic."""
 import copy
 import json
-import math
-from datetime import datetime, timedelta, timezone
 
-from app.modules.semantic_search.text_search import PlaceSearchService, PlaceSearchRequest, SearchFilters, folded
-from app.modules.recommendation.schemas import RecommendationRequest
-from app.database.sqlite import Conflict
+from app.core.exceptions import Conflict
 from .schedule_validator import schedule_route
-from .schemas import minutes, TripRequest
+from .schemas import TripRequest
 from .route_matrix import RouteMatrix
 
 

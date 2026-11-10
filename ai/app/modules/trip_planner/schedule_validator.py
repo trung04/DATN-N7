@@ -1,5 +1,5 @@
 import re
-from app.modules.semantic_search.text_search import folded
+from app.modules.semantic_search.text_utils import folded
 from .schemas import minutes
 
 WEEKDAYS = ("mon","tue","wed","thu","fri","sat","sun")

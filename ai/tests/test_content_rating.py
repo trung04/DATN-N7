@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from app.core.config import RankingConfig
-from app.modules.recommendation.hybrid_service import RecommendationService
+from app.modules.recommendation.service import RecommendationService
 from tests import test_recommendation as fixtures
 from tests import test_trip_planner as planner_fixtures
 
@@ -13,7 +13,6 @@ from tests import test_trip_planner as planner_fixtures
 class ContentRatingTests(unittest.TestCase):
     seed = fixtures.APITests.seed
     recommend = fixtures.APITests.recommend
-    event = fixtures.APITests.event
 
     def setUp(self):
         self.ranking_config = RankingConfig()
@@ -21,16 +20,13 @@ class ContentRatingTests(unittest.TestCase):
 
     tearDown = fixtures.APITests.tearDown
 
-    def test_active_default_and_artifact_is_not_loaded(self):
-        self.assertEqual(self.ranking_config.mode, "content_rating")
-        with patch.dict(os.environ, {"REC_MODE": "content_rating", "REC_ITEM_KNN_MODEL_PATH": "/missing.json"}):
-            svc = RecommendationService(self.app.state.recommendation.store, self.embedding, self.qdrant,
-                                        config=RankingConfig.from_env())
-        self.assertIsNone(svc.trained_collaborative)
+    def test_active_config_and_validation(self):
+        svc = RecommendationService(self.app.state.recommendation.store, self.embedding, self.qdrant,
+                                    config=RankingConfig())
         self.assertTrue(svc.version.startswith("content-rating-v1-"))
-        self.assertEqual(svc.status()["collaborative_source"], "disabled")
-        self.assertAlmostEqual(svc.status()["active_ranking_config"]["content_weight"], .75)
-        with patch.dict(os.environ, {"REC_MODE": "typo"}):
+        self.assertEqual(svc.status()["mode"], "content_rating")
+        self.assertAlmostEqual(svc.status()["ranking_config"]["content_weight"], .75)
+        with patch.dict(os.environ, {"REC_QUALITY_WEIGHT": "0"}):
             with self.assertRaises(ValueError):
                 RankingConfig.from_env()
 
@@ -44,7 +40,7 @@ class ContentRatingTests(unittest.TestCase):
             self.assertAlmostEqual(item["effective_weights"]["content"], .75)
             self.assertAlmostEqual(item["effective_weights"]["quality"], .25)
             self.assertAlmostEqual(item["score"], .75 * (item["content_score"] + 1) / 2 + .25 * item["quality_score"])
-            self.assertIsNone(item["collaborative_score"])
+            self.assertNotIn("collaborative_score", item)
             self.assertEqual(item["rating"], 4.5)
             self.assertEqual(item["review_count"], 100)
 
@@ -61,20 +57,42 @@ class ContentRatingTests(unittest.TestCase):
             self.assertEqual(item["effective_weights"], {"quality": 1})
             self.assertEqual(item["score"], item["quality_score"])
 
-    def test_behavior_has_no_influence_and_is_not_read(self):
+    def test_legacy_behavior_is_untouched_and_does_not_affect_ranking(self):
         self.seed(fixtures.place("a"), fixtures.place("b"))
         before = self.recommend(query="biển")
-        self.assertEqual(self.event("a", "dismiss").status_code, 200)
-        self.assertEqual(self.event("b", "favorite").status_code, 200)
-        svc = self.app.state.recommendation
-        with patch.object(svc.store, "events", side_effect=AssertionError("must not read behavior")), \
-                patch.object(svc.store, "recent_exposures", side_effect=AssertionError("must not read exposures")), \
-                patch.object(svc, "_collaborative", side_effect=AssertionError("must not run ItemKNN")):
-            after = self.recommend(query="biển", exclude_seen=True, exploration=True)
+        store = self.app.state.recommendation.store
+        with store.connection() as db:
+            db.execute("CREATE TABLE events (id TEXT, data TEXT)")
+            db.execute("CREATE TABLE exposures (id TEXT, data TEXT)")
+            db.execute("INSERT INTO events VALUES ('old', 'dismiss a')")
+            db.execute("INSERT INTO exposures VALUES ('old', 'a')")
+        after = self.recommend(query="biển")
         self.assertEqual(before["recommendations"], after["recommendations"])
-        self.assertFalse(after["diagnostics"]["history_used"])
-        self.assertEqual(len(after["warnings"]), 2)
-        self.assertTrue(all(not p["is_exploration"] and p["repeat_penalty"] == 0 for p in after["recommendations"]))
+        with store.connection() as db:
+            self.assertEqual(db.execute("SELECT data FROM events").fetchone()[0], "dismiss a")
+            self.assertEqual(db.execute("SELECT data FROM exposures").fetchone()[0], "a")
+
+    def test_retired_behavior_contract_is_unavailable(self):
+        for route in ("interactions", "impressions"):
+            self.assertEqual(self.client.post("/api/v1/" + route, json={}).status_code, 404)
+        for field in ("exclude_seen", "exploration"):
+            response = self.client.post("/api/v1/recommendations", json={"user_id": "u", field: True})
+            self.assertEqual(response.status_code, 422, response.text)
+
+    def test_saved_legacy_result_remains_readable(self):
+        self.seed(fixtures.place("a"))
+        result = self.recommend(query="biển")
+        result["recommendations"][0].update(collaborative_score=None, distance_score=None,
+                                            repeat_penalty=0, is_exploration=False)
+        store = self.app.state.recommendation.store
+        with store.connection() as db:
+            db.execute("UPDATE impressions SET data=? WHERE id=?", (json.dumps(result), result["request_id"]))
+        response = self.client.get("/api/v1/recommendations/" + result["request_id"])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn("collaborative_score", response.json()["recommendations"][0])
+        with store.connection() as db:
+            original = json.loads(db.execute("SELECT data FROM impressions WHERE id=?", (result["request_id"],)).fetchone()[0])
+        self.assertIn("collaborative_score", original["recommendations"][0])
 
     def test_explicit_preferences_and_request_override(self):
         self.seed(fixtures.place("sea", description="biển " * 20),
@@ -90,7 +108,7 @@ class ContentRatingTests(unittest.TestCase):
         result = self.recommend(query="biển", city="Đà Nẵng", latitude=16.05, longitude=108.2)
         self.assertEqual([p["place_id"] for p in result["recommendations"]], ["a", "z"])
         self.assertEqual(result["recommendations"][0]["score"], result["recommendations"][1]["score"])
-        self.assertTrue(all(p["distance_score"] is None for p in result["recommendations"]))
+        self.assertTrue(all("distance_score" not in p for p in result["recommendations"]))
         nearby = self.recommend(query="biển", city="Đà Nẵng", latitude=16.05, longitude=108.2, radius_km=1)
         self.assertEqual([p["place_id"] for p in nearby["recommendations"]], ["z"])
         self.assertEqual(self.recommend(city="Đà Nẵng", exclude_place_ids=["a", "z"])["total"], 0)
@@ -130,8 +148,8 @@ class ContentRatingTests(unittest.TestCase):
     def test_dedup_and_repeat_requests_are_deterministic(self):
         self.seed(fixtures.place("a", name="Cùng tên"), fixtures.place("b", name="Cùng tên"),
                   fixtures.place("c", name="Tên khác"))
-        first = self.recommend(query="biển", exploration=True)
-        second = self.recommend(query="biển", exploration=True)
+        first = self.recommend(query="biển")
+        second = self.recommend(query="biển")
         self.assertEqual(first["total"], 2)
         self.assertEqual(first["recommendations"], second["recommendations"])
 

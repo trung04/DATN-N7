@@ -81,10 +81,10 @@ class PlaceSearchTests(unittest.TestCase):
         self.assertFalse({r["place_id"] for r in first["results"]} & {r["place_id"] for r in second["results"]})
         self.assertEqual(first["total"],12)
 
-    def test_does_not_read_history_or_log_recommendation(self):
+    def test_search_does_not_run_or_log_recommendation(self):
         self.seed(place("a"))
         svc=self.client.app.state.recommendation
-        with patch.object(svc.store,"events",side_effect=AssertionError("Search must not read events")):
+        with patch.object(svc,"recommend",side_effect=AssertionError("Search must not run recommendation")):
             self.search("biển")
         with svc.store.connection() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM impressions").fetchone()[0],0)

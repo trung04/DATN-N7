@@ -6,7 +6,7 @@ from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.exceptions import install_exception_handlers
 from app.database.sqlite import Store
-from app.modules.recommendation.hybrid_service import RecommendationService
+from app.modules.recommendation.service import RecommendationService
 from app.modules.semantic_search.image_search import ClipEmbeddingService,ImageSearchService
 from app.api.router import router
 

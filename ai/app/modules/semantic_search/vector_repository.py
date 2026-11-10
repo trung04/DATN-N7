@@ -1,6 +1,5 @@
 """Named-vector Qdrant adapter; never initializes a second embedding model."""
 import uuid
-import numpy as np
 from qdrant_client import models
 
 

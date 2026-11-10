@@ -1,5 +1,6 @@
 import json
-from app.modules.semantic_search.text_search import PlaceSearchService, PlaceSearchRequest, SearchFilters, folded
+from app.modules.semantic_search.schemas import PlaceSearchRequest, SearchFilters
+from app.modules.semantic_search.text_utils import folded
 from app.modules.recommendation.schemas import RecommendationRequest
 from .candidate_ranker import rank_candidate
 from .preference_analyzer import PreferenceAnalyzer
@@ -27,7 +28,7 @@ class CandidateGenerator:
             search = semantic_search(self.rec,PlaceSearchRequest(query=query, infer_filters=False,
                 filters=SearchFilters(city=req.city,place_type=kind,exclude_place_ids=list(excluded)),limit=80))
             recommended = recommend(self.rec,RecommendationRequest(user_id=req.user_id,city=req.city,
-                place_type=kind,preferences=req.preferences,query=query,limit=80,exploration=False,
+                place_type=kind,preferences=req.preferences,query=query,limit=80,
                 exclude_place_ids=list(excluded)))
             rec_scores = {p["place_id"]:p["score"] for p in recommended["recommendations"]}
             for rank, result in enumerate(search["results"],1):

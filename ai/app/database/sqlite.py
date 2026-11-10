@@ -1,12 +1,11 @@
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
-from app.core.exceptions import Conflict, NotFound
 from .repositories.place_repository import PlaceRepository
-from .repositories.interaction_repository import InteractionRepository
+from .repositories.recommendation_repository import RecommendationRepository
 from .repositories.user_repository import UserRepository
 
-class Store(PlaceRepository, InteractionRepository, UserRepository):
+class Store(PlaceRepository, RecommendationRepository, UserRepository):
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = str(path)
@@ -20,14 +19,8 @@ class Store(PlaceRepository, InteractionRepository, UserRepository):
                     id TEXT PRIMARY KEY, place_id TEXT NOT NULL REFERENCES places(id), data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS review_place ON reviews(place_id);
                 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, preferences TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS events (
-                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, place_id TEXT NOT NULL REFERENCES places(id),
-                    occurred_at TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE INDEX IF NOT EXISTS event_user_time ON events(user_id, occurred_at);
                 CREATE TABLE IF NOT EXISTS impressions (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, occurred_at TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS exposures (
-                    id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES impressions(id), data TEXT NOT NULL);
             """)
 
     @contextmanager

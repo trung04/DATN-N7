@@ -8,60 +8,43 @@ from tests import test_recommendation as fixtures
 place=fixtures.place
 from app.modules.recommendation.profiles import InterestProfile
 from app.modules.recommendation.place_document import place_document
-from app.modules.recommendation.ranking import score_candidate
 from app.core.config import RankingConfig
 
 class ProfileTests(unittest.TestCase):
     def test_distinct_tastes_do_not_collapse_to_average(self):
-        profile=InterestProfile([np.array([1.,0]),np.array([0.,1])],[.5,.5],confidence=1)
+        profile=InterestProfile([np.array([1.,0]),np.array([0.,1])],[.5,.5])
         self.assertEqual(profile.score(np.array([1.,0])),1)
         self.assertEqual(profile.score(np.array([0.,1])),1)
         self.assertLess(profile.score(np.array([.707,.707])),1)
 
     def test_query_takes_priority(self):
-        p=InterestProfile([np.array([1.,0])],[1],np.array([0.,1]),1)
+        p=InterestProfile([np.array([1.,0])],[1],np.array([0.,1]))
         self.assertGreater(p.score(np.array([0.,1])),p.score(np.array([1.,0])))
 
     def test_one_weak_interest_does_not_outvote_declared_preference(self):
-        p=InterestProfile([np.array([1.,0]),np.array([0.,1])],[.95,.05],confidence=1)
+        p=InterestProfile([np.array([1.,0]),np.array([0.,1])],[.95,.05])
         self.assertGreater(p.score(np.array([1.,0])),p.score(np.array([0.,1])))
 
-    def test_missing_signals_are_not_zero_quality_and_weights_sum_to_one(self):
-        score,weights,penalty=score_candidate(None,.8,None,None,0,RankingConfig())
-        self.assertEqual(score,.8);self.assertEqual(weights,{'quality':1});self.assertEqual(penalty,0)
-        strong=score_candidate(.9,.3,None,None,1,RankingConfig())[0]
-        weak=score_candidate(.9,.3,None,None,.01,RankingConfig())[0]
-        self.assertGreater(strong,weak)
 
     def test_reviews_cannot_establish_facilities(self):
         text=place_document(place('p',review_summary='Hồ bơi rất bẩn',description='Bảo tàng văn hóa',amenities=[]))
         self.assertNotIn('hồ bơi',text.casefold());self.assertIn('Bảo tàng',text)
 
-class V2APITests(unittest.TestCase):
+class ExplicitProfileAPITests(unittest.TestCase):
     setUp=fixtures.APITests.setUp
     tearDown=fixtures.APITests.tearDown
     seed=fixtures.APITests.seed
     recommend=fixtures.APITests.recommend
-    event=fixtures.APITests.event
 
     def test_multiple_interests_and_model_version(self):
         self.seed(place('sea'),place('mountain',tags=['núi']))
         result=self.recommend(preferences=['biển','núi'])
         self.assertEqual(result['diagnostics']['interest_groups'],2)
         self.assertFalse(result['diagnostics']['score_is_probability'])
-        self.assertTrue(result['model_version'].startswith('hybrid-v2-'))
+        self.assertTrue(result['model_version'].startswith('content-rating-v1-'))
         for item in result['recommendations']:
             self.assertAlmostEqual(sum(item['effective_weights'].values()),1)
 
-    def test_exposure_changes_rank_but_request_delivery_does_not(self):
-        self.seed(place('a'),place('b'))
-        first=self.recommend(limit=1)
-        self.assertEqual(first['recommendations'][0]['place_id'],'a')
-        self.assertEqual(self.recommend(limit=1)['recommendations'][0]['place_id'],'a')
-        response=self.client.post('/api/v1/impressions',json={'event_id':'visible','request_id':first['request_id'],
-            'user_id':'u','place_ids':['a'],'occurred_at':datetime.now(timezone.utc).isoformat()})
-        self.assertEqual(response.status_code,200,response.text)
-        self.assertEqual(self.recommend(limit=1)['recommendations'][0]['place_id'],'b')
 
     def test_unapproved_review_is_audited_without_affecting_vector(self):
         self.seed(place('a'));svc=self.app.state.recommendation
@@ -89,11 +72,6 @@ class V2APITests(unittest.TestCase):
         self.assertNotIn('review_summary',point.payload)
         self.assertIn('facts-v2',point.payload['model'])
 
-    def test_sparse_history_has_lower_confidence_than_explicit_preferences(self):
-        self.seed(place('a'));self.event('a')
-        inferred=self.recommend()['diagnostics']['profile_confidence']
-        self.assertGreater(inferred,0);self.assertLess(inferred,1)
-        self.assertEqual(self.recommend(preferences=['biển'])['diagnostics']['profile_confidence'],1)
 
     def test_all_profile_groups_query_qdrant_and_outage_falls_back(self):
         self.seed(place('a'),place('b',tags=['núi']))
@@ -104,10 +82,6 @@ class V2APITests(unittest.TestCase):
             r=self.recommend(preferences=['biển','núi'])
         self.assertEqual(r['retrieval'],'local_exact');self.assertEqual(r['total'],2)
 
-    def test_supported_trained_model_does_not_need_live_community_copy(self):
-        self.seed(place('a'),place('b'));self.event('a')
-        self.app.state.recommendation.trained_collaborative=SimpleNamespace(artifact={'users':10},score=lambda a,u:{'b':.5})
-        self.assertTrue(self.recommend()['diagnostics']['collaborative_active'])
 
     def test_retrieval_applies_category_budget_family_and_radius(self):
         from app.modules.recommendation.schemas import RecommendationRequest
@@ -124,11 +98,6 @@ class V2APITests(unittest.TestCase):
         req=req.model_copy(update={'exclude_place_ids':['a']})
         self.assertEqual(svc.content.candidates(np.array(self.embedding.embed_text('biển')),req,svc.model,100),[])
 
-    def test_collaborative_ablation_disables_retrieval_and_scoring(self):
-        self.seed(place('a'),place('b'));self.event('a')
-        svc=self.app.state.recommendation;svc.config=RankingConfig(collaborative_weight=0)
-        svc.trained_collaborative=SimpleNamespace(artifact={'users':10},score=lambda a,u:(_ for _ in ()).throw(AssertionError('must be disabled')))
-        self.assertFalse(self.recommend()['diagnostics']['collaborative_active'])
 
     def test_corrupt_factual_text_is_rejected_before_embedding(self):
         calls=self.embedding.calls
@@ -160,21 +129,7 @@ class V2APITests(unittest.TestCase):
         self.assertEqual(result['diagnostics']['same_name_suppressed'],1)
         self.assertEqual(len(self.app.state.recommendation.store.places()),3)
 
-    def test_exploration_does_not_reintroduce_same_name_records(self):
-        self.seed(*[place(str(i),name='Điểm '+str(i//2)) for i in range(30)])
-        result=self.recommend(limit=10,exploration=True)
-        names=[p['name'] for p in result['recommendations']]
-        self.assertEqual(len(names),len(set(names)))
-        self.assertEqual(result['total'],10)
 
-    def test_same_name_alias_cannot_bypass_repeat_penalty(self):
-        self.seed(place('a',name='Mỹ Khê'),place('b',name='Mỹ Khê'),place('c',name='Non Nước'))
-        first=self.recommend(limit=1)
-        self.assertEqual(first['recommendations'][0]['place_id'],'a')
-        r=self.client.post('/api/v1/impressions',json={'event_id':'alias-visible','request_id':first['request_id'],
-            'user_id':'u','place_ids':['a'],'occurred_at':datetime.now(timezone.utc).isoformat()})
-        self.assertEqual(r.status_code,200)
-        self.assertEqual(self.recommend(limit=1)['recommendations'][0]['place_id'],'c')
 
 class ImportTests(unittest.TestCase):
     def test_header_trim_and_explicit_review_flags(self):

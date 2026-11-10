@@ -1,4 +1,4 @@
-from .schemas import SearchFilters, PlaceSearchRequest, PlaceSearchItem, PlaceSearchResponse
+from .schemas import SearchFilters
 from .text_utils import folded, contains, negative_before, feature_key, place_features, FEATURES, TYPES, STOPWORDS
 """Vietnamese place search: conservative constraints + BM25 + exact BGE cosine + RRF.
 
@@ -8,19 +8,13 @@ than claimed satisfied. Search never reads user history or adds exploratory resu
 import json
 import math
 import re
-import unicodedata
 import uuid
 from collections import Counter
-from typing import Literal
 
 import numpy as np
-from fastapi import APIRouter, Depends, Request
-from pydantic import Field, model_validator
 
-from app.core.auth import authorize
-from app.modules.recommendation.content_based import normalize
-from app.modules.recommendation.schemas import Contract, Identifier, Text
-from app.modules.recommendation.hybrid_service import distance_km
+from app.core.vectors import normalize
+from app.core.geo import distance_km
 
 
 def interpret(body, catalog):

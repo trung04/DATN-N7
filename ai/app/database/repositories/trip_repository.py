@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from app.database.sqlite import Conflict, NotFound
+from app.core.exceptions import Conflict, NotFound
 
 
 class TripRepository:

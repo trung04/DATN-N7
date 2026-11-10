@@ -2,11 +2,10 @@ from app.core.config import env
 """Trusted-config OSRM table adapter; estimates are labelled and never replace no-route pairs."""
 import json
 import math
-import os
 from urllib.request import urlopen
 from urllib.parse import urlsplit
 from fastapi import HTTPException
-from app.modules.recommendation.hybrid_service import distance_km
+from app.core.geo import distance_km
 
 
 class RouteMatrix:

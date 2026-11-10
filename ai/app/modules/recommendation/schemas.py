@@ -128,25 +128,6 @@ class UserPreferences(Contract):
     preferences: list[Text] = Field(default_factory=list, max_length=30)
 
 
-class InteractionData(Contract):
-    event_id: Identifier
-    user_id: Identifier
-    place_id: Identifier
-    interaction_type: Literal["view", "click", "favorite", "unfavorite", "booking", "rating", "dismiss"]
-    occurred_at: datetime
-    request_id: Identifier | None = None
-    rating: float | None = Field(None, ge=1, le=5)
-    dwell_seconds: float | None = Field(None, ge=0, le=86400)
-
-    @model_validator(mode="after")
-    def event_values(self):
-        if self.occurred_at.tzinfo is None:
-            raise ValueError("occurred_at phải có múi giờ")
-        if self.occurred_at > datetime.now(timezone.utc):
-            raise ValueError("occurred_at không được ở tương lai")
-        if (self.interaction_type == "rating") != (self.rating is not None):
-            raise ValueError("Chỉ sự kiện rating mới phải có rating")
-        return self
 
 
 class RecommendationRequest(Contract):
@@ -163,9 +144,7 @@ class RecommendationRequest(Contract):
     longitude: float | None = Field(None, ge=-180, le=180)
     radius_km: float | None = Field(None, gt=0, le=1000)
     exclude_place_ids: list[Identifier] = Field(default_factory=list, max_length=500)
-    exclude_seen: bool = False
     limit: int = Field(10, ge=1, le=100)
-    exploration: bool = Field(False, description="Reserved for hybrid mode; ignored in content_rating mode")
 
     @model_validator(mode="after")
     def location(self):
@@ -186,30 +165,12 @@ class RecommendationItem(Contract):
     quality_score: float
     rating: float | None = None
     review_count: int | None = None
-    distance_score: float | None = None
     distance_km: float | None = None
-    collaborative_score: float | None = None
     reasons: list[str]
-    is_exploration: bool = False
     image_url: str | None = None
     effective_weights: dict[str,float] = Field(default_factory=dict)
-    repeat_penalty: float = 0
 
 
-class ImpressionData(Contract):
-    event_id: Identifier
-    request_id: Identifier
-    user_id: Identifier
-    place_ids: list[Identifier] = Field(min_length=1, max_length=100)
-    occurred_at: datetime
-
-    @model_validator(mode="after")
-    def visible_items(self):
-        if len(set(self.place_ids)) != len(self.place_ids):
-            raise ValueError("place_ids không được trùng")
-        if self.occurred_at.tzinfo is None or self.occurred_at > datetime.now(timezone.utc):
-            raise ValueError("occurred_at phải có múi giờ và không ở tương lai")
-        return self
 
 
 class RecommendationResponse(Contract):

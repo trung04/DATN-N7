@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from app.core.geo import distance_km
 from .eligibility import display_identity, eligible_for_request
 from .place_document import DOCUMENT_VERSION
-from .profiles import build_interests
+from .profiles import build_explicit_profile
 from .ranking import bayesian_quality
 from .schemas import RecommendationResponse
 
@@ -20,10 +20,7 @@ def recommend_content_rating(service, request, *, now=None, log=True):
     now = now or datetime.now(timezone.utc)
     config = service.config
     rows = service.store.places()
-    # Only explicit preferences (request or saved settings) and the current query.
-    # Empty aggregates guarantee existing interaction history cannot build a profile.
-    profile = build_interests(service.embedding, request, rows, {}, service.store,
-                              service.model, config.max_interest_groups)
+    profile = build_explicit_profile(service.embedding, request, service.store, config.max_interest_groups)
     profile = profile if profile.queries else None
     priors = defaultdict(list)
     places = [(row, json.loads(row["data"])) for row in rows]
@@ -84,10 +81,6 @@ def recommend_content_rating(service, request, *, now=None, log=True):
             candidates = [c for c in candidates if c["place"]["place_id"] in pool]
 
     warnings = []
-    if request.exclude_seen:
-        warnings.append("exclude_seen chưa áp dụng trong chế độ nội dung + rating; dùng exclude_place_ids để loại rõ địa điểm.")
-    if request.exploration:
-        warnings.append("Khám phá chưa áp dụng trong chế độ nội dung + rating; kết quả được xếp hạng xác định.")
     items = []
     missing_vectors = 0
     for candidate in candidates:
@@ -108,9 +101,8 @@ def recommend_content_rating(service, request, *, now=None, log=True):
                        and place["review_count"] > 0 else "Chưa có đủ rating/lượt đánh giá; dùng mức chất lượng tham chiếu")
         item = {"place_id": place["place_id"], "name": place["name"], "place_type": place["place_type"],
                 "city": place["city"], "score": score, "content_score": content,
-                "quality_score": candidate["quality"], "distance_score": None,
-                "distance_km": candidate["distance"], "collaborative_score": None,
-                "effective_weights": weights, "repeat_penalty": 0, "is_exploration": False,
+                "quality_score": candidate["quality"], "distance_km": candidate["distance"],
+                "effective_weights": weights,
                 "image_url": place["image_url"], "rating": place["rating"],
                 "review_count": place["review_count"], "reasons": reasons}
         items.append((item, display_identity(place)))
@@ -130,13 +122,11 @@ def recommend_content_rating(service, request, *, now=None, log=True):
         strategy="content_rating" if profile is not None else "rating_fallback",
         model_version=service.version, retrieval=retrieval, recommendations=selected,
         warnings=warnings, diagnostics={"mode": "content_rating", "interest_groups": len(profile.groups) if profile else 0,
-            "profile_confidence": profile.confidence if profile else 0, "collaborative_active": False,
-            "history_used": False, "distance_scoring": False, "candidate_count": len(candidates),
+            "candidate_count": len(candidates),
             "service_only_excluded": service_excluded, "same_name_suppressed": suppressed,
             "document_version": DOCUMENT_VERSION, "score_is_probability": False,
             "rating_source": "place.rating + place.review_count", "rating_prior_strength": config.prior_strength}
     ).model_dump(mode="json")
     if log:
-        # Request auditing only. This does not record interactions or visible exposures.
-        service.store.log_impression(result, now.isoformat())
+        service.store.save_recommendation(result, now.isoformat())
     return result

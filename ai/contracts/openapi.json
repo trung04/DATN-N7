@@ -1041,121 +1041,6 @@
         }
       }
     },
-    "/api/v1/interactions": {
-      "post": {
-        "tags": [
-          "Recommendation"
-        ],
-        "summary": "Interaction",
-        "operationId": "interaction_api_v1_interactions_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InteractionData"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/impressions": {
-      "post": {
-        "tags": [
-          "Recommendation"
-        ],
-        "summary": "Visible Impression",
-        "description": "Client confirms which delivered items actually became visible.",
-        "operationId": "visible_impression_api_v1_impressions_post",
-        "parameters": [
-          {
-            "name": "x-api-key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Api-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ImpressionData"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/recommendations": {
       "post": {
         "tags": [
@@ -1220,8 +1105,8 @@
         "tags": [
           "Recommendation"
         ],
-        "summary": "Impression",
-        "operationId": "impression_api_v1_recommendations__request_id__get",
+        "summary": "Get Recommendation",
+        "operationId": "get_recommendation_api_v1_recommendations__request_id__get",
         "parameters": [
           {
             "name": "request_id",
@@ -2634,143 +2519,6 @@
         "type": "object",
         "title": "ImageSearchRequest"
       },
-      "ImpressionData": {
-        "properties": {
-          "event_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Event Id"
-          },
-          "request_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Request Id"
-          },
-          "user_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Id"
-          },
-          "place_ids": {
-            "items": {
-              "type": "string",
-              "maxLength": 128,
-              "minLength": 1
-            },
-            "type": "array",
-            "maxItems": 100,
-            "minItems": 1,
-            "title": "Place Ids"
-          },
-          "occurred_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Occurred At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "event_id",
-          "request_id",
-          "user_id",
-          "place_ids",
-          "occurred_at"
-        ],
-        "title": "ImpressionData"
-      },
-      "InteractionData": {
-        "properties": {
-          "event_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Event Id"
-          },
-          "user_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "User Id"
-          },
-          "place_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Place Id"
-          },
-          "interaction_type": {
-            "type": "string",
-            "enum": [
-              "view",
-              "click",
-              "favorite",
-              "unfavorite",
-              "booking",
-              "rating",
-              "dismiss"
-            ],
-            "title": "Interaction Type"
-          },
-          "occurred_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Occurred At"
-          },
-          "request_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 128,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Request Id"
-          },
-          "rating": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 5.0,
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rating"
-          },
-          "dwell_seconds": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 86400.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dwell Seconds"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "event_id",
-          "user_id",
-          "place_id",
-          "interaction_type",
-          "occurred_at"
-        ],
-        "title": "InteractionData"
-      },
       "OpeningInterval": {
         "properties": {
           "start": {
@@ -3531,17 +3279,6 @@
             ],
             "title": "Review Count"
           },
-          "distance_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Distance Score"
-          },
           "distance_km": {
             "anyOf": [
               {
@@ -3553,28 +3290,12 @@
             ],
             "title": "Distance Km"
           },
-          "collaborative_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Collaborative Score"
-          },
           "reasons": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Reasons"
-          },
-          "is_exploration": {
-            "type": "boolean",
-            "title": "Is Exploration",
-            "default": false
           },
           "image_url": {
             "anyOf": [
@@ -3593,11 +3314,6 @@
             },
             "type": "object",
             "title": "Effective Weights"
-          },
-          "repeat_penalty": {
-            "type": "number",
-            "title": "Repeat Penalty",
-            "default": 0
           }
         },
         "additionalProperties": false,
@@ -3771,23 +3487,12 @@
             "maxItems": 500,
             "title": "Exclude Place Ids"
           },
-          "exclude_seen": {
-            "type": "boolean",
-            "title": "Exclude Seen",
-            "default": false
-          },
           "limit": {
             "type": "integer",
             "maximum": 100.0,
             "minimum": 1.0,
             "title": "Limit",
             "default": 10
-          },
-          "exploration": {
-            "type": "boolean",
-            "title": "Exploration",
-            "description": "Reserved for hybrid mode; ignored in content_rating mode",
-            "default": false
           }
         },
         "additionalProperties": false,
