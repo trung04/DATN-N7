@@ -2,6 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { HotelOwnersService } from '../../hotel-owners/services/hotel-owners.service';
 import { PlacesService } from '../../places/services/places.service';
 import { UsersService } from '../../users/services/users.service';
+import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+import { UserRole } from '../../users/entities/user.entity';
 import { CreateHotelDocumentRequest } from '../dtos/requests/create-hotel-document.request';
 import { CreateHotelRequest } from '../dtos/requests/create-hotel.request';
 import { ListHotelsRequest } from '../dtos/requests/list-hotels.request';
@@ -47,8 +50,11 @@ export class HotelsService {
     private readonly usersService: UsersService,
   ) {}
 
-  async create(input: CreateHotelRequest): Promise<HotelEntity> {
-    await this.hotelOwnersService.findByUserId(input.ownerUserId);
+  async create(
+    ownerUserId: string,
+    input: CreateHotelRequest,
+  ): Promise<HotelEntity> {
+    await this.hotelOwnersService.findByUserId(ownerUserId);
     if (input.placeId) await this.placesService.findById(input.placeId);
 
     const taxCode = this.normalizeTaxCode(input.taxCode);
@@ -57,7 +63,7 @@ export class HotelsService {
     }
 
     return this.repository.create({
-      ownerUserId: input.ownerUserId,
+      ownerUserId,
       placeId: input.placeId ?? null,
       name: input.name.trim(),
       legalName: input.legalName.trim(),
@@ -86,10 +92,30 @@ export class HotelsService {
     });
   }
 
+  findPublicPage(input: ListHotelsRequest): Promise<HotelPage> {
+    const scoped = Object.assign(new ListHotelsRequest(), input);
+    scoped.ownerUserId = undefined;
+    scoped.status = HotelStatus.ACTIVE;
+    return this.findPage(scoped);
+  }
+
+  findOwnedPage(
+    input: ListHotelsRequest,
+    ownerUserId: string,
+  ): Promise<HotelPage> {
+    const scoped = Object.assign(new ListHotelsRequest(), input);
+    scoped.ownerUserId = ownerUserId;
+    return this.findPage(scoped);
+  }
+
   async findById(id: string): Promise<HotelEntity> {
     const hotel = await this.repository.findById(id);
     if (!hotel) throw new HotelNotFoundException(id);
     return hotel;
+  }
+
+  async findPublicById(id: string): Promise<HotelEntity> {
+    return this.assertActive(id);
   }
 
   async assertActive(id: string): Promise<HotelEntity> {
@@ -100,9 +126,14 @@ export class HotelsService {
     return hotel;
   }
 
-  async update(id: string, input: UpdateHotelRequest): Promise<HotelEntity> {
+  async update(
+    id: string,
+    input: UpdateHotelRequest,
+    actor: AuthorizationActor,
+  ): Promise<HotelEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyHotelUpdateException();
     const hotel = await this.findById(id);
+    this.assertCanManage(hotel, actor);
     if (hotel.status === HotelStatus.PENDING_APPROVAL) {
       throw new HotelUpdateLockedException();
     }
@@ -132,8 +163,10 @@ export class HotelsService {
   async addDocument(
     hotelId: string,
     input: CreateHotelDocumentRequest,
+    actor: AuthorizationActor,
   ): Promise<HotelDocumentEntity> {
     const hotel = await this.findById(hotelId);
+    this.assertCanManage(hotel, actor);
     this.assertDocumentsMutable(hotel);
     this.assertDocumentDates(input.issuedAt ?? null, input.expiresAt ?? null);
     return this.repository.createDocument({
@@ -146,8 +179,13 @@ export class HotelsService {
     });
   }
 
-  async deleteDocument(hotelId: string, documentId: string): Promise<void> {
+  async deleteDocument(
+    hotelId: string,
+    documentId: string,
+    actor: AuthorizationActor,
+  ): Promise<void> {
     const hotel = await this.findById(hotelId);
+    this.assertCanManage(hotel, actor);
     this.assertDocumentsMutable(hotel);
     const document = await this.repository.findDocumentById(documentId);
     if (!document || document.hotelId !== hotelId) {
@@ -156,8 +194,9 @@ export class HotelsService {
     await this.repository.deleteDocument(document);
   }
 
-  async submit(id: string): Promise<HotelEntity> {
+  async submit(id: string, actor: AuthorizationActor): Promise<HotelEntity> {
     const hotel = await this.findById(id);
+    this.assertCanManage(hotel, actor);
     if (
       hotel.status !== HotelStatus.DRAFT &&
       hotel.status !== HotelStatus.REJECTED
@@ -182,24 +221,32 @@ export class HotelsService {
     });
   }
 
-  async review(id: string, input: ReviewHotelRequest): Promise<HotelEntity> {
-    await this.usersService.findById(input.reviewerUserId);
+  async review(
+    id: string,
+    reviewerUserId: string,
+    input: ReviewHotelRequest,
+  ): Promise<HotelEntity> {
+    await this.usersService.findById(reviewerUserId);
     const hotel = await this.findById(id);
     const reason = this.normalizeNullable(input.reason);
     const action = this.applyReviewCommand(hotel, input.action, reason);
     hotel.reviewedAt = new Date();
-    hotel.reviewedBy = input.reviewerUserId;
+    hotel.reviewedBy = reviewerUserId;
 
     return this.repository.saveWithReview(hotel, {
       hotelId: hotel.id,
-      actorUserId: input.reviewerUserId,
+      actorUserId: reviewerUserId,
       action,
       reason,
     });
   }
 
-  async deactivate(id: string): Promise<HotelEntity> {
+  async deactivate(
+    id: string,
+    actor: AuthorizationActor,
+  ): Promise<HotelEntity> {
     const hotel = await this.findById(id);
+    this.assertCanManage(hotel, actor);
     if (
       hotel.status !== HotelStatus.ACTIVE &&
       hotel.status !== HotelStatus.SUSPENDED
@@ -221,6 +268,21 @@ export class HotelsService {
   async findReviewHistory(id: string): Promise<HotelReviewHistoryEntity[]> {
     await this.findById(id);
     return this.repository.findReviewHistory(id);
+  }
+
+  async assertManagedBy(
+    id: string,
+    actor: AuthorizationActor,
+  ): Promise<HotelEntity> {
+    const hotel = await this.findById(id);
+    this.assertCanManage(hotel, actor);
+    return hotel;
+  }
+
+  private assertCanManage(hotel: HotelEntity, actor: AuthorizationActor): void {
+    if (actor.role !== UserRole.ADMIN && hotel.ownerUserId !== actor.id) {
+      throw new AuthorizationDeniedException();
+    }
   }
 
   private applyReviewCommand(

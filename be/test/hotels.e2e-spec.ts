@@ -13,6 +13,9 @@ import {
   HotelStatus,
 } from '../src/modules/hotels/entities/hotel.entity';
 import { HotelsService } from '../src/modules/hotels/services/hotels.service';
+import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
+import { UserRole } from '../src/modules/users/entities/user.entity';
+import type { NextFunction, Response } from 'express';
 
 const hotelId = '11111111-1111-4111-8111-111111111111';
 const ownerUserId = '22222222-2222-4222-8222-222222222222';
@@ -67,6 +70,20 @@ describe('Hotels API (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(
+      (
+        currentRequest: AuthenticatedRequest,
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        const isAdminRoute = currentRequest.originalUrl.includes('/admin/');
+        currentRequest.authUser = {
+          id: isAdminRoute ? reviewerUserId : ownerUserId,
+          role: isAdminRoute ? UserRole.ADMIN : UserRole.HOTEL_OWNER,
+        } as never;
+        next();
+      },
+    );
     configureHttpApplication(app);
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
@@ -82,7 +99,6 @@ describe('Hotels API (e2e)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
       .send({
-        ownerUserId,
         name: 'Sun Hotel',
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
@@ -108,7 +124,6 @@ describe('Hotels API (e2e)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
       .send({
-        ownerUserId,
         name: 'Sun Hotel',
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
@@ -123,6 +138,24 @@ describe('Hotels API (e2e)', () => {
       .expect(({ body }) => {
         expect(body.code).toBe('VALIDATION_FAILED');
       });
+  });
+
+  it('does not allow callers to choose another hotel owner', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/hotels')
+      .send({
+        ownerUserId: '99999999-9999-4999-8999-999999999999',
+        name: 'Sun Hotel',
+        legalName: 'Sun Hotel Company',
+        taxCode: 'TAX001',
+        address: '1 Beach Road',
+        phoneNumber: '0912345678',
+        email: 'hotel@example.com',
+        checkInTime: '14:00',
+        checkOutTime: '12:00',
+      })
+      .expect(400)
+      .expect(({ body }) => expect(body.code).toBe('VALIDATION_FAILED'));
   });
 
   it('adds a business license document', async () => {
@@ -171,14 +204,13 @@ describe('Hotels API (e2e)', () => {
 
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/hotels/${hotelId}/status`)
-      .send({ reviewerUserId, action: HotelReviewCommand.APPROVE })
+      .send({ action: HotelReviewCommand.APPROVE })
       .expect(200)
       .expect(({ body }) => {
         expect(body.status).toBe(HotelStatus.ACTIVE);
       });
 
-    expect(service.review).toHaveBeenCalledWith(hotelId, {
-      reviewerUserId,
+    expect(service.review).toHaveBeenCalledWith(hotelId, reviewerUserId, {
       action: HotelReviewCommand.APPROVE,
     });
   });
@@ -186,10 +218,21 @@ describe('Hotels API (e2e)', () => {
   it('requires a reason when rejecting a hotel', async () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/hotels/${hotelId}/status`)
-      .send({ reviewerUserId, action: HotelReviewCommand.REJECT })
+      .send({ action: HotelReviewCommand.REJECT })
       .expect(400)
       .expect(({ body }) => {
         expect(body.code).toBe('VALIDATION_FAILED');
       });
+  });
+
+  it('does not allow callers to choose the reviewer identity', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/v1/admin/hotels/${hotelId}/status`)
+      .send({
+        reviewerUserId: '99999999-9999-4999-8999-999999999999',
+        action: HotelReviewCommand.APPROVE,
+      })
+      .expect(400)
+      .expect(({ body }) => expect(body.code).toBe('VALIDATION_FAILED'));
   });
 });
