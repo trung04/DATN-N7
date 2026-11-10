@@ -41,6 +41,7 @@ export interface CreateUserData {
   status: UserStatus;
   role: UserRole;
   isEmailVerified: boolean;
+  isTwoFactorEnabled: boolean;
 }
 
 export interface UserRepository {

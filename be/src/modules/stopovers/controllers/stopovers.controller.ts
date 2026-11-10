@@ -13,6 +13,8 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Roles } from '../../authorization/decorators/roles.decorator';
+import { UserRole } from '../../users/entities/user.entity';
 import { CreateStopoverRequest } from '../dtos/requests/create-stopover.request';
 import { ListStopoversRequest } from '../dtos/requests/list-stopovers.request';
 import { UpdateStopoverRequest } from '../dtos/requests/update-stopover.request';
@@ -23,6 +25,7 @@ import {
 import { StopoverMapper } from '../mappers/stopover.mapper';
 import { StopoversService } from '../services/stopovers.service';
 
+@Roles(UserRole.TOURIST)
 @Controller({ path: 'itineraries/:itineraryId/stopovers', version: '1' })
 export class StopoversController {
   constructor(private readonly stopoversService: StopoversService) {}

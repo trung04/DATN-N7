@@ -1,5 +1,5 @@
 import { UsersService } from '../../users/services/users.service';
-import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 import {
   EmptyHotelOwnerUpdateException,
   HotelOwnerConflictException,

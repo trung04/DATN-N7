@@ -64,14 +64,14 @@ export class UpdatePlaceRequest {
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-90)
   @Max(90)
-  latitude?: number | null;
+  latitude?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-180)
   @Max(180)
-  longitude?: number | null;
+  longitude?: number;
 
   @IsOptional()
   @IsEnum(PlaceStatus)

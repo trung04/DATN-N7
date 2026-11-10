@@ -32,7 +32,7 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
 
     if (options.search) {
       query.andWhere(
-        `to_tsvector('simple', "place"."search_document")
+        `"place"."search_document"
           @@ websearch_to_tsquery('simple', :search)`,
         { search: options.search },
       );
@@ -88,7 +88,7 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
   }
 
   async delete(place: PlaceEntity): Promise<void> {
-    await this.repository.remove(place);
+    await this.repository.softRemove(place);
   }
 
   private rethrowProviderConflict(error: unknown): never {

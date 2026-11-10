@@ -51,6 +51,7 @@ export class UsersService {
       status: input.status,
       role: UserRole.TOURIST,
       isEmailVerified: false,
+      isTwoFactorEnabled: false,
     });
   }
 
@@ -122,6 +123,7 @@ export class UsersService {
       status: UserStatus.ACTIVE,
       role: UserRole.TOURIST,
       isEmailVerified: true,
+      isTwoFactorEnabled: false,
     });
   }
 

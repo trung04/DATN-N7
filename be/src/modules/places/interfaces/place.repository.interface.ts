@@ -1,4 +1,8 @@
-import { PlaceEntity, PlaceStatus } from '../entities/place.entity';
+import {
+  PlaceEntity,
+  PlaceSourceType,
+  PlaceStatus,
+} from '../entities/place.entity';
 
 export const PLACE_REPOSITORY = Symbol('PLACE_REPOSITORY');
 
@@ -32,8 +36,14 @@ export interface CreatePlaceData {
   longitude: number | null;
   status: PlaceStatus;
   averageRating: number;
+  sourceType: PlaceSourceType;
+  sourceProvider: string | null;
   externalProviderId: string | null;
   openingTime: string | null;
+  sourceUrl: string | null;
+  attributionText: string | null;
+  licenseCode: string | null;
+  lastRefreshedAt: Date | null;
 }
 
 export interface PlaceRepository {
