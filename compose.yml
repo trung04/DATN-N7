@@ -2,7 +2,7 @@ name: datn-n7
 
 services:
   postgres:
-    image: postgres:17
+    image: postgis/postgis:17-3.4
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}

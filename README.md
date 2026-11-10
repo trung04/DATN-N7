@@ -20,10 +20,23 @@ Nếu đã có `.env` được cấu hình thì giữ nguyên, không sao chép 
 | AI demo | http://localhost:9000/demo |
 | AI Swagger | http://localhost:9000/docs |
 | AI readiness | http://localhost:9000/ready |
-| Backend starter | http://localhost:3000/ |
+| Backend API | http://localhost:3000/api/v1 |
+| Backend Swagger | http://localhost:3000/api/docs |
 | Qdrant | http://localhost:6333/dashboard |
 
-Backend gọi nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Backend hiện chỉ có starter route và kết nối PostgreSQL/Redis. Controller nghiệp vụ, phân quyền người dùng và client nghiệp vụ AI chưa được triển khai.
+Backend NestJS từ `dev` đã có API nghiệp vụ, Swagger, đăng nhập mật khẩu/Google, session xoay vòng trên Redis và phân quyền theo vai trò/chủ sở hữu. Các module bao gồm địa điểm, khách sạn, phòng, tiện ích, người dùng, chủ khách sạn, lịch trình, điểm dừng, hoạt động, chính sách hủy và booking. Xem [backend README](be/README.md) cho hợp đồng API chi tiết.
+
+Cấu hình tích hợp AI dùng nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Client nghiệp vụ gọi AI từ NestJS chưa được triển khai; demo AI gọi trực tiếp FastAPI.
+
+## Database and Redis configuration
+
+Backend dùng PostgreSQL/PostGIS của Compose và Redis; AI vẫn có catalog riêng. TypeORM tắt `synchronize` và không tự chạy migration. Sau khi cấu hình database, kiểm tra và chạy migration đã review từ thư mục `be/` bằng `npm run migration:show` và `npm run migration:run`. Không chạy migration lên dữ liệu cần giữ nếu chưa có backup.
+
+Chạy backend trên host: dùng Node.js 24, tạo `be/.env` theo `be/.env.example`, khởi động hạ tầng bằng `docker compose up -d postgres redis`, rồi chạy `npm ci` và `npm run start:dev` trong `be/`. Trong Compose hiện tại backend chạy image production và được bật mặc định; frontend vẫn là profile tùy chọn.
+
+Session đăng nhập dùng `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS` và `FRONTEND_ORIGIN`. Google login chỉ bật khi có đủ `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Booking và VNPAY Sandbox có các biến được kiểm tra tại startup; xem `be/README.md` và `be/src/config/environment.validation.ts`. Các cấu hình tùy chọn chưa truyền qua Compose có thể dùng khi chạy native hoặc được bổ sung vào môi trường dịch vụ khi triển khai.
+
+PostgreSQL và Redis được publish trên loopback, mặc định lần lượt 5432 và 6379. Dịch vụ backend trong container dùng tên `postgres` và `redis`; chạy trên host dùng `localhost`. Redis cache dùng namespace `tourism:cache`, session dùng `tourism:auth`.
 
 Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/RECOMMENDATION_CONTENT_RATING.md).
 

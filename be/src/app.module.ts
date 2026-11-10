@@ -5,6 +5,21 @@ import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment.validation';
 import { DatabaseModule } from './database/database.module';
 import { RedisCacheModule } from './common/cache/redis-cache.module';
+import { AmenitiesModule } from './modules/amenities/amenities.module';
+import { APP_FILTER } from '@nestjs/core';
+import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
+import { RoomsModule } from './modules/rooms/rooms.module';
+import { UsersModule } from './modules/users/users.module';
+import { HotelOwnersModule } from './modules/hotel-owners/hotel-owners.module';
+import { ItinerariesModule } from './modules/itineraries/itineraries.module';
+import { StopoversModule } from './modules/stopovers/stopovers.module';
+import { ActivitiesModule } from './modules/activities/activities.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { AuthorizationModule } from './modules/authorization/authorization.module';
+import { PlacesModule } from './modules/places/places.module';
+import { CancellationPoliciesModule } from './modules/cancellation-policies/cancellation-policies.module';
+import { BookingsModule } from './modules/bookings/bookings.module';
+import { HotelsModule } from './modules/hotels/hotels.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -18,6 +33,19 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     DatabaseModule,
     RedisCacheModule,
     StarterModule,
+    AmenitiesModule,
+    RoomsModule,
+    UsersModule,
+    HotelOwnersModule,
+    ItinerariesModule,
+    StopoversModule,
+    ActivitiesModule,
+    AuthModule,
+    AuthorizationModule,
+    HotelsModule,
+    PlacesModule,
+    CancellationPoliciesModule,
+    BookingsModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,
     // then run `npx @nestjs/observe link` to write your key pair into .env.
@@ -26,6 +54,12 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       appSecret: process.env.OBSERVE_APP_SECRET ?? 'YOUR_APP_SECRET',
       serviceId: 'be',
     }),
+  ],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: ProblemDetailsFilter,
+    },
   ],
 })
 export class AppModule {}
