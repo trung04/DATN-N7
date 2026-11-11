@@ -42,6 +42,29 @@ services:
     volumes: [qdrant_data:/qdrant/storage]
     networks: [internal]
 
+  minio:
+    build:
+      context: ./docker/minio
+    image: datn-n7-minio:local
+    restart: unless-stopped
+    command: [server, /data, --address, ":9000", --console-address, ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      MINIO_REGION_NAME: ${MINIO_REGION:-us-east-1}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9002}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, http://localhost:9000/minio/health/ready]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [internal]
+
   ai:
     build:
       context: ./ai
@@ -126,7 +149,6 @@ services:
     networks: [internal]
 
   frontend:
-    profiles: [frontend]
     build:
       context: ./fe
       dockerfile: Dockerfile
@@ -136,6 +158,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_started
     networks: [internal]
 
 networks:
@@ -144,6 +169,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
   ai_data:
     name: ${AI_DATA_VOLUME_NAME:-datn_n7_ai_data}
     external: ${AI_VOLUMES_EXTERNAL:-false}
