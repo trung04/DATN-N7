@@ -1,6 +1,18 @@
 /** Never include secret values in configuration errors. */
 export function validateEnvironment(input: Record<string, unknown>) {
   const config = { ...input };
+  for (const [postgresKey, databaseKey] of Object.entries({
+    POSTGRES_HOST: 'DATABASE_HOST',
+    POSTGRES_PORT: 'DATABASE_PORT',
+    POSTGRES_NAME: 'DATABASE_NAME',
+    POSTGRES_USER: 'DATABASE_USER',
+    POSTGRES_PASSWORD: 'DATABASE_PASSWORD',
+    POSTGRES_SSL: 'DATABASE_SSL',
+    POSTGRES_POOL_SIZE: 'DATABASE_POOL_SIZE',
+    POSTGRES_CONNECT_TIMEOUT_MS: 'DATABASE_CONNECT_TIMEOUT_MS',
+  })) {
+    config[databaseKey] ??= config[postgresKey];
+  }
   for (const key of [
     'DATABASE_HOST',
     'DATABASE_NAME',
@@ -35,6 +47,29 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_DB', 0, 0, 15);
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
+  integer('AI_TIMEOUT_MS', 15000, 1, 120000);
+  config.AI_BASE_URL ??= 'http://localhost:9000';
+  try {
+    const url = new URL(String(config.AI_BASE_URL));
+    if (
+      typeof config.AI_BASE_URL !== 'string' ||
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== '/'
+    ) {
+      throw new Error('invalid');
+    }
+    config.AI_BASE_URL = url.origin;
+  } catch {
+    throw new Error('AI_BASE_URL must be an HTTP(S) origin without credentials');
+  }
+  config.AI_API_KEY ??= '';
+  if (typeof config.AI_API_KEY !== 'string') {
+    throw new Error('AI_API_KEY must be a string');
+  }
   integer('AUTH_ACCESS_TTL_MS', 900000, 60000, 3600000);
   integer('AUTH_REFRESH_TTL_MS', 604800000, 3600000, 2592000000);
   if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {

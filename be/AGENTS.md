@@ -14,6 +14,18 @@ This backend is a NestJS modular monolith. Read [architecture](rules/architectur
 - Validate new environment settings at startup. Keep secrets out of source/logs/errors; use placeholders in examples. Keep the root README accurate.
 - Reusable workflows are in [backend feature skill](skills/nestjs-feature/SKILL.md) and [AI integration skill](skills/ai-service-integration/SKILL.md). Agents may read these explicitly; they are portable Markdown workflows, not automatically installed plugins.
 
+## Authorized implementation scope
+
+Only modify backend implementations assigned to the tourist UC01-UC10 scope:
+
+- `auth` for registration, login, and password recovery (UC01-UC03);
+- `users` and travel-preference code for profile/account and preferences (UC04-UC05);
+- `places` for tourist place search and details (UC06);
+- tourist search/read paths in `hotels` and `rooms` (UC07);
+- `itineraries`, `stopovers`, and `activities` (UC08-UC10).
+
+Cross-cutting `common`, `config`, `database`, and tests may change only when directly required by those use cases. Do not modify partner/admin hotel management, bookings/payments, cancellation policies, AI/recommendations, or any other module without explicit user approval. If an out-of-scope improvement is needed, document the proposed files, behavior, risks, and tests in `generated_files/` and wait for approval.
+
 ## Production data: NestJS Observe
 
 The starter configures `ObserveModule` in `src/app.module.ts`. A functioning telemetry connection is not verified. Its key pair comes from `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in `.env`; never expose these values in logs or agent reports.

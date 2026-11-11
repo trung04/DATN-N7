@@ -1,4 +1,4 @@
-import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 
 export const HOTEL_OWNER_REPOSITORY = Symbol('HOTEL_OWNER_REPOSITORY');
 

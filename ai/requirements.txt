@@ -1,0 +1,12 @@
+fastapi>=0.115,<1
+uvicorn 
+sentence-transformers
+torch 
+pydantic>=2.10,<3
+python-dotenv
+numpy
+qdrant-client>=1.14,<2
+openpyxl>=3.1,<4
+Pillow>=10.4,<13
+transformers>=4.45,<6
+python-multipart>=0.0.20,<1

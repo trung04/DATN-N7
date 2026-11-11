@@ -1,43 +1,132 @@
+name: datn-n7
+
 services:
   postgres:
     image: postgis/postgis:17-3.4
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       TZ: Asia/Ho_Chi_Minh
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - internal
+      retries: 10
+    networks: [internal]
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: [redis-server, --appendonly, "yes"]
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes: [redis_data:/data]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [CMD, redis-cli, ping]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+    networks: [internal]
+
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes: [qdrant_data:/qdrant/storage]
+    networks: [internal]
+
+  ai:
+    build:
+      context: ./ai
+    image: datn-n7-ai:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AI_PORT:-9000}:9000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MODEL_NAME: ${MODEL_NAME:-BAAI/bge-m3}
+      BATCH_SIZE: ${AI_BATCH_SIZE:-16}
+      MAX_TEXT_LENGTH: ${AI_MAX_TEXT_LENGTH:-8000}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION_NAME: documents_bge_m3
+      RECOMMENDATION_COLLECTION: documents_bge_m3
+      RECOMMENDATION_VECTOR_NAME: dense
+      REC_CONTENT_WEIGHT: ${REC_CONTENT_WEIGHT:-0.6}
+      REC_QUALITY_WEIGHT: ${REC_QUALITY_WEIGHT:-0.2}
+      REC_PRIOR_STRENGTH: ${REC_PRIOR_STRENGTH:-50}
+      RECOMMENDATION_DB_PATH: /app/data/recommendation.sqlite3
+      RECOMMENDATION_API_KEY: ${AI_SERVICE_API_KEY:?Set AI_SERVICE_API_KEY in .env}
+      IMAGE_COLLECTION_NAME: tourism_images_clip_v1
+      IMAGE_VECTOR_NAME: image_dense
+      CLIP_MODEL_NAME: ${CLIP_MODEL_NAME:-openai/clip-vit-base-patch32}
+      CLIP_DIMENSIONS: "512"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      TRIP_OSRM_URL: ${TRIP_OSRM_URL:-}
+      TRIP_OSRM_DRIVING_URL: ${TRIP_OSRM_DRIVING_URL:-}
+      TRIP_OSRM_WALKING_URL: ${TRIP_OSRM_WALKING_URL:-}
+      TRIP_OSRM_CYCLING_URL: ${TRIP_OSRM_CYCLING_URL:-}
     volumes:
-      - redis_data:/data
-    networks:
-      - internal
+      - ai_data:/app/data
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      qdrant:
+        condition: service_started
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:9000/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 10
+    networks: [internal]
+
+  backend:
+    build:
+      context: ./be
+      target: production
+    image: datn-n7-backend:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB}
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      AI_BASE_URL: http://ai:9000
+      AI_API_KEY: ${AI_SERVICE_API_KEY}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-15000}
+      OBSERVE_APP_KEY: ${OBSERVE_APP_KEY:-}
+      OBSERVE_APP_SECRET: ${OBSERVE_APP_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai:
+        condition: service_started
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    networks: [internal]
 
   frontend:
-    profiles:
-      - frontend
+    profiles: [frontend]
     build:
       context: ./fe
       dockerfile: Dockerfile
@@ -46,41 +135,8 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     restart: unless-stopped
     ports:
-      - "8080:80"
-    networks:
-      - internal
-
-  backend:
-    profiles:
-      - backend
-    build:
-      context: ./be
-      dockerfile: Dockerfile
-      target: development
-    image: tourism-backend:dev
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      NODE_ENV: development
-      PORT: 3000
-      DATABASE_HOST: postgres
-      DATABASE_PORT: 5432
-      DATABASE_NAME: ${POSTGRES_DB}
-      DATABASE_USER: ${POSTGRES_USER}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    volumes:
-      - ./be:/app
-      - backend_node_modules:/app/node_modules
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - internal
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    networks: [internal]
 
 networks:
   internal:
@@ -88,4 +144,12 @@ networks:
 volumes:
   postgres_data:
   redis_data:
-  backend_node_modules:
+  ai_data:
+    name: ${AI_DATA_VOLUME_NAME:-datn_n7_ai_data}
+    external: ${AI_VOLUMES_EXTERNAL:-false}
+  qdrant_data:
+    name: ${QDRANT_DATA_VOLUME_NAME:-datn_n7_qdrant_data}
+    external: ${AI_VOLUMES_EXTERNAL:-false}
+  hf_cache:
+    name: ${HF_CACHE_VOLUME_NAME:-datn_n7_hf_cache}
+    external: ${AI_VOLUMES_EXTERNAL:-false}

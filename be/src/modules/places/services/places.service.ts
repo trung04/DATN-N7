@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CreatePlaceRequest } from '../dtos/requests/create-place.request';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
 import { UpdatePlaceRequest } from '../dtos/requests/update-place.request';
-import { PlaceEntity } from '../entities/place.entity';
+import { PlaceEntity, PlaceSourceType } from '../entities/place.entity';
 import {
   CoordinatePairRequiredException,
   EmptyPlaceUpdateException,
@@ -26,8 +26,8 @@ export class PlacesService {
     const externalProviderId = this.normalizeNullable(input.externalProviderId);
     await this.assertProviderAvailable(externalProviderId);
 
-    const latitude = input.latitude ?? null;
-    const longitude = input.longitude ?? null;
+    const latitude = input.latitude;
+    const longitude = input.longitude;
     this.assertCoordinatePair(latitude, longitude);
 
     return this.repository.create({
@@ -41,8 +41,17 @@ export class PlacesService {
       longitude,
       status: input.status,
       averageRating: 0,
+      // shortcut: legacy requests do not identify the provider, require it when the UC06 provider contract is expanded.
+      sourceType: externalProviderId
+        ? PlaceSourceType.PROVIDER
+        : PlaceSourceType.MANUAL,
+      sourceProvider: externalProviderId ? 'LEGACY' : null,
       externalProviderId,
       openingTime: this.normalizeNullable(input.openingTime),
+      sourceUrl: null,
+      attributionText: null,
+      licenseCode: null,
+      lastRefreshedAt: null,
     });
   }
 
@@ -130,10 +139,10 @@ export class PlacesService {
   }
 
   private assertCoordinatePair(
-    latitude: number | null,
-    longitude: number | null,
+    latitude: number | null | undefined,
+    longitude: number | null | undefined,
   ): void {
-    if ((latitude === null) !== (longitude === null)) {
+    if (latitude == null || longitude == null) {
       throw new CoordinatePairRequiredException();
     }
   }

@@ -13,6 +13,8 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Roles } from '../../authorization/decorators/roles.decorator';
+import { UserRole } from '../../users/entities/user.entity';
 import { CreateItineraryRequest } from '../dtos/requests/create-itinerary.request';
 import { ListItinerariesRequest } from '../dtos/requests/list-itineraries.request';
 import { UpdateItineraryRequest } from '../dtos/requests/update-itinerary.request';
@@ -23,6 +25,7 @@ import {
 import { ItineraryMapper } from '../mappers/itinerary.mapper';
 import { ItinerariesService } from '../services/itineraries.service';
 
+@Roles(UserRole.TOURIST)
 @Controller({ path: 'itineraries', version: '1' })
 export class ItinerariesController {
   constructor(private readonly itinerariesService: ItinerariesService) {}

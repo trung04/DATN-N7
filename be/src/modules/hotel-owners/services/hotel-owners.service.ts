@@ -3,10 +3,10 @@ import { UsersService } from '../../users/services/users.service';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
+import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 import { CreateHotelOwnerRequest } from '../dtos/requests/create-hotel-owner.request';
 import { ListHotelOwnersRequest } from '../dtos/requests/list-hotel-owners.request';
 import { UpdateHotelOwnerRequest } from '../dtos/requests/update-hotel-owner.request';
-import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
 import {
   EmptyHotelOwnerUpdateException,
   HotelOwnerConflictException,

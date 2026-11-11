@@ -50,8 +50,7 @@ export class UserEntity {
 
   @Column({
     name: 'google_account_id',
-    type: 'varchar',
-    length: 255,
+    type: 'text',
     nullable: true,
   })
   googleAccountId: string | null;
@@ -87,6 +86,9 @@ export class UserEntity {
 
   @Column({ name: 'is_email_verified', type: 'boolean', default: false })
   isEmailVerified: boolean;
+
+  @Column({ name: 'is_two_factor_enabled', type: 'boolean', default: false })
+  isTwoFactorEnabled: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

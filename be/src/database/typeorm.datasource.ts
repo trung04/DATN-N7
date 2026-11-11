@@ -5,12 +5,24 @@ import { validateEnvironment } from '../config/environment.validation';
 import { AmenityEntity } from '../modules/amenities/entities/amenity.entity';
 import { RoomAmenityEntity } from '../modules/rooms/entities/room-amenity.entity';
 import { RoomEntity } from '../modules/rooms/entities/room.entity';
+import { AdminEntity } from '../modules/users/entities/admin.entity';
+import { HotelOwnerEntity } from '../modules/users/entities/hotel-owner.entity';
+import { TopicEntity } from '../modules/users/entities/topic.entity';
+import { TouristEntity } from '../modules/users/entities/tourist.entity';
+import { TravelPreferenceTopicEntity } from '../modules/users/entities/travel-preference-topic.entity';
+import { TravelPreferenceEntity } from '../modules/users/entities/travel-preference.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
-import { HotelOwnerEntity } from '../modules/hotel-owners/entities/hotel-owner.entity';
+import { UserImageEntity } from '../modules/users/entities/user-image.entity';
+import { ImageEntity } from '../modules/media/entities/image.entity';
 import { ItineraryEntity } from '../modules/itineraries/entities/itinerary.entity';
 import { StopoverEntity } from '../modules/stopovers/entities/stopover.entity';
 import { ActivityEntity } from '../modules/activities/entities/activity.entity';
+import { PlaceCategoryMappingEntity } from '../modules/places/entities/place-category-mapping.entity';
+import { PlaceCategoryEntity } from '../modules/places/entities/place-category.entity';
+import { PlaceImageEntity } from '../modules/places/entities/place-image.entity';
+import { PlaceTopicEntity } from '../modules/places/entities/place-topic.entity';
 import { PlaceEntity } from '../modules/places/entities/place.entity';
+import { ReferencePriceEntity } from '../modules/places/entities/reference-price.entity';
 import { CancellationPolicyEntity } from '../modules/cancellation-policies/entities/cancellation-policy.entity';
 import { BookingEntity } from '../modules/bookings/entities/booking.entity';
 import { BookingRoomEntity } from '../modules/bookings/entities/booking-room.entity';
@@ -32,6 +44,7 @@ import { CompleteBookingStayDetails1793697300000 } from './migrations/1793697300
 import { AddBookingReservationExpiry1793697400000 } from './migrations/1793697400000-AddBookingReservationExpiry';
 import { CreateBookingIdempotencyKeys1793697500000 } from './migrations/1793697500000-CreateBookingIdempotencyKeys';
 import { CreateHotels1793697600000 } from './migrations/1793697600000-CreateHotels';
+import { AlignAuthenticationSchema1793898000000 } from './migrations/1793898000000-AlignAuthenticationSchema';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -49,11 +62,23 @@ export default new DataSource({
     RoomEntity,
     RoomAmenityEntity,
     UserEntity,
+    AdminEntity,
+    TouristEntity,
     HotelOwnerEntity,
+    TopicEntity,
+    TravelPreferenceEntity,
+    TravelPreferenceTopicEntity,
+    ImageEntity,
+    UserImageEntity,
     ItineraryEntity,
     StopoverEntity,
     ActivityEntity,
     PlaceEntity,
+    PlaceCategoryEntity,
+    PlaceCategoryMappingEntity,
+    PlaceTopicEntity,
+    PlaceImageEntity,
+    ReferencePriceEntity,
     CancellationPolicyEntity,
     BookingEntity,
     BookingRoomEntity,
@@ -77,6 +102,7 @@ export default new DataSource({
     AddBookingReservationExpiry1793697400000,
     CreateBookingIdempotencyKeys1793697500000,
     CreateHotels1793697600000,
+    AlignAuthenticationSchema1793898000000,
   ],
   synchronize: false,
   logging: false,

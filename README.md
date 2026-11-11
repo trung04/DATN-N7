@@ -1,171 +1,76 @@
 # DATN-N7 — Tourism App
 
-Development repository: https://github.com/trung04/DATN-N7
+Monorepo gồm `be/` (NestJS), `fe/` (frontend scaffold) và `ai/` (FastAPI: search, Recommendation, CLIP, trip planner). Một Git và một Docker Compose ở gốc; mỗi dịch vụ chạy container riêng.
 
-## Current status
+## Khởi chạy
 
-This repository is an initial project scaffold. It does not yet serve a complete tourism application.
+Cần Docker Desktop. Từ thư mục gốc:
 
-| Component        | Current state                                                                                                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend (`be/`)  | NestJS modular API with PostgreSQL features and Redis-backed password/Google login sessions.                                                                                            |
-| Frontend (`fe/`) | Package manifest, Dockerfile, and Nginx configuration only. Source files, `index.html`, TypeScript configuration, and `package-lock.json` are missing, so it cannot build or serve yet. |
-| PostgreSQL       | Local PostgreSQL 17 service with persistent storage and a health check.                                                                                                                 |
-| Redis            | Local Redis 7 service with append-only persistence.                                                                                                                                     |
-
-The backend configures PostgreSQL through TypeORM, general caching through Keyv, and rotating opaque authentication sessions through Redis. Global session and role guards protect management APIs, while service-level ownership checks scope hotels, rooms, policies, and bookings to the authenticated user.
-
-## Backend agent guidance
-
-Start with [be/AGENTS.md](be/AGENTS.md). It links the project conventions for [layered modules](be/rules/architecture.md), [REST APIs](be/rules/rest-api.md), and [AI service communication](be/rules/ai-services.md).
-
-Reusable workflows are available as [nestjs-feature](be/skills/nestjs-feature/SKILL.md) and [ai-service-integration](be/skills/ai-service-integration/SKILL.md). Ask your agent to read the relevant `SKILL.md` before the task. These repository-local files are not automatically installed skills in every agent tool. The rules guide new implementation; they do not mean the starter already provides those capabilities.
-
-## Development requirements
-
-Backend source follows this structure:
-
-```text
-be/src/
-  main.ts
-  app.module.ts                 # Root composition and telemetry
-  config/
-  database/migrations/
-  common/
-    decorators/
-    guards/
-    filters/
-    interceptors/
-    pipes/
-    dto/
-  modules/
-    app/                        # Existing starter; GET / → Hello World!
-      app.module.ts
-      controllers/
-      services/
-      repositories/
-      entities/
-      dtos/requests/
-      dtos/responses/
-      interfaces/
-      integrations/
-      mappers/
-      exceptions/
+```powershell
+Copy-Item .env.example .env
+# Sửa mật khẩu PostgreSQL và AI_SERVICE_API_KEY trong .env.
+docker compose up -d --build
+docker compose ps
 ```
 
-New business modules follow the same module-local layout. Controllers call services, services use repository/integration interfaces, and concrete repositories/clients are wired in the module. Empty folders are retained with `.gitkeep` as a skeleton; no database or AI functionality is implemented by those placeholders. Tests are colocated as `*.spec.ts`, with HTTP/cross-module tests under `be/test/`.
+Nếu đã có `.env` được cấu hình thì giữ nguyên, không sao chép đè. Không commit khóa hoặc đưa khóa vào frontend.
 
-- Docker Engine or Docker Desktop with Docker Compose.
-- Git.
-- For running the backend outside Docker: Node.js 24 and npm. Docker uses Node.js 24.
+| Dịch vụ | Địa chỉ |
+| --- | --- |
+| AI demo | http://localhost:9000/demo |
+| AI Swagger | http://localhost:9000/docs |
+| AI readiness | http://localhost:9000/ready |
+| Backend API | http://localhost:3000/api/v1 |
+| Backend Swagger | http://localhost:3000/api/docs |
+| Qdrant | http://localhost:6333/dashboard |
 
-## Clone and configure
+Backend NestJS từ `dev` đã có API nghiệp vụ, Swagger, đăng nhập mật khẩu/Google, session xoay vòng trên Redis và phân quyền theo vai trò/chủ sở hữu. Các module bao gồm địa điểm, khách sạn, phòng, tiện ích, người dùng, chủ khách sạn, lịch trình, điểm dừng, hoạt động, chính sách hủy và booking. Xem [backend README](be/README.md) cho hợp đồng API chi tiết.
 
-```bash
-git clone https://github.com/trung04/DATN-N7.git
-cd DATN-N7
-```
-
-Place the team-provided database environment file at `.env` in the repository root. Compose expects these variables:
-
-```dotenv
-POSTGRES_DB=<team-provided-database-name>
-POSTGRES_USER=<team-provided-user>
-POSTGRES_PASSWORD=<team-provided-password>
-```
-
-Compose uses these values to initialize a **local PostgreSQL container**. It does not connect to a separately hosted shared database. To use a remote database later, the backend connection configuration and Compose settings must be adapted.
-
-Nest ConfigModule loads `be/.env` when present; Compose environment variables take precedence. The file is optional inside Docker. For host development, copy `be/.env.example` to `be/.env`, replace database placeholders with the team-provided values, and use localhost hosts. Compose supplies its own database credentials and internal hosts `postgres` and `redis`. Keep any Observe keys in your local environment; telemetry connectivity remains unverified.
-
-## Start the backend development environment
-
-Run from the repository root:
-
-```bash
-docker compose --profile backend up --build -d
-docker compose --profile backend logs -f backend
-```
-
-This starts PostgreSQL, Redis, and the backend. Backend source is mounted from `be/`, and Nest runs in watch mode. Dependencies live in a separate Docker volume.
-
-Once the backend starts successfully:
-
-```bash
-curl http://localhost:3000/
-```
-
-Expected response: `Hello World!`
-
-| Service                            | Address                 |
-| ---------------------------------- | ----------------------- |
-| Backend from the host              | `http://localhost:3000` |
-| PostgreSQL from the host           | `localhost:5432`        |
-| PostgreSQL from Compose containers | `postgres:5432`         |
-| Redis from Compose containers      | `redis:6379`            |
-| Redis from the host                | `localhost:6379`        |
-
-Redis is published on loopback port 6379 for host development. PostgreSQL is published on host port 5432; stop any conflicting local database or change the mapping before starting Compose.
-
-Plain `docker compose up -d` starts only PostgreSQL and Redis. The backend and frontend services require their respective profiles.
-
-After backend dependency changes, update the dependency volume and restart:
-
-```bash
-docker compose --profile backend run --rm --no-deps backend npm ci
-docker compose --profile backend restart backend
-```
-
-## Frontend development status
-
-The frontend is not runnable yet. Before enabling its Compose profile, add the frontend implementation, Vite/TypeScript configuration, HTML entry point, and an npm lockfile.
-
-The existing Compose frontend service builds the production Nginx image and maps it to `http://localhost:8080`; it does not provide Vite hot reload. Its `/api/` location currently returns HTTP 502 deliberately because an API proxy has not been configured. The Compose `VITE_*` build arguments are also not consumed by the current Dockerfile.
-
-## Backend commands outside Docker
-
-Create `be/.env` first, then:
-
-```bash
-cd be
-npm ci
-npm run start:dev
-```
-
-Validation commands:
-
-```bash
-npm run lint
-npm run build
-npm test -- --runInBand
-npm run test:e2e -- --runInBand
-```
-
-Use Node.js 24 for checks; host Node.js 22 has an ESM test-loading incompatibility. Existing `be/dist` ownership may block rebuilding on this host. The starter HTTP e2e test imports only its feature module and does not verify live database/cache connectivity. Full Compose verification requires Docker socket access.
-
-## Stop services
-
-```bash
-docker compose --profile backend --profile frontend down
-```
-
-Named volumes retain database data and backend dependencies. Adding `--volumes` deletes those volumes, including the local database data.
+Cấu hình tích hợp AI dùng nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Client nghiệp vụ gọi AI từ NestJS chưa được triển khai; demo AI gọi trực tiếp FastAPI.
 
 ## Database and Redis configuration
 
-PostgreSQL is configured in `be/src/database/database.module.ts` using `TypeOrmModule.forRootAsync` and validated `ConfigService` values. Redis caching is configured in `be/src/common/cache/redis-cache.module.ts` using Nest CacheModule and the Keyv Redis adapter.
+Backend dùng PostgreSQL/PostGIS của Compose và Redis; AI vẫn có catalog riêng. TypeORM tắt `synchronize` và không tự chạy migration. Sau khi cấu hình database, kiểm tra và chạy migration đã review từ thư mục `be/` bằng `npm run migration:show` và `npm run migration:run`. Không chạy migration lên dữ liệu cần giữ nếu chưa có backup.
 
-- Required database settings: `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`.
-- Database defaults: port 5432, pool size 10, connect timeout 5000 ms, TLS disabled. `DATABASE_SSL=true` enables certificate-verified TLS; use the deployment's trusted CA configuration for private certificates.
-- Redis defaults: localhost:6379, database 0, connect timeout 5000 ms, TLS disabled. Optional `REDIS_USERNAME`/`REDIS_PASSWORD` support authenticated instances; `REDIS_TLS=true` enables TLS. Compose's local Redis has no authentication configured.
-- Cache TTL is in milliseconds (`CACHE_TTL_MS=60000`), and keys use the `tourism:cache` namespace. Redis connects on first cache access; application startup alone does not prove Redis availability. CacheModule disconnects its stores during shutdown, and Nest shutdown hooks are enabled.
-- Authentication uses the `tourism:auth` Redis namespace. Access sessions default to 15 minutes, refresh families to seven days, and Google OAuth state to ten minutes.
-- PostgreSQL connects during startup with bounded retries. TypeORM `synchronize` and automatic migration execution are disabled. No schema is created automatically; add reviewed migrations when entities are introduced. A standalone migration CLI data source is not configured yet.
+Chạy backend trên host: dùng Node.js 24, tạo `be/.env` theo `be/.env.example`, khởi động hạ tầng bằng `docker compose up -d postgres redis`, rồi chạy `npm ci` và `npm run start:dev` trong `be/`. Trong Compose hiện tại backend chạy image production và được bật mặc định; frontend vẫn là profile tùy chọn.
 
-Feature modules register their own entities using `TypeOrmModule.forFeature([Entity])`. Inject TypeORM repositories into the module's repository implementations; services consume repository interfaces. Do not inject TypeORM repositories directly into controllers or bypass another module's services.
+Session đăng nhập dùng `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS` và `FRONTEND_ORIGIN`. Google login chỉ bật khi có đủ `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Booking và VNPAY Sandbox có các biến được kiểm tra tại startup; xem `be/README.md` và `be/src/config/environment.validation.ts`. Các cấu hình tùy chọn chưa truyền qua Compose có thể dùng khi chạy native hoặc được bổ sung vào môi trường dịch vụ khi triển khai.
 
-For caching, inject `CACHE_MANAGER` from `@nestjs/cache-manager` with the `Cache` type from `cache-manager` into the service/integration that needs it. Use `get`, `set`, and `del` with explicit, tenant-aware keys. A cache is not a durable store for critical workflow state or distributed locks.
+PostgreSQL và Redis được publish trên loopback, mặc định lần lượt 5432 và 6379. Dịch vụ backend trong container dùng tên `postgres` và `redis`; chạy trên host dùng `localhost`. Redis cache dùng namespace `tourism:cache`, session dùng `tourism:auth`.
 
-For host development, start infrastructure with `docker compose up -d postgres redis`, configure `be/.env` using the shared database values and localhost hosts, then run `npm ci` and `npm run start:dev` inside `be/`. For Docker development, refresh the dependency volume after pulling dependency updates using the command above, then run `docker compose --profile backend up --build -d`.
+Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/README.md#recommendation).
 
-References: [Nest TypeORM](https://docs.nestjs.com/data/typeorm), [Nest configuration](https://docs.nestjs.com/application/configuration), [Nest caching](https://docs.nestjs.com/techniques/caching).
+Frontend upstream thiếu source, index.html, cấu hình TypeScript và lockfile nên chưa build được. Frontend nằm trong profile tùy chọn `frontend`, không bật mặc định; AI demo vẫn sử dụng được.
+
+## Lưu trữ
+
+AI dùng SQLite riêng tại `/app/data/recommendation.sqlite3`, không tự chuyển sang PostgreSQL của backend. Qdrant chính: `documents_bge_m3` / `dense`; ảnh: `tourism_images_clip_v1`. Dữ liệu, cache model và khóa không được đưa vào Git.
+
+Trên máy đang tích hợp, root `.env` dùng lại volume cũ:
+
+```dotenv
+AI_VOLUMES_EXTERNAL=true
+AI_DATA_VOLUME_NAME=newfolder5_recommendation-data
+QDRANT_DATA_VOLUME_NAME=newfolder5_qdrant-data
+HF_CACHE_VOLUME_NAME=embedding-cache
+```
+
+Phải dừng Qdrant cũ trước khi chạy Qdrant mới dùng chung volume. Không chạy hai Qdrant cùng một thư mục lưu trữ. Giữ backup SQLite/Qdrant trước khi thay đổi dữ liệu.
+
+Máy mới dùng mặc định `AI_VOLUMES_EXTERNAL=false` từ template: Compose tạo volume riêng, chưa có dữ liệu. Import Excel đã làm sạch theo [AI README](ai/README.md). Lần đầu tải model có thể lâu. Không dùng `docker compose down -v` nếu cần giữ dữ liệu.
+
+```powershell
+docker compose logs --tail 100 ai backend
+docker compose restart ai
+docker compose down
+```
+
+Sau khi sửa mã, chạy lại `docker compose up -d --build`; cấu hình không bật reload hoặc mount source.
+
+## Phát triển
+
+Backend dùng Node.js 24. Trong `be/`: `npm ci`, `npm run lint`, `npm run build`, `npm test -- --runInBand`, `npm run test:e2e -- --runInBand`. Đọc [AGENTS](be/AGENTS.md), [kiến trúc](be/rules/architecture.md), [REST](be/rules/rest-api.md) và [skill AI integration](be/skills/ai-service-integration/SKILL.md) trước khi thêm module.
+
+AI: cài requirements.txt và requirements-dev.txt rồi từ `ai/` chạy `python -m unittest discover -s tests -q`. Xem [Recommendation](ai/README.md#recommendation), [search](ai/README.md#tim-dia-diem), [CLIP](ai/README.md#tim-anh), [trip planner](ai/README.md#lich-trinh). Hợp đồng [OpenAPI](ai/contracts/openapi.json); runtime tại `/openapi.json`.
+
+Root `.env` được bỏ khỏi Git index trong nhánh tích hợp, chỉ commit template placeholder. Việc này không xóa bí mật đã có trong lịch sử upstream; khóa từng chia sẻ cần được thay tại nơi cấp khóa.
