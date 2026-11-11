@@ -20,8 +20,8 @@ export function EmptyState({ title = 'Chưa có dữ liệu', description, actio
 export function LoadingState({ label = 'Đang tải dữ liệu...' }: { label?: string }) { return <div role="status" className="flex items-center justify-center gap-2 p-12 text-slate-500"><LoaderCircle className="animate-spin" size={18} />{label}</div> }
 export function ErrorState({ message, retry }: { message: string; retry?: () => void }) { return <Card className="p-8 text-center"><p className="text-red-700">{message}</p>{retry && <Button variant="secondary" className="mt-4" onClick={retry}>Thử lại</Button>}</Card> }
 export function StatusBadge({ status }: { status: string }) {
-  const positive = ['CONFIRMED', 'COMPLETED', 'PAID', 'VERIFIED', 'VISIBLE', 'SAVED', 'REFUNDED'].includes(status)
-  const negative = ['FAILED', 'CANCELLED', 'REJECTED', 'HIDDEN', 'EXPIRED'].includes(status)
+  const positive = ['CONFIRMED', 'COMPLETED', 'PAID', 'VERIFIED', 'VISIBLE', 'SAVED', 'REFUNDED', 'ACTIVE'].includes(status)
+  const negative = ['FAILED', 'CANCELLED', 'REJECTED', 'HIDDEN', 'EXPIRED', 'INACTIVE', 'SUSPENDED', 'DEACTIVATED'].includes(status)
   return <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', positive ? 'bg-emerald-50 text-emerald-800' : negative ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>{formatStatus(status)}</span>
 }
 export function FormField({ label, error, children, hint }: { label: string; error?: string; children: ReactNode; hint?: string }) {

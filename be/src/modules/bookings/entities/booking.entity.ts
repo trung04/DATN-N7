@@ -268,6 +268,16 @@ export class BookingEntity {
   cancellationDescriptionSnapshot: string | null;
 
   @Column({
+    name: 'cancellation_fee_amount',
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    nullable: true,
+    transformer: nullableDecimalTransformer,
+  })
+  cancellationFeeAmount: number | null;
+
+  @Column({
     name: 'refund_amount',
     type: 'numeric',
     precision: 12,

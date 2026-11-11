@@ -38,7 +38,10 @@ export class RoomsService {
       throw new RoomNumberConflictException(input.hotelId, roomNumber);
     }
 
-    const amenities = await this.amenitiesService.findByIds(input.amenityIds);
+    const amenities = await this.amenitiesService.findByIdsForHotel(
+      input.amenityIds,
+      input.hotelId,
+    );
     const result = await this.repository.create(
       {
         hotelId: input.hotelId,
@@ -134,10 +137,10 @@ export class RoomsService {
     }
 
     const targetAmenityIds = input.amenityIds ?? current.amenityIds;
-    const amenities =
-      input.amenityIds === undefined
-        ? await this.amenitiesService.findExistingByIds(targetAmenityIds)
-        : await this.amenitiesService.findByIds(targetAmenityIds);
+    const amenities = await this.amenitiesService.findByIdsForHotel(
+      targetAmenityIds,
+      hotelId,
+    );
     this.applyUpdate(room, input, hotelId, roomNumber);
     const saved = await this.repository.save(room, input.amenityIds);
     return { room: saved.room, amenities };

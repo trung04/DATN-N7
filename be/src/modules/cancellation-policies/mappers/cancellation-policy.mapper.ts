@@ -13,6 +13,8 @@ export class CancellationPolicyMapper {
       hotelId: policy.hotelId,
       name: policy.name,
       cancellationWindow: policy.cancellationWindow,
+      minHoursBeforeCheckIn: policy.minHoursBeforeCheckIn,
+      maxHoursBeforeCheckIn: policy.maxHoursBeforeCheckIn,
       cancellationFeeRate: policy.cancellationFeeRate,
       description: policy.description,
     };

@@ -1,4 +1,4 @@
-import type { AppData, Booking, BookingInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, User } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'
@@ -51,6 +51,95 @@ export const mock = {
     const { users, partners, hotels, rooms, bookings, payments, refunds, reviews, categories, services, settlements } = readData()
     return { users, partners, hotels, rooms, bookings, payments, refunds, reviews, categories, services, settlements }
   },
+  adminUsers: async (query: AdminUserQuery): Promise<AdminUserPage> => {
+    const rows = readData().users.map((user): AdminUser => {
+      const [firstName = '', ...rest] = user.name.split(' ')
+      return {
+        id: user.id,
+        username: user.adminMetadata?.username ?? (user.email.split('@')[0] ?? ''),
+        email: user.email,
+        googleAccountLinked: user.adminMetadata?.googleAccountLinked ?? false,
+        firstName: user.adminMetadata?.firstName ?? (firstName || null),
+        lastName: user.adminMetadata?.lastName ?? (rest.join(' ') || null),
+        displayName: user.adminMetadata?.displayName ?? user.name,
+        phoneNumber: user.adminMetadata?.phoneNumber ?? user.phone ?? null,
+        dateOfBirth: user.adminMetadata?.dateOfBirth ?? null,
+        gender: user.adminMetadata?.gender ?? null,
+        status: user.adminMetadata?.status ?? 'ACTIVE',
+        role: user.adminMetadata?.role ?? (user.role === 'partner' ? 'HOTEL_OWNER' : user.role === 'admin' ? 'ADMIN' : 'TOURIST'),
+        isEmailVerified: user.adminMetadata?.isEmailVerified ?? user.verified,
+        createdAt: user.adminMetadata?.createdAt ?? '2026-01-01T00:00:00.000Z',
+        updatedAt: user.adminMetadata?.updatedAt ?? '2026-01-01T00:00:00.000Z',
+      }
+    })
+    const search = query.search?.trim().toLowerCase() ?? ''
+    const filtered = rows.filter(user =>
+      (!search || `${user.username} ${user.email} ${user.displayName ?? ''}`.toLowerCase().includes(search)) &&
+      (!query.status || user.status === query.status) &&
+      (!query.role || user.role === query.role) &&
+      (!query.gender || user.gender === query.gender) &&
+      (query.isEmailVerified === undefined || user.isEmailVerified === query.isEmailVerified),
+    )
+    const direction = query.sortOrder === 'ASC' ? 1 : -1
+    filtered.sort((a, b) => String(a[query.sortBy] ?? '').localeCompare(String(b[query.sortBy] ?? ''), 'vi') * direction)
+    const offset = (query.page - 1) * query.limit
+    return { data: filtered.slice(offset, offset + query.limit), meta: { page: query.page, limit: query.limit, total: filtered.length } }
+  },
+  adminUser: async (userId: string): Promise<AdminUser> => {
+    const user = (await mock.adminUsers({ page: 1, limit: Number.MAX_SAFE_INTEGER, sortBy: 'createdAt', sortOrder: 'DESC' })).data.find(item => item.id === userId)
+    assert(user, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404)
+    return user
+  },
+  createAdminUser: async (input: CreateAdminUserInput): Promise<AdminUser> => {
+    const now = new Date().toISOString()
+    const normalizedEmail = input.email.trim().toLowerCase()
+    const username = input.username.trim().toLowerCase()
+    assert(!readData().users.some(user => user.email.toLowerCase() === normalizedEmail || (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === username), 'IDENTITY_CONFLICT', 'Username hoặc email đã được sử dụng.', 409)
+    assert(input.password.length >= 8 && /[A-Za-z]/.test(input.password) && /[0-9]/.test(input.password), 'PASSWORD', 'Mật khẩu cần ít nhất 8 ký tự, gồm chữ và số.')
+    assert(!input.dateOfBirth || input.dateOfBirth <= now.slice(0, 10), 'DATE_OF_BIRTH', 'Ngày sinh không được ở tương lai.')
+    const passwordHash = await hash(input.password)
+    const created = commit(data => {
+      const name = input.displayName || [input.firstName, input.lastName].filter(Boolean).join(' ') || username
+      const user: User = { id: uid('user'), name, email: normalizedEmail, role: 'tourist', phone: input.phoneNumber ?? undefined, verified: false, passwordHash, adminMetadata: { username, googleAccountLinked: false, firstName: input.firstName || null, lastName: input.lastName || null, displayName: input.displayName || null, phoneNumber: input.phoneNumber || null, dateOfBirth: input.dateOfBirth || null, gender: input.gender || null, status: input.status, role: 'TOURIST', isEmailVerified: false, createdAt: now, updatedAt: now } }
+      data.users.push(user)
+      return user
+    })
+    return { ...input, id: created.id, username, email: normalizedEmail, googleAccountLinked: false, role: 'TOURIST', isEmailVerified: false, createdAt: now, updatedAt: now, firstName: input.firstName || null, lastName: input.lastName || null, displayName: input.displayName || null, phoneNumber: input.phoneNumber || null, dateOfBirth: input.dateOfBirth || null, gender: input.gender || null }
+  },
+  updateAdminUser: async (userId: string, input: UpdateAdminUserInput): Promise<AdminUser> => {
+    const existing = await mock.adminUser(userId)
+    const nextEmail = input.email?.trim().toLowerCase()
+    const nextUsername = input.username?.trim().toLowerCase()
+    if (nextEmail) assert(!readData().users.some(user => user.id !== userId && user.email.toLowerCase() === nextEmail), 'EMAIL_CONFLICT', 'Email đã được sử dụng.', 409)
+    if (nextUsername) assert(!readData().users.some(user => user.id !== userId && (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === nextUsername), 'USERNAME_CONFLICT', 'Username đã được sử dụng.', 409)
+    const updated = commit(data => {
+      const user = data.users.find(item => item.id === userId)
+      assert(user, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404)
+      const name = input.displayName ?? [input.firstName ?? existing.firstName, input.lastName ?? existing.lastName].filter(Boolean).join(' ')
+      if (name) user.name = name
+      if (nextEmail) user.email = nextEmail
+      if (input.phoneNumber !== undefined) user.phone = input.phoneNumber ?? undefined
+      if (input.role) user.role = input.role === 'ADMIN' ? 'admin' : input.role === 'HOTEL_OWNER' ? 'partner' : 'tourist'
+      const emailChanged = Boolean(nextEmail && nextEmail !== existing.email)
+      user.adminMetadata = { username: nextUsername ?? existing.username, googleAccountLinked: existing.googleAccountLinked, firstName: input.firstName === undefined ? existing.firstName : input.firstName, lastName: input.lastName === undefined ? existing.lastName : input.lastName, displayName: input.displayName === undefined ? existing.displayName : input.displayName, phoneNumber: input.phoneNumber === undefined ? existing.phoneNumber : input.phoneNumber, dateOfBirth: input.dateOfBirth === undefined ? existing.dateOfBirth : input.dateOfBirth, gender: input.gender === undefined ? existing.gender : input.gender, status: input.status ?? existing.status, role: input.role ?? existing.role, isEmailVerified: emailChanged ? false : existing.isEmailVerified, createdAt: existing.createdAt, updatedAt: new Date().toISOString() }
+      user.adminMetadata.displayName = user.name
+      user.verified = user.adminMetadata.isEmailVerified
+      return user
+    })
+    return { ...existing, ...updated.adminMetadata, ...input, email: nextEmail ?? existing.email, displayName: updated.name, updatedAt: updated.adminMetadata?.updatedAt ?? new Date().toISOString() }
+  },
+  resetAdminUserPassword: async (userId: string, newPassword: string): Promise<void> => {
+    assert(await mock.adminUser(userId), 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404)
+    assert(newPassword.length >= 8 && newPassword.length <= 72 && /[A-Za-z]/.test(newPassword) && /[0-9]/.test(newPassword), 'PASSWORD', 'Mật khẩu cần từ 8 đến 72 ký tự, gồm chữ và số.')
+    const passwordHash = await hash(newPassword)
+    commit(data => { const user = data.users.find(item => item.id === userId); assert(user, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404); user.passwordHash = passwordHash })
+  },
+  deleteAdminUser: async (userId: string): Promise<void> => commit(data => {
+    const index = data.users.findIndex(user => user.id === userId)
+    assert(index >= 0, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404)
+    data.users.splice(index, 1)
+  }),
+  currentUser: async (): Promise<User | null> => null,
   login: async (email: string, password: string): Promise<User> => {
     const user = readData().users.find(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === email.toLowerCase())
     assert(user && user.verified, 'LOGIN', 'Tài khoản không tồn tại hoặc chưa xác minh.', 401)
@@ -58,6 +147,7 @@ export const mock = {
     assert(valid, 'LOGIN', 'Mật khẩu không chính xác.', 401)
     return user
   },
+  logout: async (): Promise<void> => undefined,
   register: async (name: string, email: string, password: string) => {
     assert(!readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
     sessionStorage.setItem('smarttravel.pending', JSON.stringify({ name, email, passwordHash: await hash(password), expiresAt: Date.now() + 5 * 60000 }))

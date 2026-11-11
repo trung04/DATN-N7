@@ -112,6 +112,27 @@ export class BookingsController {
     );
   }
 
+  @Post(':bookingId/cancel')
+  @ApiUpdateOperation('Cancel a booking using the applicable hotel policy', BookingResponse, 'bookingId')
+  async cancel(
+    @CurrentUser() user: UserEntity,
+    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<BookingResponse> {
+    return BookingMapper.toResponse(await this.bookingsService.cancelForActor(id, user));
+  }
+
+  @Put(':bookingId/complete')
+  @Roles(UserRole.HOTEL_OWNER)
+  @ApiUpdateOperation('Mark a managed hotel booking as completed', BookingResponse, 'bookingId')
+  async completeForHotelOwner(
+    @CurrentUser() user: UserEntity,
+    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<BookingResponse> {
+    return BookingMapper.toResponse(
+      await this.bookingsService.completeForHotelOwner(id, user),
+    );
+  }
+
   @Put(':bookingId/payment/vnpay')
   @ApiUpdateOperation(
     'Create a VNPAY Sandbox payment URL',

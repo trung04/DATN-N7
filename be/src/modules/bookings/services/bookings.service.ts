@@ -5,7 +5,6 @@ import { HotelsService } from '../../hotels/services/hotels.service';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
-import type { CancellationPolicyEntity } from '../../cancellation-policies/entities/cancellation-policy.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
 import { RoomsService } from '../../rooms/services/rooms.service';
@@ -34,7 +33,6 @@ import {
   BookingNotFoundException,
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
-  BookingPolicyHotelMismatchException,
   BookingCapacityExceededException,
   BookingRoomNotOperationalException,
   BookingReservationExpiredException,
@@ -128,11 +126,6 @@ export class BookingsService {
       input.checkInDate,
       input.checkOutDate,
     );
-    const cancellationPolicyId = input.cancellationPolicyId ?? null;
-    const cancellationPolicy = await this.resolveCancellationPolicy(
-      hotelId,
-      cancellationPolicyId,
-    );
     const totalAmount = this.roundMoney(
       rooms.reduce(
         (total, room) => total + room.pricePerNight * numberOfNights,
@@ -172,13 +165,10 @@ export class BookingsService {
         paymentMethod: null,
         paymentStatus: PaymentStatus.PENDING,
         settlementStatus: SettlementStatus.PENDING,
-        cancellationPolicyId,
-        cancellationWindowSnapshot:
-          cancellationPolicy?.cancellationWindow ?? null,
-        cancellationFeeRateSnapshot:
-          cancellationPolicy?.cancellationFeeRate ?? null,
-        cancellationDescriptionSnapshot:
-          cancellationPolicy?.description ?? null,
+        cancellationPolicyId: null,
+        cancellationWindowSnapshot: null,
+        cancellationFeeRateSnapshot: null,
+        cancellationDescriptionSnapshot: null,
         refundStatus: RefundStatus.NONE,
       },
       rooms.map((room) => ({
@@ -214,7 +204,6 @@ export class BookingsService {
       guestEmail: input.guestEmail.trim().toLowerCase(),
       guestPhone: input.guestPhone.trim(),
       specialRequests: this.normalizeNullable(input.specialRequests),
-      cancellationPolicyId: input.cancellationPolicyId ?? null,
     };
     return createHash('sha256')
       .update(JSON.stringify(canonicalRequest))
@@ -294,16 +283,6 @@ export class BookingsService {
         booking.cancelledAt ??= new Date();
       }
     }
-    if (input.cancellationPolicyId !== undefined) {
-      const policy = await this.resolveCancellationPolicy(
-        booking.hotelId,
-        input.cancellationPolicyId,
-      );
-      booking.cancellationPolicyId = input.cancellationPolicyId;
-      booking.cancellationWindowSnapshot = policy?.cancellationWindow ?? null;
-      booking.cancellationFeeRateSnapshot = policy?.cancellationFeeRate ?? null;
-      booking.cancellationDescriptionSnapshot = policy?.description ?? null;
-    }
     if (input.adultCount !== undefined) booking.adultCount = input.adultCount;
     if (input.childCount !== undefined) booking.childCount = input.childCount;
     if (input.adultCount !== undefined || input.childCount !== undefined) {
@@ -339,6 +318,74 @@ export class BookingsService {
     const booking = await this.findById(id);
     this.assertCanModify(booking, actor);
     return this.update(id, input);
+  }
+
+  async completeForHotelOwner(
+    id: string,
+    actor: AuthorizationActor,
+  ): Promise<BookingEntity> {
+    if (actor.role !== UserRole.HOTEL_OWNER) {
+      throw new AuthorizationDeniedException();
+    }
+    const completed = await this.repository.withLockedById(id, async (booking) => {
+      await this.hotelsService.assertManagedBy(booking.hotelId, actor);
+      this.assertBookingTransition(booking, BookingStatus.COMPLETED);
+      booking.bookingStatus = BookingStatus.COMPLETED;
+      return booking;
+    });
+    if (!completed) throw new BookingNotFoundException(id);
+    return completed;
+  }
+
+  async cancelForActor(id: string, actor: AuthorizationActor): Promise<BookingEntity> {
+    const existing = await this.findById(id);
+    this.assertCanModify(existing, actor);
+    const cancelled = await this.repository.withLockedById(id, async (booking) => {
+      if (booking.bookingStatus !== BookingStatus.CONFIRMED) {
+        throw new BookingActionNotAllowedException('cancel this booking');
+      }
+      const hotel = await this.hotelsService.findById(booking.hotelId);
+      const checkInAt = new Date(`${booking.checkInDate}T${hotel.checkInTime}+07:00`);
+      const hoursBeforeCheckIn = (checkInAt.getTime() - Date.now()) / 3_600_000;
+      if (hoursBeforeCheckIn < 0) {
+        throw new BookingActionNotAllowedException('cancel after check-in');
+      }
+      const policies = await this.cancellationPoliciesService.findPage({
+        page: 1,
+        limit: 1000,
+        hotelId: booking.hotelId,
+        sortBy: 'name',
+        sortOrder: 'ASC',
+      });
+      const eligible = policies.items.filter((policy) =>
+        hoursBeforeCheckIn >= policy.minHoursBeforeCheckIn &&
+        (policy.maxHoursBeforeCheckIn === null || hoursBeforeCheckIn < policy.maxHoursBeforeCheckIn),
+      );
+      if (eligible.length !== 1) {
+        throw new BookingActionNotAllowedException('cancel without an applicable cancellation policy');
+      }
+      const policy = eligible[0];
+      const feeRate = policy.cancellationFeeRate ?? 0;
+      const feeAmount = this.roundMoney(booking.amount * feeRate / 100);
+      booking.cancellationPolicyId = policy.id;
+      booking.cancellationWindowSnapshot = policy.maxHoursBeforeCheckIn;
+      booking.cancellationFeeRateSnapshot = feeRate;
+      booking.cancellationDescriptionSnapshot = policy.description ?? policy.name;
+      booking.cancellationFeeAmount = feeAmount;
+      booking.bookingStatus = BookingStatus.CANCELLED;
+      booking.cancelledAt = new Date();
+      const refundAmount = this.roundMoney(Math.max(0, booking.amount - feeAmount));
+      booking.refundAmount = booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
+        ? refundAmount
+        : null;
+      booking.refundReason = booking.refundAmount === null
+        ? null
+        : `Khách hủy booking theo chính sách: ${policy.name}`;
+      booking.refundStatus = booking.refundAmount === null ? RefundStatus.NONE : RefundStatus.PENDING;
+      return booking;
+    });
+    if (!cancelled) throw new BookingNotFoundException(id);
+    return cancelled;
   }
 
   async createVnpayPaymentForActor(
@@ -523,8 +570,15 @@ export class BookingsService {
       if (booking.paymentStatus !== PaymentStatus.PAID) {
         throw new BookingPaymentRequiredException('refund');
       }
-      if (booking.refundStatus !== RefundStatus.NONE) {
+      const policyRefund =
+        booking.bookingStatus === BookingStatus.CANCELLED &&
+        booking.refundStatus === RefundStatus.PENDING &&
+        booking.refundAmount !== null;
+      if (booking.refundStatus !== RefundStatus.NONE && !policyRefund) {
         throw new BookingRefundAlreadyInitializedException();
+      }
+      if (policyRefund && input.refundAmount !== booking.refundAmount) {
+        throw new RefundAmountExceededException();
       }
       if (input.refundAmount > booking.amount) {
         throw new RefundAmountExceededException();
@@ -532,8 +586,10 @@ export class BookingsService {
       if (!booking.paymentTransactionId || !booking.paymentCreatedAt) {
         throw new BookingActionNotAllowedException('VNPAY refund');
       }
-      booking.refundAmount = input.refundAmount;
-      booking.refundReason = input.refundReason.trim();
+      if (!policyRefund) {
+        booking.refundAmount = input.refundAmount;
+        booking.refundReason = input.refundReason.trim();
+      }
       booking.refundStatus = RefundStatus.PENDING;
       return {
         originalAmount: booking.amount,
@@ -607,19 +663,6 @@ export class BookingsService {
     }
   }
 
-  private async resolveCancellationPolicy(
-    hotelId: string,
-    cancellationPolicyId: string | null,
-  ): Promise<CancellationPolicyEntity | null> {
-    if (!cancellationPolicyId) return null;
-    const policy =
-      await this.cancellationPoliciesService.findById(cancellationPolicyId);
-    if (policy.hotelId !== hotelId) {
-      throw new BookingPolicyHotelMismatchException();
-    }
-    return policy;
-  }
-
   private assertBookingTransition(
     booking: BookingEntity,
     next: BookingStatus,
@@ -628,12 +671,10 @@ export class BookingsService {
       [BookingStatus.PENDING]: [
         BookingStatus.PENDING,
         BookingStatus.CONFIRMED,
-        BookingStatus.CANCELLED,
       ],
       [BookingStatus.CONFIRMED]: [
         BookingStatus.CONFIRMED,
         BookingStatus.COMPLETED,
-        BookingStatus.CANCELLED,
       ],
       [BookingStatus.CANCELLED]: [BookingStatus.CANCELLED],
       [BookingStatus.COMPLETED]: [BookingStatus.COMPLETED],
@@ -683,7 +724,6 @@ export class BookingsService {
       input.guestPhone,
       input.specialRequests,
       input.bookingStatus,
-      input.cancellationPolicyId,
     ].every((value) => value === undefined);
   }
 

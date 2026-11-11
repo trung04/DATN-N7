@@ -29,3 +29,9 @@ export class EmptyCancellationPolicyUpdateException extends DomainException {
     );
   }
 }
+
+export class InvalidCancellationPolicyRangeException extends DomainException {
+  constructor(message = 'Cancellation policy time range is invalid or overlaps another policy.') {
+    super(message, 'INVALID_CANCELLATION_POLICY_RANGE', 'conflict');
+  }
+}

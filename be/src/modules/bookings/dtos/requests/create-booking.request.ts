@@ -75,7 +75,4 @@ export class CreateBookingRequest {
   @MaxLength(5000)
   specialRequests?: string | null;
 
-  @IsOptional()
-  @IsUUID('4')
-  cancellationPolicyId?: string | null;
 }

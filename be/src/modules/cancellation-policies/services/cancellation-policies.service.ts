@@ -9,6 +9,7 @@ import {
   CancellationPolicyNameConflictException,
   CancellationPolicyNotFoundException,
   EmptyCancellationPolicyUpdateException,
+  InvalidCancellationPolicyRangeException,
 } from '../exceptions/cancellation-policy.exceptions';
 import { CANCELLATION_POLICY_REPOSITORY } from '../interfaces/cancellation-policy.repository.interface';
 import type {
@@ -34,11 +35,17 @@ export class CancellationPoliciesService {
     if (await this.repository.findByHotelAndName(input.hotelId, name)) {
       throw new CancellationPolicyNameConflictException(input.hotelId, name);
     }
+    const minHours = input.minHoursBeforeCheckIn ?? 0;
+    const maxHours = input.maxHoursBeforeCheckIn ?? null;
+    this.assertRange(minHours, maxHours);
+    await this.assertNoOverlap(input.hotelId, minHours, maxHours);
 
     return this.repository.create({
       hotelId: input.hotelId,
       name,
       cancellationWindow: input.cancellationWindow ?? null,
+      minHoursBeforeCheckIn: minHours,
+      maxHoursBeforeCheckIn: maxHours,
       cancellationFeeRate: input.cancellationFeeRate ?? null,
       description: this.normalizeNullable(input.description),
     });
@@ -74,6 +81,17 @@ export class CancellationPoliciesService {
     const policy = await this.findById(id);
     await this.hotelsService.assertManagedBy(policy.hotelId, actor);
 
+    if (input.minHoursBeforeCheckIn !== undefined || input.maxHoursBeforeCheckIn !== undefined) {
+      const minHours = input.minHoursBeforeCheckIn ?? policy.minHoursBeforeCheckIn;
+      const maxHours = input.maxHoursBeforeCheckIn !== undefined
+        ? input.maxHoursBeforeCheckIn
+        : policy.maxHoursBeforeCheckIn;
+      this.assertRange(minHours, maxHours);
+      await this.assertNoOverlap(policy.hotelId, minHours, maxHours, policy.id);
+      policy.minHoursBeforeCheckIn = minHours;
+      policy.maxHoursBeforeCheckIn = maxHours;
+    }
+
     if (input.name !== undefined) {
       const name = input.name.trim();
       const duplicate = await this.repository.findByHotelAndName(
@@ -108,9 +126,34 @@ export class CancellationPoliciesService {
     return [
       input.name,
       input.cancellationWindow,
+      input.minHoursBeforeCheckIn,
+      input.maxHoursBeforeCheckIn,
       input.cancellationFeeRate,
       input.description,
     ].every((value) => value === undefined);
+  }
+
+  private assertRange(min: number, max: number | null): void {
+    if (min < 0 || (max !== null && max <= min)) {
+      throw new InvalidCancellationPolicyRangeException(
+        'Giờ bắt đầu phải nhỏ hơn giờ kết thúc; để trống giờ kết thúc nếu không giới hạn.',
+      );
+    }
+  }
+
+  private async assertNoOverlap(
+    hotelId: string,
+    min: number,
+    max: number | null,
+    excludeId?: string,
+  ): Promise<void> {
+    const policies = await this.repository.findAllByHotel(hotelId);
+    const overlaps = policies.some((item) =>
+      item.id !== excludeId &&
+      (max === null || item.minHoursBeforeCheckIn < max) &&
+      (item.maxHoursBeforeCheckIn === null || min < item.maxHoursBeforeCheckIn),
+    );
+    if (overlaps) throw new InvalidCancellationPolicyRangeException();
   }
 
   private normalizeNullable(value?: string | null): string | null {

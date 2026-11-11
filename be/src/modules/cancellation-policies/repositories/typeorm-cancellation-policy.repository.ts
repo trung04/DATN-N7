@@ -32,6 +32,10 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
       .getOne();
   }
 
+  findAllByHotel(hotelId: string): Promise<CancellationPolicyEntity[]> {
+    return this.repository.find({ where: { hotelId } });
+  }
+
   async findPage(
     options: FindCancellationPoliciesOptions,
   ): Promise<CancellationPolicyPage> {

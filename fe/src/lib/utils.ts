@@ -22,7 +22,8 @@ export const clamp = (n: number, min: number, max: number) => Math.max(min, Math
 export const formatStatus = (s: string) => ({
   PENDING_PAYMENT: 'Chờ thanh toán', CONFIRMED: 'Đã xác nhận', COMPLETED: 'Hoàn tất', CANCELLED: 'Đã hủy', EXPIRED: 'Hết hạn',
   PENDING: 'Chờ xử lý', PROCESSING: 'Đang xử lý', PAID: 'Đã thanh toán', FAILED: 'Thất bại', REFUNDED: 'Đã hoàn tiền',
-  DRAFT: 'Bản nháp', APPROVED: 'Đã duyệt', VERIFIED: 'Đã xác minh', REJECTED: 'Bị từ chối', NEEDS_INFO: 'Cần bổ sung',
+  DRAFT: 'Bản nháp', PENDING_APPROVAL: 'Chờ duyệt', APPROVED: 'Đã duyệt', VERIFIED: 'Đã xác minh', REJECTED: 'Bị từ chối', NEEDS_INFO: 'Cần bổ sung', SUSPENDED: 'Tạm đình chỉ',
+  ACTIVE: 'Hoạt động', INACTIVE: 'Không hoạt động', DEACTIVATED: 'Đã vô hiệu hóa',
   VISIBLE: 'Hiển thị', HIDDEN: 'Đã ẩn', SAVED: 'Đã lưu',
 } as Record<string, string>)[s] ?? s
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Đã xảy ra lỗi. Vui lòng thử lại.'

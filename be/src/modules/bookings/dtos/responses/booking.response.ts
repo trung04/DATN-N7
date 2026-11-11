@@ -59,6 +59,7 @@ export class BookingResponse {
   cancellationWindowSnapshot: number | null;
   cancellationFeeRateSnapshot: number | null;
   cancellationDescriptionSnapshot: string | null;
+  cancellationFeeAmount: number | null;
   refundAmount: number | null;
   refundReason: string | null;
   refundStatus: RefundStatus;

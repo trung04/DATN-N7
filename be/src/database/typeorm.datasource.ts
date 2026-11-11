@@ -45,6 +45,11 @@ import { AddBookingReservationExpiry1793697400000 } from './migrations/179369740
 import { CreateBookingIdempotencyKeys1793697500000 } from './migrations/1793697500000-CreateBookingIdempotencyKeys';
 import { CreateHotels1793697600000 } from './migrations/1793697600000-CreateHotels';
 import { AlignAuthenticationSchema1793898000000 } from './migrations/1793898000000-AlignAuthenticationSchema';
+import { AddHotelScopedAmenities1793898100000 } from './migrations/1793898100000-AddHotelScopedAmenities';
+import { AddCancellationPolicyRanges1793898200000 } from './migrations/1793898200000-AddCancellationPolicyRanges';
+import { ReviewEntity } from '../modules/reviews/entities/review.entity';
+import { ReviewModerationHistoryEntity } from '../modules/reviews/entities/review-moderation-history.entity';
+import { CreateReviews1793898300000 } from './migrations/1793898300000-CreateReviews';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -86,6 +91,8 @@ export default new DataSource({
     HotelEntity,
     HotelDocumentEntity,
     HotelReviewHistoryEntity,
+    ReviewEntity,
+    ReviewModerationHistoryEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -103,6 +110,9 @@ export default new DataSource({
     CreateBookingIdempotencyKeys1793697500000,
     CreateHotels1793697600000,
     AlignAuthenticationSchema1793898000000,
+    AddHotelScopedAmenities1793898100000,
+    AddCancellationPolicyRanges1793898200000,
+    CreateReviews1793898300000,
   ],
   synchronize: false,
   logging: false,

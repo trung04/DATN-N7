@@ -6,7 +6,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -62,7 +61,4 @@ export class UpdateBookingRequest {
   @IsEnum(BookingStatus)
   bookingStatus?: BookingStatus;
 
-  @IsOptional()
-  @IsUUID('4')
-  cancellationPolicyId?: string | null;
 }

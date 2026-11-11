@@ -10,6 +10,7 @@ export interface FindAmenitiesOptions {
   search?: string;
   sortBy: AmenitySortField;
   sortOrder: 'ASC' | 'DESC';
+  hotelId?: string | null;
 }
 
 export interface AmenityPage {
@@ -20,12 +21,14 @@ export interface AmenityPage {
 export interface CreateAmenityData {
   code: string;
   name: string;
+  hotelId?: string | null;
 }
 
 export interface AmenityRepository {
   findById(id: string): Promise<AmenityEntity | null>;
   findByIds(ids: string[]): Promise<AmenityEntity[]>;
-  findByCode(code: string): Promise<AmenityEntity | null>;
+  findByIdsForHotel(ids: string[], hotelId: string): Promise<AmenityEntity[]>;
+  findByCode(code: string, hotelId?: string | null): Promise<AmenityEntity | null>;
   findPage(options: FindAmenitiesOptions): Promise<AmenityPage>;
   create(data: CreateAmenityData): Promise<AmenityEntity>;
   save(amenity: AmenityEntity): Promise<AmenityEntity>;

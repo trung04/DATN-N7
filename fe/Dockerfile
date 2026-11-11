@@ -19,6 +19,11 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 # Production build (requires frontend source)
 FROM dependencies AS builder
 
+ARG VITE_DATA_MODE=api
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_DATA_MODE=$VITE_DATA_MODE
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 COPY . .
 
 RUN npm run build

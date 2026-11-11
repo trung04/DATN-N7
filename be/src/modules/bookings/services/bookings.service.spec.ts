@@ -67,7 +67,6 @@ const createInput = (
   guestName: 'Nguyen Van A',
   guestEmail: 'guest@example.com',
   guestPhone: '0912345678',
-  cancellationPolicyId: policyId,
   ...overrides,
 });
 
@@ -109,7 +108,7 @@ const booking = (overrides: Partial<BookingEntity> = {}): BookingEntity =>
     bankAccountNumberSnapshot: null,
     bankAccountHolderSnapshot: null,
     settledAt: null,
-    cancellationPolicyId: policyId,
+    cancellationPolicyId: null,
     cancellationWindowSnapshot: 24,
     cancellationFeeRateSnapshot: 20,
     cancellationDescriptionSnapshot: 'Cancel before 24 hours',
