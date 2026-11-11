@@ -25,6 +25,8 @@ export interface CreateCancellationPolicyData {
   hotelId: string;
   name: string;
   cancellationWindow: number | null;
+  minHoursBeforeCheckIn: number;
+  maxHoursBeforeCheckIn: number | null;
   cancellationFeeRate: number | null;
   description: string | null;
 }
@@ -35,6 +37,7 @@ export interface CancellationPolicyRepository {
     hotelId: string,
     name: string,
   ): Promise<CancellationPolicyEntity | null>;
+  findAllByHotel(hotelId: string): Promise<CancellationPolicyEntity[]>;
   findPage(
     options: FindCancellationPoliciesOptions,
   ): Promise<CancellationPolicyPage>;

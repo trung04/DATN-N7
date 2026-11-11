@@ -26,24 +26,31 @@ const Trips = lazy(() => import('@/features/trips/pages').then(m => ({ default: 
 const TripForm = lazy(() => import('@/features/trips/pages').then(m => ({ default: m.TripFormPage })))
 const TripDetail = lazy(() => import('@/features/trips/pages').then(m => ({ default: m.TripDetailPage })))
 const BookingNew = lazy(() => import('@/features/bookings/pages').then(m => ({ default: m.BookingNewPage })))
+const PartnerBookings = lazy(() => import('@/features/bookings/management').then(m => ({ default: m.BookingManagementPage })))
+const AdminBookings = lazy(() => import('@/features/bookings/management').then(m => ({ default: () => <m.BookingManagementPage admin /> })))
 const Bookings = lazy(() => import('@/features/bookings/pages').then(m => ({ default: m.BookingsPage })))
 const BookingDetail = lazy(() => import('@/features/bookings/pages').then(m => ({ default: m.BookingDetailPage })))
 const Payment = lazy(() => import('@/features/bookings/pages').then(m => ({ default: m.PaymentPage })))
 const PaymentResult = lazy(() => import('@/features/bookings/pages').then(m => ({ default: m.PaymentResultPage })))
-const PartnerHome = lazy(() => import('@/features/partner/pages').then(m => ({ default: m.PartnerDashboard })))
-const PartnerRooms = lazy(() => import('@/features/partner/pages').then(m => ({ default: m.PartnerRoomsPage })))
-const PartnerRoomForm = lazy(() => import('@/features/partner/pages').then(m => ({ default: m.PartnerRoomFormPage })))
-const PartnerInventory = lazy(() => import('@/features/partner/pages').then(m => ({ default: m.PartnerInventoryPage })))
-const AdminHome = lazy(() => import('@/features/admin/dashboard').then(m => ({ default: m.AdminDashboard })))
-const AdminPartners = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminPartnersPage })))
-const AdminPartnerDetail = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminPartnerDetailPage })))
-const AdminServices = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminServicesPage })))
-const AdminCategories = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminCategoriesPage })))
-const AdminReviews = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminReviewsPage })))
-const AdminReviewDetail = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminReviewDetailPage })))
-const AdminReports = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminReportsPage })))
-const AdminSettlements = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminSettlementsPage })))
-const AdminSettlementDetail = lazy(() => import('@/features/admin/pages').then(m => ({ default: m.AdminSettlementDetailPage })))
+const PartnerHome = lazy(() => import('@/features/partner/rooms').then(m => ({ default: m.PartnerOverviewPage })))
+const PartnerHotels = lazy(() => import('@/features/partner/hotels').then(m => ({ default: m.PartnerHotelsPage })))
+const PartnerHotelForm = lazy(() => import('@/features/partner/hotels').then(m => ({ default: m.PartnerHotelFormPage })))
+const PartnerRooms = lazy(() => import('@/features/partner/rooms').then(m => ({ default: m.PartnerRoomsPage })))
+const PartnerRoomForm = lazy(() => import('@/features/partner/rooms').then(m => ({ default: m.PartnerRoomFormPage })))
+const PartnerProfile = lazy(() => import('@/features/partner/profile').then(m => ({ default: m.PartnerProfilePage })))
+const PartnerAmenities = lazy(() => import('@/features/partner/amenities').then(m => ({ default: m.PartnerAmenitiesPage })))
+const PartnerCancellationPolicies = lazy(() => import('@/features/partner/cancellation-policies').then(m => ({ default: m.CancellationPoliciesPage })))
+const PartnerReviews = lazy(() => import('@/features/reviews/management').then(m => ({ default: m.ReviewManagementPage })))
+const AdminReviews = lazy(() => import('@/features/reviews/management').then(m => ({ default: () => <m.ReviewManagementPage admin /> })))
+const AdminHome = lazy(() => import('@/features/admin/overview').then(m => ({ default: m.AdminOverviewPage })))
+const AdminHotels = lazy(() => import('@/features/admin/hotels').then(m => ({ default: m.AdminHotelsPage })))
+const AdminHotelDetail = lazy(() => import('@/features/admin/hotels').then(m => ({ default: m.AdminHotelDetailPage })))
+const AdminUsers = lazy(() => import('@/features/admin/users').then(m => ({ default: m.AdminUsersPage })))
+const AdminPartners = lazy(() => import('@/features/admin/hotel-owners').then(m => ({ default: m.AdminHotelOwnersPage })))
+const AdminAmenities = lazy(() => import('@/features/admin/amenities').then(m => ({ default: m.AdminAmenitiesPage })))
+const AdminCancellationPolicies = lazy(() => import('@/features/partner/cancellation-policies').then(m => ({ default: () => <m.CancellationPoliciesPage admin /> })))
+const PartnerReports = lazy(() => import('@/features/reports/dashboard').then(m => ({ default: m.ReportDashboardPage })))
+const AdminReports = lazy(() => import('@/features/reports/dashboard').then(m => ({ default: () => <m.ReportDashboardPage admin /> })))
 
 function Guard({ role }: { role: Role }) {
   const user = useSession(s => s.user)
@@ -68,7 +75,7 @@ export function AppRouter() {
       <Route path="/403" element={<NotFound forbidden />} /><Route path="*" element={<NotFound />} />
     </Route>
     <Route path="/auth" element={<AuthLayout />}><Route path="login" element={<Login />} /><Route path="register" element={<Register />} /><Route path="verify-otp" element={<VerifyOtp />} /><Route path="forgot-password" element={<ForgotPassword />} /><Route path="reset-password" element={<ResetPassword />} /></Route>
-    <Route element={<Guard role="partner" />}><Route path="/partner" element={<DashboardLayout kind="partner" />}><Route index element={<PartnerHome />} /><Route path="rooms" element={<PartnerRooms />} /><Route path="rooms/new" element={<PartnerRoomForm />} /><Route path="rooms/:id/edit" element={<PartnerRoomForm />} /><Route path="rooms/:id/inventory" element={<PartnerInventory />} /></Route></Route>
-    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="partners" element={<AdminPartners />} /><Route path="partners/:id" element={<AdminPartnerDetail />} /><Route path="services" element={<AdminServices />} /><Route path="service-categories" element={<AdminCategories />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reviews/:id" element={<AdminReviewDetail />} /><Route path="reports" element={<AdminReports />} /><Route path="settlements" element={<AdminSettlements />} /><Route path="settlements/:id" element={<AdminSettlementDetail />} /></Route></Route>
+    <Route element={<Guard role="partner" />}><Route path="/partner" element={<DashboardLayout kind="partner" />}><Route index element={<PartnerHome />} /><Route path="hotels" element={<PartnerHotels />} /><Route path="hotels/new" element={<PartnerHotelForm />} /><Route path="hotels/:id/edit" element={<PartnerHotelForm />} /><Route path="rooms" element={<PartnerRooms />} /><Route path="rooms/new" element={<PartnerRoomForm />} /><Route path="rooms/:id/edit" element={<PartnerRoomForm />} /><Route path="amenities" element={<PartnerAmenities />} /><Route path="cancellation-policies" element={<PartnerCancellationPolicies />} /><Route path="bookings" element={<PartnerBookings />} /><Route path="reviews" element={<PartnerReviews />} /><Route path="reports" element={<PartnerReports />} /><Route path="profile" element={<PartnerProfile />} /></Route></Route>
+    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="users" element={<AdminUsers />} /><Route path="partners" element={<AdminPartners />} /><Route path="hotels" element={<AdminHotels />} /><Route path="hotels/:id" element={<AdminHotelDetail />} /><Route path="amenities" element={<AdminAmenities />} /><Route path="cancellation-policies" element={<AdminCancellationPolicies />} /><Route path="bookings" element={<AdminBookings />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reports" element={<AdminReports />} /></Route></Route>
   </Routes></Suspense>
 }

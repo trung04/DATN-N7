@@ -47,6 +47,7 @@ export class BookingMapper {
       cancellationWindowSnapshot: booking.cancellationWindowSnapshot,
       cancellationFeeRateSnapshot: booking.cancellationFeeRateSnapshot,
       cancellationDescriptionSnapshot: booking.cancellationDescriptionSnapshot,
+      cancellationFeeAmount: booking.cancellationFeeAmount,
       refundAmount: booking.refundAmount,
       refundReason: booking.refundReason,
       refundStatus: booking.refundStatus,

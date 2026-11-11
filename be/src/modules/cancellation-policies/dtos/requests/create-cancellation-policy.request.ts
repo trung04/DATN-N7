@@ -33,6 +33,20 @@ export class CreateCancellationPolicyRequest {
 
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(87600)
+  minHoursBeforeCheckIn = 0;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(87600)
+  maxHoursBeforeCheckIn?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)

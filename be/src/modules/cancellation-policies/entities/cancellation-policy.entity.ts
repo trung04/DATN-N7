@@ -26,6 +26,12 @@ export class CancellationPolicyEntity {
   @Column({ name: 'cancellation_window', type: 'integer', nullable: true })
   cancellationWindow: number | null;
 
+  @Column({ name: 'min_hours_before_check_in', type: 'integer', default: 0 })
+  minHoursBeforeCheckIn: number;
+
+  @Column({ name: 'max_hours_before_check_in', type: 'integer', nullable: true })
+  maxHoursBeforeCheckIn: number | null;
+
   @Column({
     name: 'cancellation_fee_rate',
     type: 'numeric',

@@ -10,6 +10,7 @@ import { AmenitiesService } from './amenities.service';
 const amenity = (overrides: Partial<AmenityEntity> = {}): AmenityEntity =>
   Object.assign(new AmenityEntity(), {
     id: '11111111-1111-4111-8111-111111111111',
+    hotelId: null,
     code: 'FREE_WIFI',
     name: 'Free Wi-Fi',
     createdAt: new Date('2026-11-03T00:00:00.000Z'),
@@ -22,6 +23,7 @@ describe('AmenitiesService', () => {
   let service: AmenitiesService;
   let createAmenity: jest.MockedFunction<AmenityRepository['create']>;
   let deleteAmenity: jest.MockedFunction<AmenityRepository['delete']>;
+  const hotelsService = { assertManagedBy: jest.fn() };
 
   beforeEach(() => {
     createAmenity = jest.fn();
@@ -29,13 +31,14 @@ describe('AmenitiesService', () => {
     repository = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findByIdsForHotel: jest.fn(),
       findByCode: jest.fn(),
       findPage: jest.fn(),
       create: createAmenity,
       save: jest.fn(),
       delete: deleteAmenity,
     };
-    service = new AmenitiesService(repository);
+    service = new AmenitiesService(repository, hotelsService as never);
   });
 
   it('normalizes the code when creating an amenity', async () => {

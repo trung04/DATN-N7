@@ -118,6 +118,7 @@ hashes; password hashes and Google account identifiers are never returned.
 
 List filters include `search`, `status`, `role`, `gender`, and
 `isEmailVerified`.
+
 Password reset uses `PUT /api/v1/users/:userId/password`. User management routes
 require `ADMIN`; an administrator may also change a user's role through the
 user update endpoint.

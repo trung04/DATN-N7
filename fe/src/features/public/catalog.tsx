@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Heart, MapPin, Search, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, DetailLink, EmptyState, ErrorState, Feedback, LoadingState, PageHeader, Picture } from '@/components/common'
-import { repo } from '@/services'
+import { repo, isMock } from '@/services'
+import { api } from '@/services/api/client'
 import { currency, errorMessage, nights, todayPlus } from '@/lib/utils'
 import { useSession } from '@/stores/session'
 import { useCatalog } from '@/hooks/data'
@@ -89,6 +90,8 @@ export function HotelDetailPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const { data, isLoading, error } = useCatalog()
+  const publicReviews = useQuery({ queryKey: ['public-reviews', id], queryFn: () => api.publicReviewPage({ hotelId: id!, page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' }), enabled: Boolean(id) && !isMock })
+  const reviewSummary = useQuery({ queryKey: ['public-review-summary', id], queryFn: () => api.publicReviewSummary(id!), enabled: Boolean(id) && !isMock })
   const checkIn = params.get('checkIn') ?? todayPlus(7)
   const checkOut = params.get('checkOut') ?? todayPlus(9)
   const rooms = Number(params.get('rooms') ?? 1)
@@ -100,8 +103,8 @@ export function HotelDetailPage() {
   const hotel = data?.hotels.find(x => x.id === id)
   if (!hotel || !data) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy khách sạn" action={<Button asChild><Link to="/hotels">Về danh sách</Link></Button>} /></div>
   const hotelRooms = data.rooms.filter(r => r.hotelId === id)
-  const reviews = data.reviews.filter(r => r.hotelId === id && r.status === 'VISIBLE')
-  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><Picture label={hotel.name} src={hotel.image ?? travelImage(hotel.city, 'hotel')} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}</div><h1 className="mt-2 text-3xl font-semibold">{hotel.name}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div><p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p><div className="mt-5"><FavoriteButton id={hotel.id} /></div></div></div><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em'} /><div className="grid gap-4">{hotelRooms.map(room => {
+  const reviews = isMock ? data.reviews.filter(r => r.hotelId === id && r.status === 'VISIBLE') : (publicReviews.data?.data ?? [])
+  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><Picture label={hotel.name} src={hotel.image ?? travelImage(hotel.city, 'hotel')} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {reviewSummary.data ? reviewSummary.data.averageRating.toFixed(1) + ' (' + reviewSummary.data.visibleCount + ' đánh giá)' : hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}</div><h1 className="mt-2 text-3xl font-semibold">{hotel.name}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div><p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p><div className="mt-5"><FavoriteButton id={hotel.id} /></div></div></div><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em'} /><div className="grid gap-4">{hotelRooms.map(room => {
     const days = Array.from({ length: Math.max(0, nights(checkIn, checkOut)) }, (_, i) => { const date = new Date(checkIn + 'T12:00:00'); date.setDate(date.getDate() + i); return date.toISOString().slice(0, 10) })
     const available = days.length > 0 && days.every(date => (data.availability.find(a => a.roomId === room.id && a.date === date)?.available ?? Number.POSITIVE_INFINITY) >= rooms)
     const capacity = room.capacity * rooms >= adults + children

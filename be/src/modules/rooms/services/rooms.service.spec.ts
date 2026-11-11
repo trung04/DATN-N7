@@ -43,7 +43,7 @@ const ownerActor = {
 
 describe('RoomsService', () => {
   let repository: jest.Mocked<RoomRepository>;
-  let amenitiesService: jest.Mocked<Pick<AmenitiesService, 'findByIds'>>;
+  let amenitiesService: jest.Mocked<Pick<AmenitiesService, 'findByIdsForHotel'>>;
   let hotelsService: jest.Mocked<
     Pick<HotelsService, 'assertActive' | 'assertManagedBy'>
   >;
@@ -63,7 +63,7 @@ describe('RoomsService', () => {
       save: jest.fn(),
       delete: deleteRoom,
     };
-    amenitiesService = { findByIds: jest.fn() };
+    amenitiesService = { findByIdsForHotel: jest.fn() };
     hotelsService = { assertActive: jest.fn(), assertManagedBy: jest.fn() };
     service = new RoomsService(
       repository,
@@ -76,7 +76,7 @@ describe('RoomsService', () => {
     const saved = room();
     const wifi = amenity();
     repository.findByHotelAndNumber.mockResolvedValue(null);
-    amenitiesService.findByIds.mockResolvedValue([wifi]);
+    amenitiesService.findByIdsForHotel.mockResolvedValue([wifi]);
     repository.create.mockResolvedValue({
       room: saved,
       amenityIds: [wifi.id],

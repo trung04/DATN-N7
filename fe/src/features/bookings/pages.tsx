@@ -1,16 +1,41 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, CreditCard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { repo, isMock } from '@/services'
 import { currency, day, dateTime, errorMessage, nights, stayDays, todayPlus } from '@/lib/utils'
-import { cancellationQuote } from '@/lib/booking'
 import { useSession } from '@/stores/session'
 import { useCatalog, useTourist } from '@/hooks/data'
+import { api } from '@/services/api/client'
 import type { BookingInput } from '@/types/domain'
+
+function BookingReviewForm({ bookingId, userId, alreadyReviewed }: { bookingId: string; userId: string; alreadyReviewed: boolean }) {
+  const queryClient = useQueryClient()
+  const savedReview = useQuery({ queryKey: ['my-booking-review', bookingId], queryFn: () => api.myBookingReview(bookingId), enabled: !isMock })
+  const [stars, setStars] = useState(0)
+  const [content, setContent] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const existing = isMock ? alreadyReviewed : Boolean(savedReview.data)
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setMessage('')
+    try {
+      if (isMock) await repo.addReview(userId, bookingId, stars, content)
+      else await api.createBookingReview(bookingId, stars, content)
+      await queryClient.invalidateQueries({ queryKey: ['tourist'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-booking-review', bookingId] })
+      await queryClient.invalidateQueries({ queryKey: ['managed-reviews'] })
+      setMessage('Đã gửi đánh giá, đánh giá đang chờ kiểm duyệt.')
+    } catch (error) { setMessage(errorMessage(error)) } finally { setBusy(false) }
+  }
+  if (!isMock && savedReview.isPending) return <LoadingState />
+  if (!isMock && savedReview.isError) return <ErrorState message={errorMessage(savedReview.error)} retry={() => { void savedReview.refetch() }} />
+  if (existing) return <p className="mt-3 text-sm text-slate-600">Bạn đã gửi đánh giá cho booking này{savedReview.data?.status === 'PENDING' ? '; đánh giá đang chờ kiểm duyệt.' : '.'}</p>
+  return <form className="mt-4 grid gap-4" onSubmit={submit}><FormField label="Số sao"><select required value={stars || ''} onChange={event => setStars(Number(event.target.value))}><option value="">Chọn số sao</option>{[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value} sao</option>)}</select></FormField><FormField label="Nhận xét" hint="Nhập ít nhất 10 ký tự"><textarea required minLength={10} maxLength={5000} value={content} onChange={event => setContent(event.target.value)} placeholder="Chia sẻ trải nghiệm lưu trú..." /></FormField><Feedback message={message} kind={message.startsWith('Đã') ? 'success' : 'error'} /><Button disabled={busy || stars < 1}>{busy ? 'Đang gửi...' : 'Gửi đánh giá'}</Button></form>
+}
 
 export function BookingNewPage() {
   const user = useSession(s => s.user)
@@ -59,15 +84,12 @@ export function BookingsPage() {
 }
 export function BookingDetailPage() {
   const { id } = useParams()
-  const [now] = useState(() => Date.now())
   const user = useSession(s => s.user)
   const { data, isLoading, error } = useTourist()
   const { data: catalog } = useCatalog()
   const queryClient = useQueryClient()
   const [cancelOpen, setCancelOpen] = useState(false)
   const [message, setMessage] = useState('')
-  const [stars, setStars] = useState(0)
-  const [content, setContent] = useState('')
   if (isLoading) return <LoadingState />
   if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
   const booking = data?.bookings.find(b => b.id === id)
@@ -77,10 +99,8 @@ export function BookingDetailPage() {
   const payment = [...(data?.payments.filter(p => p.bookingId === booking.id) ?? [])].at(-1)
   const refund = data?.refunds.find(r => r.bookingId === booking.id)
   const reviewed = data?.reviews.some(r => r.bookingId === booking.id)
-  const quote = cancellationQuote(booking, now)
-  const canCancel = booking.status === 'CONFIRMED' && quote.allowed
-  const fee = quote.fee
-  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F]" to="/bookings">← Booking của tôi</Link><div className="mt-5"><PageHeader title={'Booking ' + booking.id} description={hotel?.name ?? booking.hotelId} actions={<StatusBadge status={booking.status} />} /></div><div className="grid gap-6 lg:grid-cols-[1fr_340px]"><div className="grid gap-5"><Card className="p-6"><h2 className="text-lg font-semibold">Thông tin lưu trú</h2><dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Khách sạn</dt><dd>{hotel?.name}</dd></div><div><dt className="text-slate-500">Loại phòng</dt><dd>{room?.name}</dd></div><div><dt className="text-slate-500">Ngày nhận phòng</dt><dd>{day(booking.checkIn)}</dd></div><div><dt className="text-slate-500">Ngày trả phòng</dt><dd>{day(booking.checkOut)}</dd></div><div><dt className="text-slate-500">Số lượng</dt><dd>{booking.rooms} phòng · {booking.adults + booking.children} khách</dd></div><div><dt className="text-slate-500">Người đặt</dt><dd>{booking.guestName} · {booking.guestPhone}</dd></div></dl><p className="mt-5 text-sm text-slate-600"><strong>Chính sách lưu khi đặt:</strong> {booking.policySnapshot}</p></Card><Card className="p-6"><h2 className="text-lg font-semibold">Thanh toán và hoàn tiền</h2><div className="mt-4 flex flex-wrap items-center gap-3 text-sm">Trạng thái thanh toán: {payment && <StatusBadge status={payment.status} />}</div>{booking.status === 'PENDING_PAYMENT' && <p className="mt-3 text-sm text-amber-800">Giữ phòng đến {dateTime(booking.holdExpiresAt)}.</p>}{refund && <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm"><p><strong>Hoàn tiền:</strong> <StatusBadge status={refund.status} /></p><p className="mt-2">Số tiền yêu cầu: {currency(refund.amount)}</p><p className="mt-1 text-slate-500">Đã hủy booking không có nghĩa là tiền đã được hoàn.</p></div>}{booking.status === 'CANCELLED' && !refund && <p className="mt-3 text-sm text-slate-500">Theo chính sách hủy, booking này không phát sinh hoàn tiền.</p>}</Card>{booking.status === 'COMPLETED' && <Card className="p-6"><h2 className="text-lg font-semibold">Đánh giá khách sạn</h2>{reviewed ? <p className="mt-3 text-sm text-slate-600">Bạn đã gửi đánh giá cho booking này.</p> : <form className="mt-4 grid gap-4" onSubmit={async e => { e.preventDefault(); try { await repo.addReview(user?.id ?? '', booking.id, stars, content); await queryClient.invalidateQueries({ queryKey: ['tourist'] }); await queryClient.invalidateQueries({ queryKey: ['catalog'] }); setMessage('Đã gửi đánh giá.') } catch (err) { setMessage(errorMessage(err)) } }}><FormField label="Số sao"><select value={stars} onChange={e => setStars(Number(e.target.value))}><option value="0">Chọn số sao</option>{[1, 2, 3, 4, 5].map(x => <option key={x} value={x}>{x} sao</option>)}</select></FormField><FormField label="Nhận xét"><textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Chia sẻ trải nghiệm lưu trú..." /></FormField><Button className="w-fit">Gửi đánh giá</Button></form>}</Card>}</div><Card className="h-fit p-5"><h2 className="font-semibold">Chi phí</h2><div className="mt-4 grid gap-2 text-sm">{booking.nightlyPrices.map((price, i) => <div key={i} className="flex justify-between"><span>Đêm {i + 1} × {booking.rooms} phòng</span><span>{currency(price * booking.rooms)}</span></div>)}</div><div className="mt-4 flex justify-between border-t border-slate-200 pt-4 font-semibold"><span>Tổng thanh toán</span><span>{currency(booking.total)}</span></div><div className="mt-5 grid gap-2">{booking.status === 'PENDING_PAYMENT' && <Button asChild><Link to={'/bookings/' + booking.id + '/payment'}>Tiếp tục thanh toán</Link></Button>}{canCancel && <Button variant="danger" onClick={() => setCancelOpen(true)}>Hủy booking</Button>}</div><div className="mt-4"><Feedback message={message} kind={message.startsWith('Đã') ? 'success' : 'error'} /></div></Card></div><Dialog open={cancelOpen} onOpenChange={setCancelOpen}><DialogContent title="Xác nhận hủy booking" description="Việc hủy sẽ giải phóng phòng. Hoàn tiền được theo dõi riêng."><div className="grid gap-2 text-sm"><p>Chính sách: {booking.policySnapshot}</p><p>Phí hủy dự kiến: <strong>{currency(fee)}</strong></p><p>Số tiền yêu cầu hoàn: <strong>{currency(booking.total - fee)}</strong></p></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setCancelOpen(false)}>Quay lại</Button><Button variant="danger" onClick={async () => { try { await repo.cancelBooking(user?.id ?? '', booking.id); await queryClient.invalidateQueries({ queryKey: ['tourist'] }); await queryClient.invalidateQueries({ queryKey: ['catalog'] }); setCancelOpen(false); setMessage('Đã hủy booking. Yêu cầu hoàn tiền đang chờ xử lý.') } catch (err) { setMessage(errorMessage(err)) } }}>Xác nhận hủy</Button></div></DialogContent></Dialog></div>
+  const canCancel = booking.status === 'CONFIRMED'
+  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F]" to="/bookings">← Booking của tôi</Link><div className="mt-5"><PageHeader title={'Booking ' + booking.id} description={hotel?.name ?? booking.hotelId} actions={<StatusBadge status={booking.status} />} /></div><div className="grid gap-6 lg:grid-cols-[1fr_340px]"><div className="grid gap-5"><Card className="p-6"><h2 className="text-lg font-semibold">Thông tin lưu trú</h2><dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Khách sạn</dt><dd>{hotel?.name}</dd></div><div><dt className="text-slate-500">Loại phòng</dt><dd>{room?.name}</dd></div><div><dt className="text-slate-500">Ngày nhận phòng</dt><dd>{day(booking.checkIn)}</dd></div><div><dt className="text-slate-500">Ngày trả phòng</dt><dd>{day(booking.checkOut)}</dd></div><div><dt className="text-slate-500">Số lượng</dt><dd>{booking.rooms} phòng · {booking.adults + booking.children} khách</dd></div><div><dt className="text-slate-500">Người đặt</dt><dd>{booking.guestName} · {booking.guestPhone}</dd></div></dl><p className="mt-5 text-sm text-slate-600"><strong>Chính sách lưu khi đặt:</strong> {booking.policySnapshot}</p></Card><Card className="p-6"><h2 className="text-lg font-semibold">Thanh toán và hoàn tiền</h2><div className="mt-4 flex flex-wrap items-center gap-3 text-sm">Trạng thái thanh toán: {payment && <StatusBadge status={payment.status} />}</div>{booking.status === 'PENDING_PAYMENT' && <p className="mt-3 text-sm text-amber-800">Giữ phòng đến {dateTime(booking.holdExpiresAt)}.</p>}{refund && <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm"><p><strong>Hoàn tiền:</strong> <StatusBadge status={refund.status} /></p><p className="mt-2">Số tiền yêu cầu: {currency(refund.amount)}</p><p className="mt-1 text-slate-500">Đã hủy booking không có nghĩa là tiền đã được hoàn.</p></div>}{booking.status === 'CANCELLED' && !refund && <p className="mt-3 text-sm text-slate-500">Theo chính sách hủy, booking này không phát sinh hoàn tiền.</p>}</Card>{booking.status === 'COMPLETED' && <Card className="p-6"><h2 className="text-lg font-semibold">Đánh giá khách sạn</h2><BookingReviewForm bookingId={booking.id} userId={user?.id ?? ""} alreadyReviewed={Boolean(reviewed)} /></Card>}</div><Card className="h-fit p-5"><h2 className="font-semibold">Chi phí</h2><div className="mt-4 grid gap-2 text-sm">{booking.nightlyPrices.map((price, i) => <div key={i} className="flex justify-between"><span>Đêm {i + 1} × {booking.rooms} phòng</span><span>{currency(price * booking.rooms)}</span></div>)}</div><div className="mt-4 flex justify-between border-t border-slate-200 pt-4 font-semibold"><span>Tổng thanh toán</span><span>{currency(booking.total)}</span></div><div className="mt-5 grid gap-2">{booking.status === 'PENDING_PAYMENT' && <Button asChild><Link to={'/bookings/' + booking.id + '/payment'}>Tiếp tục thanh toán</Link></Button>}{canCancel && <Button variant="danger" onClick={() => setCancelOpen(true)}>Hủy booking</Button>}</div><div className="mt-4"><Feedback message={message} kind={message.startsWith('Đã') ? 'success' : 'error'} /></div></Card></div><Dialog open={cancelOpen} onOpenChange={setCancelOpen}><DialogContent title="Xác nhận hủy booking" description="Việc hủy sẽ giải phóng phòng. Hoàn tiền được theo dõi riêng."><p className="text-sm text-slate-600">The server will select the policy matching cancellation time and calculate the fee and refund amount.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setCancelOpen(false)}>Quay lại</Button><Button variant="danger" onClick={async () => { try { await repo.cancelBooking(user?.id ?? '', booking.id); await queryClient.invalidateQueries({ queryKey: ['tourist'] }); await queryClient.invalidateQueries({ queryKey: ['catalog'] }); setCancelOpen(false); setMessage('Đã hủy booking. Yêu cầu hoàn tiền đang chờ xử lý.') } catch (err) { setMessage(errorMessage(err)) } }}>Xác nhận hủy</Button></div></DialogContent></Dialog></div>
 }
 
 export function PaymentPage() {
