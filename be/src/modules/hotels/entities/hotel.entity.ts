@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { HotelDocumentEntity } from './hotel-document.entity';
+import { HotelImageEntity } from './hotel-image.entity';
 
 export enum HotelStatus {
   DRAFT = 'DRAFT',
@@ -86,4 +87,7 @@ export class HotelEntity {
 
   @OneToMany(() => HotelDocumentEntity, (document) => document.hotel)
   documents: HotelDocumentEntity[];
+
+  @OneToMany(() => HotelImageEntity, (image) => image.hotel)
+  images: HotelImageEntity[];
 }

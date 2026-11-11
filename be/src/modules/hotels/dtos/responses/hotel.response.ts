@@ -1,6 +1,7 @@
 import { HotelDocumentType } from '../../entities/hotel-document.entity';
 import { HotelReviewAction } from '../../entities/hotel-review-history.entity';
 import { HotelStatus } from '../../entities/hotel.entity';
+import { HotelImageResponse } from './hotel-image.response';
 
 export class HotelDocumentResponse {
   id: string;
@@ -33,6 +34,7 @@ export class HotelResponse {
   reviewedBy: string | null;
   rejectionReason: string | null;
   documents: HotelDocumentResponse[];
+  images: HotelImageResponse[];
   createdAt: string;
   updatedAt: string;
 }

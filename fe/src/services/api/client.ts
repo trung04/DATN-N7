@@ -7,6 +7,7 @@ interface Page<T> { data: T[]; meta: { page: number; limit: number; total: numbe
 interface BackendHotel {
   id: string; name: string; description: string | null; address: string
   starRating: number | null; checkInTime: string
+  images: PartnerHotel['images']
 }
 interface BackendRoom {
   id: string; hotelId: string; maxOccupancy: number; pricePerNight: number
@@ -44,6 +45,9 @@ export function mapBackendUser(user: BackendUser): User {
 }
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+export function apiAssetUrl(path: string): string {
+  return new URL(path, new URL(baseURL, window.location.origin)).href
+}
 const client = axios.create({ baseURL, withCredentials: true, timeout: 15000, headers: { 'Content-Type': 'application/json' } })
 const sessionClient = axios.create({ baseURL, withCredentials: true, timeout: 15000, headers: { 'Content-Type': 'application/json' } })
 
@@ -107,6 +111,7 @@ async function publicCatalog() {
       address: hotel.address,
       description: hotel.description ?? '',
       stars: hotel.starRating ?? 0,
+      image: hotel.images?.[0] ? apiAssetUrl(hotel.images[0].url) : undefined,
       amenities: [...new Set(hotelRooms.flatMap(room => room.amenities))],
       partnerId: '',
       cancellationPolicy: 'Chính sách phí được xác định khi hủy booking.',
@@ -130,6 +135,8 @@ type PartnerHotelsApi = {
   updateHotel: (hotelId: string, input: Partial<PartnerHotelInput>) => Promise<PartnerHotel>
   addHotelDocument: (hotelId: string, input: PartnerHotelDocumentInput) => Promise<PartnerHotel['documents'][number]>
   deleteHotelDocument: (hotelId: string, documentId: string) => Promise<void>
+  uploadHotelImage: (hotelId: string, file: File) => Promise<PartnerHotel['images'][number]>
+  deleteHotelImage: (hotelId: string, imageId: string) => Promise<void>
   submitHotel: (hotelId: string) => Promise<PartnerHotel>
 }
 
@@ -213,6 +220,12 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   updateHotel: (hotelId: string, input: Partial<PartnerHotelInput>) => request<PartnerHotel>({ method: 'PATCH', url: '/hotels/' + hotelId, data: input }),
   addHotelDocument: (hotelId: string, input: PartnerHotelDocumentInput) => request<PartnerHotel['documents'][number]>({ method: 'POST', url: '/hotels/' + hotelId + '/documents', data: input }),
   deleteHotelDocument: (hotelId: string, documentId: string) => request<void>({ method: 'DELETE', url: '/hotels/' + hotelId + '/documents/' + documentId }),
+  uploadHotelImage: (hotelId, file) => {
+    const data = new FormData()
+    data.append('file', file)
+    return request<PartnerHotel['images'][number]>({ method: 'POST', url: '/hotels/' + hotelId + '/images', data, headers: { 'Content-Type': undefined }, timeout: 60000 })
+  },
+  deleteHotelImage: (hotelId, imageId) => request<void>({ method: 'DELETE', url: '/hotels/' + hotelId + '/images/' + imageId }),
   submitHotel: (hotelId: string) => request<PartnerHotel>({ method: 'PUT', url: '/hotels/' + hotelId + '/submit' }),
   adminHotels: (query: PartnerHotelQuery) => request<PartnerHotelPage>({ method: 'GET', url: '/admin/hotels', params: query }),
   adminHotel: (hotelId: string) => request<PartnerHotel>({ method: 'GET', url: '/admin/hotels/' + hotelId }),

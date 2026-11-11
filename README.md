@@ -43,13 +43,13 @@ PostgreSQL và Redis được publish trên loopback, mặc định lần lượ
 
 Recommendation hiện chạy **Content-based + Bayesian rating**: mặc định 75% nội dung BGE-M3 + 25% chất lượng rating/số lượt đánh giá; không có nhu cầu thì xếp theo chất lượng. Không dùng ItemKNN, lịch sử tương tác, điểm khoảng cách hoặc khám phá. Tọa độ vẫn dùng để lọc bán kính. Xem [luồng và công thức](ai/README.md#recommendation).
 
-Frontend được build bằng Vite và phục vụ qua Nginx tại `http://localhost:8080`; đổi cổng bằng `FRONTEND_PORT` trong root `.env`. Nginx chuyển tiếp `/api/` đến `backend:3000` trong mạng Compose. Template `.env.example` dùng `VITE_DATA_MODE=mock` để hiển thị dữ liệu demo; khi kết nối API, đặt `VITE_DATA_MODE=api` và `VITE_API_BASE_URL=/api/v1`, rồi build lại frontend bằng `docker compose up -d --build frontend`.
+Frontend được build bằng Vite và phục vụ qua Nginx tại `http://localhost:8080`; đổi cổng bằng `FRONTEND_PORT` trong root `.env`. Nginx chuyển tiếp `/api/` đến `backend:3000` trong mạng Compose. Template `.env.example` dùng `VITE_DATA_MODE=api` và `VITE_API_BASE_URL=/api/v1` để đăng nhập và upload ảnh bằng backend thật. Nếu thay đổi các biến này, build lại frontend bằng `docker compose up -d --build frontend`. Chế độ `mock` chỉ dành cho dữ liệu demo và không tạo phiên đăng nhập backend.
 
 ## Lưu trữ
 
 MinIO chạy mặc định cùng Compose, dùng volume `minio_data` tại `/data` để giữ bucket và file qua các lần khởi động lại. Cổng API trên host là `9002` để tránh trùng AI (`9000`); các container trong mạng Compose truy cập S3 qua `http://minio:9000`, region `us-east-1`. Đổi cổng bằng `MINIO_API_PORT` và `MINIO_CONSOLE_PORT` trong root `.env`.
 
-Đăng nhập Console tại `http://localhost:9001` bằng `MINIO_ROOT_USER` và `MINIO_ROOT_PASSWORD` trong root `.env`, rồi tạo bucket và upload file. Với S3 client, Access Key tương ứng `MINIO_ROOT_USER`, Secret Key tương ứng `MINIO_ROOT_PASSWORD`; dùng path-style addressing khi kết nối MinIO. Backend hiện chưa tích hợp upload; không đưa các thông tin đăng nhập này vào frontend.
+Đăng nhập Console tại `http://localhost:9001` bằng `MINIO_ROOT_USER` và `MINIO_ROOT_PASSWORD` trong root `.env`. Backend nhận ảnh khách sạn qua `POST /api/v1/hotels/:hotelId/images` (multipart, trường `file`) và lưu vào bucket riêng `hotel-images`, tự tạo khi upload đầu tiên. Credentials S3 chỉ nằm ở backend; frontend gửi file đến backend bằng cookie đăng nhập. Chủ khách sạn mở **Khách sạn của tôi → Chi tiết / chỉnh sửa → Ảnh khách sạn** để tải, xem và xóa ảnh; quản trị viên có cùng chức năng trong trang chi tiết hotel. Cần tạo hồ sơ khách sạn trước khi thêm ảnh. Xem [hướng dẫn upload ảnh khách sạn](be/README.md#hotel-image-upload).
 
 Image MinIO được build từ source release `RELEASE.2025-10-15T17-29-55Z` trong [Dockerfile](docker/minio/Dockerfile), theo [hướng dẫn phát hành chính thức](https://github.com/minio/minio/releases/tag/RELEASE.2025-10-15T17-29-55Z). MinIO Community đã chuyển sang phân phối mã nguồn và repository đã được lưu trữ; cấu hình này phục vụ phát triển local. Lần build đầu cần tải Go và các dependency nên có thể lâu; các lần sau dùng cache Docker.
 
