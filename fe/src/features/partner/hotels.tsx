@@ -5,6 +5,7 @@ import { ArrowDownUp, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { HotelImages } from '@/components/hotel-images'
 import { api } from '@/services/api/client'
 import { day, errorMessage } from '@/lib/utils'
 import type { HotelDocumentType, PartnerHotel, PartnerHotelInput, PartnerHotelQuery, PartnerHotelStatus } from '@/types/domain'
@@ -160,6 +161,8 @@ export function PartnerHotelFormPage() {
       <div className="flex flex-wrap gap-2"><Button disabled={saving || isLocked}>{saving ? 'Đang lưu...' : isNew ? 'Tạo hồ sơ nháp' : 'Lưu thay đổi'}</Button><Button asChild type="button" variant="secondary"><Link to="/partner/hotels">Quay lại danh sách</Link></Button>{hotel && canSubmit && <Button type="button" variant="secondary" disabled={!hasValidBusinessLicense} onClick={() => setSubmitOpen(true)}>Gửi xét duyệt</Button>}</div>
       {hotel && canSubmit && !hasValidBusinessLicense && <p className="text-xs text-amber-800">Cần thêm giấy phép kinh doanh còn hiệu lực trước khi gửi duyệt.</p>}
     </form></Card>
+
+    {!isNew && hotel && <div className="mt-5 max-w-4xl"><HotelImages key={hotel.id} hotel={hotel} /></div>}
 
     {!isNew && hotel && <Card className="mt-5 max-w-4xl p-6"><h2 className="text-lg font-semibold">Giấy tờ pháp lý</h2>
       {hotel.documents.length ? <div className="mt-4 grid gap-3">{hotel.documents.map(document => <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-4"><div className="min-w-0"><p className="font-medium">{documentLabel[document.documentType]} · {document.documentNumber}</p><a className="break-all text-sm text-[#1E3A5F] underline" href={document.fileUrl} target="_blank" rel="noreferrer">Mở giấy tờ</a><p className="mt-1 text-xs text-slate-500">Cấp: {document.issuedAt ? day(document.issuedAt) : '—'} · Hết hạn: {document.expiresAt ? day(document.expiresAt) : 'Không thời hạn'}</p></div>{canEditDocuments && <Button size="sm" variant="danger" aria-label={`Xóa ${documentLabel[document.documentType]}`} onClick={() => { void deleteDocument(document.id) }}><Trash2 size={15} />Xóa</Button>}</div>)}</div> : <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">Chưa có giấy tờ được khai báo.</p>}

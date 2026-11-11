@@ -5,6 +5,7 @@ import { ArrowDownUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { HotelImages } from '@/components/hotel-images'
 import { api } from '@/services/api/client'
 import { day, errorMessage } from '@/lib/utils'
 import type { AdminHotelReviewAction, AdminHotelReviewCommand, PartnerHotel, PartnerHotelQuery, PartnerHotelStatus } from '@/types/domain'
@@ -102,6 +103,7 @@ export function AdminHotelDetailPage() {
     {message && <div className="mb-4"><Feedback message={message} /></div>}
     {hotel.rejectionReason && <p className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Lý do từ chối gần nhất:</strong> {hotel.rejectionReason}</p>}
 
+    <div className="mb-5"><HotelImages key={hotel.id} hotel={hotel} /></div>
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="grid gap-5"><Card className="p-6"><h2 className="text-lg font-semibold">Thông tin khách sạn</h2><dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2"><Info label="Tên hiển thị" value={hotel.name} /><Info label="Tên pháp lý" value={hotel.legalName} /><Info label="Mã số thuế" value={hotel.taxCode} /><Info label="Chủ sở hữu (user ID)" value={hotel.ownerUserId} /><Info label="Email liên hệ" value={hotel.email} /><Info label="Điện thoại" value={hotel.phoneNumber} /><Info label="Địa chỉ" value={hotel.address} /><Info label="Hạng sao" value={hotel.starRating ? `${hotel.starRating} sao` : 'Chưa xếp hạng'} /><Info label="Giờ nhận phòng" value={hotel.checkInTime.slice(0, 5)} /><Info label="Giờ trả phòng" value={hotel.checkOutTime.slice(0, 5)} /><Info label="Ngày gửi xét duyệt" value={hotel.submittedAt ? day(hotel.submittedAt.slice(0, 10)) : 'Chưa gửi'} /><Info label="Ngày cập nhật xét duyệt" value={hotel.reviewedAt ? day(hotel.reviewedAt.slice(0, 10)) : 'Chưa có'} /></dl>{hotel.description && <div className="mt-5 border-t border-slate-100 pt-4"><h3 className="text-sm font-semibold">Mô tả</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{hotel.description}</p></div>}</Card>
 

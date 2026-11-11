@@ -8,6 +8,28 @@ const database = {
 };
 
 describe('environment validation', () => {
+  it('validates storage origins, bucket names and credential pairs', () => {
+    const configured = {
+      ...database,
+      S3_ACCESS_KEY: 'test-key',
+      S3_SECRET_KEY: 'test-secret',
+    };
+    expect(validateEnvironment(configured).S3_HOTEL_IMAGES_BUCKET).toBe(
+      'hotel-images',
+    );
+    for (const [key, value] of [
+      ['S3_ENDPOINT', 'http://user:secret@localhost:9002'],
+      ['S3_ENDPOINT', 'ftp://localhost'],
+      ['S3_HOTEL_IMAGES_BUCKET', '../bucket'],
+      ['S3_HOTEL_IMAGES_BUCKET', 'UPPER'],
+      ['S3_REGION', ''],
+      ['S3_SECRET_KEY', ''],
+    ]) {
+      expect(() =>
+        validateEnvironment({ ...configured, [key]: value }),
+      ).toThrow(key);
+    }
+  });
   it('normalizes ports, TTL and TLS flags without changing credentials', () => {
     const result = validateEnvironment({
       ...database,

@@ -344,3 +344,39 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Hotel image upload
+
+Trong giao diện, chủ khách sạn vào **Khách sạn của tôi → Chi tiết / chỉnh sửa → Ảnh khách sạn**; quản trị viên vào trang chi tiết hotel. Tạo hồ sơ hotel trước khi thêm ảnh. Frontend phải dùng `VITE_DATA_MODE=api` và `VITE_API_BASE_URL=/api/v1` để phiên đăng nhập và upload cùng đi qua backend.
+
+`POST /api/v1/hotels/:hotelId/images` nhận **một file** qua `multipart/form-data`, tên trường `file`. Yêu cầu cookie `login_access`, vai trò `HOTEL_OWNER` sở hữu khách sạn hoặc `ADMIN`. Không cho thay đổi ảnh khi khách sạn đang `PENDING_APPROVAL`.
+
+Backend giới hạn 5 MiB/file, nhận JPEG/PNG/WebP một khung hình tối đa 20 megapixel. Nội dung được giải mã thực, kiểm tra MIME, tự xoay theo hướng ảnh và chuyển thành WebP (cạnh dài tối đa 2560 px), loại metadata gốc. Tên/object key do backend sinh; không nhận URL upload hoặc object key từ trình duyệt. Bucket không được cấp quyền public.
+
+Response `201` có `id`, `hotelId`, `url`, `previewUrl`, `contentType`, `byteSize`, `width`, `height`, `createdAt` và header `Location`. Hotel detail/list trả thêm `images` với cùng cấu trúc. `url` và `previewUrl` là đường dẫn tương đối theo origin API:
+
+- `GET /api/v1/hotels/:hotelId/images/:imageId/file`: đọc công khai qua backend khi hotel `ACTIVE`.
+- `GET /api/v1/hotels/mine/:hotelId/images/:imageId/file`: chủ khách sạn/admin xem trước bằng cookie đăng nhập, kể cả bản nháp.
+- `DELETE /api/v1/hotels/:hotelId/images/:imageId`: chủ khách sạn/admin xóa file và metadata, trả `204`.
+
+```powershell
+curl.exe -X POST "http://localhost:3000/api/v1/hotels/<hotel-id>/images" `
+  -b "login_access=<session-cookie>" `
+  -F "file=@C:/photos/hotel.jpg"
+```
+
+Trong frontend, dùng `FormData.append('file', file)` và `fetch(url, { method: 'POST', credentials: 'include', body: formData })`; để trình duyệt tự đặt `Content-Type` cùng multipart boundary. Nginx cho phép request 6 MiB để chứa file 5 MiB và multipart overhead.
+
+Compose truyền `S3_ENDPOINT=http://minio:9000`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` từ cấu hình MinIO. Khi chạy native, cấu hình các biến trong `be/.env` theo `.env.example`; endpoint mặc định `http://localhost:9002`. `S3_HOTEL_IMAGES_BUCKET` mặc định `hotel-images`. Cặp credentials phải đầy đủ khi cấu hình; nếu chưa cấu hình storage, upload trả `503`.
+
+Các migration mới gồm `CreateHotelImages1794400000000` tạo bảng `hotel_images`, `AddUserTwoFactorFlag1794400001000` bổ sung cột mà entity user đã sử dụng, và `AddHotelOwnerTimestamps1794400002000` bổ sung timestamp mà entity chủ hotel đã sử dụng. Hai migration sau khắc phục lỗi HTTP 500 khi đăng nhập/tạo hotel trên database khởi tạo từ bộ migration cũ; không bật `synchronize`.
+
+Trước khi chạy code mới trên database có sẵn, review và áp dụng migration bằng `npm run migration:show` rồi `npm run migration:run` từ `be/` với cấu hình database phù hợp. Với Docker production image, dùng:
+
+```powershell
+docker compose exec backend node node_modules/typeorm/cli.js migration:show -d dist/database/typeorm.datasource.js
+docker compose exec backend node node_modules/typeorm/cli.js migration:run -d dist/database/typeorm.datasource.js
+```
+
+Backup database có dữ liệu cần giữ trước khi chạy migration.
+
+Ảnh lỗi/giả MIME trả `400`, file vượt giới hạn trả `413`, thiếu session `401`, sai quyền `403`, hotel/image không tồn tại `404`, hotel đang chờ duyệt `409`, MinIO không sẵn sàng `503`. Nếu lưu metadata thất bại sau upload, backend cố gắng xóa file vừa tạo và ghi log object key nếu cleanup thất bại. Khi xóa ảnh, lỗi storage giữ metadata để có thể thử lại; nếu bước xóa metadata thất bại sau khi xóa file, gọi lại DELETE để hoàn tất.

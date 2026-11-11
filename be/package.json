@@ -24,6 +24,7 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/database/typeorm.datasource.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1166.0",
     "@keyv/redis": "^5.1.6",
     "@nestjs/cache-manager": "^12.0.2",
     "@nestjs/common": "^12.0.1",
@@ -44,6 +45,7 @@
     "redis": "^6.3.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "typeorm": "^1.1.2"
   },
   "devDependencies": {

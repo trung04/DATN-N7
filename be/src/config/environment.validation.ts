@@ -48,6 +48,40 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
   integer('AI_TIMEOUT_MS', 15000, 1, 120000);
+  config.S3_ENDPOINT ??= 'http://localhost:9002';
+  validateHttpOrigin(config, 'S3_ENDPOINT');
+  const storageUrl = new URL(String(config.S3_ENDPOINT));
+  if (
+    storageUrl.username ||
+    storageUrl.password ||
+    storageUrl.search ||
+    storageUrl.hash
+  ) {
+    throw new Error(
+      'S3_ENDPOINT must not contain credentials, query or fragment',
+    );
+  }
+  config.S3_REGION ??= 'us-east-1';
+  if (
+    typeof config.S3_REGION !== 'string' ||
+    !/^[a-z0-9-]+$/.test(config.S3_REGION)
+  )
+    throw new Error('S3_REGION is invalid');
+  config.S3_HOTEL_IMAGES_BUCKET ??= 'hotel-images';
+  if (
+    typeof config.S3_HOTEL_IMAGES_BUCKET !== 'string' ||
+    !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(config.S3_HOTEL_IMAGES_BUCKET)
+  )
+    throw new Error('S3_HOTEL_IMAGES_BUCKET is invalid');
+  const storageKeys = ['S3_ACCESS_KEY', 'S3_SECRET_KEY'];
+  if (
+    storageKeys.some((key) => config[key] !== undefined && config[key] !== '')
+  ) {
+    for (const key of storageKeys) {
+      if (typeof config[key] !== 'string' || !config[key].trim())
+        throw new Error(`${key} is required when S3 is configured`);
+    }
+  }
   config.AI_BASE_URL ??= 'http://localhost:9000';
   try {
     const url = new URL(String(config.AI_BASE_URL));
@@ -64,7 +98,9 @@ export function validateEnvironment(input: Record<string, unknown>) {
     }
     config.AI_BASE_URL = url.origin;
   } catch {
-    throw new Error('AI_BASE_URL must be an HTTP(S) origin without credentials');
+    throw new Error(
+      'AI_BASE_URL must be an HTTP(S) origin without credentials',
+    );
   }
   config.AI_API_KEY ??= '';
   if (typeof config.AI_API_KEY !== 'string') {

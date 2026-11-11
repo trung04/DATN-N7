@@ -1,6 +1,7 @@
 import { HotelDocumentEntity } from '../entities/hotel-document.entity';
 import { HotelReviewHistoryEntity } from '../entities/hotel-review-history.entity';
 import { HotelEntity } from '../entities/hotel.entity';
+import { toHotelImageResponse } from './hotel-image.mapper';
 import {
   HotelDocumentResponse,
   HotelListResponse,
@@ -32,6 +33,7 @@ export class HotelMapper {
       documents: (hotel.documents ?? []).map((document) =>
         this.toDocumentResponse(document),
       ),
+      images: (hotel.images ?? []).map(toHotelImageResponse),
       createdAt: hotel.createdAt.toISOString(),
       updatedAt: hotel.updatedAt.toISOString(),
     };
