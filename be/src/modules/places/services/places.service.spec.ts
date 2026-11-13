@@ -1,4 +1,8 @@
-import { PlaceEntity, PlaceStatus } from '../entities/place.entity';
+import {
+  PlaceEntity,
+  PlaceSourceType,
+  PlaceStatus,
+} from '../entities/place.entity';
 import {
   CoordinatePairRequiredException,
   EmptyPlaceUpdateException,
@@ -13,6 +17,7 @@ const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
     name: 'Hoan Kiem Lake',
     description: null,
     address: 'Hoan Kiem, Hanoi',
+    city: 'Hanoi',
     countryCode: 'VN',
     provinceCode: 'HN',
     timezone: 'Asia/Ho_Chi_Minh',
@@ -20,8 +25,22 @@ const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
     longitude: 105.8542,
     status: PlaceStatus.ACTIVE,
     averageRating: 0,
+    reviewCount: 0,
     externalProviderId: null,
-    openingTime: null,
+    openingHours: null,
+    estimatedVisitDurationMinutes: null,
+    amenities: [],
+    bestVisitTimes: [],
+    suitableFor: [],
+    contactPhone: null,
+    contactWebsite: null,
+    sourceType: PlaceSourceType.MANUAL,
+    sourceProvider: null,
+    sourceUrl: null,
+    attributionText: null,
+    licenseCode: null,
+    lastRefreshedAt: null,
+    catalogVersion: 1,
     ...overrides,
   });
 
@@ -36,6 +55,7 @@ describe('PlacesService', () => {
     savePlace = jest.fn();
     repository = {
       findById: jest.fn(),
+      findDetailsById: jest.fn(),
       findByExternalProviderId: jest.fn(),
       findPage: jest.fn(),
       create: createPlace,

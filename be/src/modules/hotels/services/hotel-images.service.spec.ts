@@ -33,16 +33,31 @@ describe('HotelImagesService', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     hotels.assertManagedBy.mockResolvedValue({ status: HotelStatus.DRAFT });
-    repository.create.mockImplementation(async (data) => ({
-      ...data,
-      createdAt: new Date(),
-    }));
+    repository.create.mockImplementation(async (data) =>
+      Object.assign(new HotelImageEntity(), {
+        id: data.id,
+        hotelId: data.hotelId,
+        imageId: data.id,
+        imageOrder: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+        image: {
+          id: data.id,
+          objectKey: data.objectKey,
+          contentType: data.contentType,
+          byteSize: data.byteSize,
+          width: data.width,
+          height: data.height,
+        },
+      }),
+    );
   });
   const file = () => ({ buffer: png, size: png.length, mimetype: 'image/png' });
   it('decodes and normalizes an image, generates the key and persists metadata', async () => {
     const result = await service.upload('hotel', file(), actor);
-    expect(result.objectKey).toMatch(/^hotels\/hotel\/[a-f0-9-]+\.webp$/);
-    expect(result).toMatchObject({
+    expect(result.image.objectKey).toMatch(/^hotels\/hotel\/[a-f0-9-]+\.webp$/);
+    expect(result.image).toMatchObject({
       contentType: 'image/webp',
       width: 10,
       height: 8,
@@ -50,7 +65,7 @@ describe('HotelImagesService', () => {
     const saved = storage.put.mock.calls[0][1] as Buffer;
     expect((await sharp(saved).metadata()).format).toBe('webp');
     expect(storage.put).toHaveBeenCalledWith(
-      result.objectKey,
+      result.image.objectKey,
       saved,
       'image/webp',
     );
@@ -139,7 +154,7 @@ describe('HotelImagesService', () => {
   });
   it('retains metadata on a storage deletion failure to allow retry', async () => {
     repository.find.mockResolvedValue({
-      objectKey: 'hotels/h/image.webp',
+      image: { objectKey: 'hotels/h/image.webp' },
     } as HotelImageEntity);
     storage.delete.mockRejectedValue(new HotelImageStorageException());
     await expect(

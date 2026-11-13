@@ -125,7 +125,7 @@ export class HotelImagesController {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, no-store');
     return new StreamableFile(result.data, {
-      type: result.image.contentType,
+      type: result.image.image.contentType!,
       length: result.data.length,
       disposition: `inline; filename="${result.image.id}.webp"`,
     });

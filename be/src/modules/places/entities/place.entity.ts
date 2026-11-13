@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
   ValueTransformer,
+  VersionColumn,
 } from 'typeorm';
 
 const decimalTransformer: ValueTransformer = {
@@ -14,21 +15,27 @@ const decimalTransformer: ValueTransformer = {
   from: (value: string | null) => (value === null ? null : Number(value)),
 };
 
-const openingTimeTransformer: ValueTransformer = {
-  // shortcut: the current API exposes one display string, use structured schedules when UC06 details are expanded.
-  to: (value: string | null) => (value === null ? null : { display: value }),
-  from: (value: unknown) => {
-    if (value === null) return null;
-    if (
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      typeof (value as { display?: unknown }).display === 'string'
-    ) {
-      return (value as { display: string }).display;
-    }
-    return JSON.stringify(value);
-  },
-};
+export const PLACE_WEEKDAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
+
+export type PlaceWeekday = (typeof PLACE_WEEKDAYS)[number];
+
+export interface PlaceOpeningPeriod {
+  start: string;
+  end: string;
+}
+
+export interface PlaceOpeningHours {
+  display?: string;
+  weekly?: Partial<Record<PlaceWeekday, PlaceOpeningPeriod[]>>;
+}
 
 export enum PlaceStatus {
   ACTIVE = 'ACTIVE',
@@ -44,6 +51,9 @@ export enum PlaceSourceType {
 @Entity({ name: 'places' })
 @Index('IDX_places_status', ['status'])
 @Index('IDX_places_country_code', ['countryCode'])
+@Index('IDX_places_active_city', ['city'], {
+  where: '"deleted_at" IS NULL AND "status" = \'ACTIVE\'',
+})
 export class PlaceEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -56,6 +66,9 @@ export class PlaceEntity {
 
   @Column({ type: 'varchar', length: 500, nullable: true })
   address: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  city: string | null;
 
   @Column({ name: 'country_code', type: 'char', length: 2, nullable: true })
   countryCode: string | null;
@@ -75,6 +88,7 @@ export class PlaceEntity {
     type: 'numeric',
     precision: 10,
     scale: 7,
+    nullable: true,
     transformer: decimalTransformer,
   })
   latitude: number | null;
@@ -83,6 +97,7 @@ export class PlaceEntity {
     type: 'numeric',
     precision: 10,
     scale: 7,
+    nullable: true,
     transformer: decimalTransformer,
   })
   longitude: number | null;
@@ -111,13 +126,47 @@ export class PlaceEntity {
   })
   averageRating: number;
 
+  @Column({ name: 'review_count', type: 'integer', default: 0 })
+  reviewCount: number;
+
   @Column({
     name: 'opening_times',
     type: 'jsonb',
     nullable: true,
-    transformer: openingTimeTransformer,
   })
-  openingTime: string | null;
+  openingHours: PlaceOpeningHours | null;
+
+  @Column({
+    name: 'estimated_visit_duration_minutes',
+    type: 'integer',
+    nullable: true,
+  })
+  estimatedVisitDurationMinutes: number | null;
+
+  @Column({ type: 'text', array: true, default: () => "'{}'::text[]" })
+  amenities: string[];
+
+  @Column({
+    name: 'best_visit_times',
+    type: 'text',
+    array: true,
+    default: () => "'{}'::text[]",
+  })
+  bestVisitTimes: string[];
+
+  @Column({
+    name: 'suitable_for',
+    type: 'text',
+    array: true,
+    default: () => "'{}'::text[]",
+  })
+  suitableFor: string[];
+
+  @Column({ name: 'contact_phone', type: 'varchar', length: 50, nullable: true })
+  contactPhone: string | null;
+
+  @Column({ name: 'contact_website', type: 'text', nullable: true })
+  contactWebsite: string | null;
 
   @Column({
     name: 'source_type',
@@ -149,6 +198,9 @@ export class PlaceEntity {
 
   @Column({ name: 'last_refreshed_at', type: 'timestamptz', nullable: true })
   lastRefreshedAt: Date | null;
+
+  @VersionColumn({ name: 'catalog_version', type: 'integer', default: 1 })
+  catalogVersion: number;
 
   @Column({
     name: 'search_document',

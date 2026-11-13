@@ -23,6 +23,7 @@ import { AuthService } from '../src/modules/auth/services/auth.service';
 import { RolesGuard } from '../src/modules/authorization/guards/roles.guard';
 import { UserRole } from '../src/modules/users/entities/user.entity';
 import { HotelImageStorageException } from '../src/modules/hotels/exceptions/hotel-image.exceptions';
+import type { CreateHotelImageData } from '../src/modules/hotels/interfaces/hotel-image.repository.interface';
 
 const hotelId = '11111111-1111-4111-8111-111111111111';
 describe('Hotel image uploads (HTTP)', () => {
@@ -65,9 +66,23 @@ describe('Hotel image uploads (HTTP)', () => {
         {
           provide: HOTEL_IMAGE_REPOSITORY,
           useValue: {
-            create: async (data: HotelImageEntity) => {
-              const row = Object.assign(new HotelImageEntity(), data, {
+            create: async (data: CreateHotelImageData) => {
+              const row = Object.assign(new HotelImageEntity(), {
+                id: data.id,
+                hotelId: data.hotelId,
+                imageId: data.id,
+                imageOrder: records.size + 1,
                 createdAt: new Date(),
+                updatedAt: new Date(),
+                deletedAt: null,
+                image: {
+                  id: data.id,
+                  objectKey: data.objectKey,
+                  contentType: data.contentType,
+                  byteSize: data.byteSize,
+                  width: data.width,
+                  height: data.height,
+                },
               });
               records.set(row.id, row);
               return row;

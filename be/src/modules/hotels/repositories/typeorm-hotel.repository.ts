@@ -31,7 +31,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
   findById(id: string): Promise<HotelEntity | null> {
     return this.repository.findOne({
       where: { id },
-      relations: { documents: true, images: true },
+      relations: { documents: true, images: { image: true } },
       order: {
         documents: { createdAt: 'ASC' },
         images: { createdAt: 'ASC', id: 'ASC' },
@@ -83,7 +83,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
     // images or documents must not consume several positions on a page.
     const detailed = await this.repository.find({
       where: { id: In(items.map((hotel) => hotel.id)) },
-      relations: { documents: true, images: true },
+      relations: { documents: true, images: { image: true } },
       relationLoadStrategy: 'query',
       order: {
         documents: { createdAt: 'ASC' },
@@ -125,7 +125,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
           .save(manager.getRepository(HotelReviewHistoryEntity).create(review));
         return (await manager.getRepository(HotelEntity).findOne({
           where: { id: hotel.id },
-          relations: { documents: true, images: true },
+          relations: { documents: true, images: { image: true } },
           order: {
             documents: { createdAt: 'ASC' },
             images: { createdAt: 'ASC', id: 'ASC' },

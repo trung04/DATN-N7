@@ -109,7 +109,7 @@ export class HotelImagesService {
     else await this.hotels.assertActive(hotelId);
     const image = await this.repository.find(hotelId, imageId);
     if (!image) throw new HotelImageNotFoundException();
-    return { image, data: await this.storage.get(image.objectKey) };
+    return { image, data: await this.storage.get(image.image.objectKey!) };
   }
   async delete(
     hotelId: string,
@@ -120,7 +120,7 @@ export class HotelImagesService {
     const image = await this.repository.find(hotelId, imageId);
     if (!image) throw new HotelImageNotFoundException();
     // Keep metadata if storage is unavailable, so a failed delete can be retried.
-    await this.storage.delete(image.objectKey);
+    await this.storage.delete(image.image.objectKey!);
     await this.repository.delete(hotelId, imageId);
   }
 }
