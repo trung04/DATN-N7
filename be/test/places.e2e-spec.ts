@@ -7,6 +7,7 @@ import { configureHttpApplication } from '../src/common/http/configure-http-appl
 import { PlacesController } from '../src/modules/places/controllers/places.controller';
 import {
   PlaceEntity,
+  PlaceSourceType,
   PlaceStatus,
 } from '../src/modules/places/entities/place.entity';
 import { PlaceNotFoundException } from '../src/modules/places/exceptions/place.exceptions';
@@ -18,6 +19,7 @@ const entity = Object.assign(new PlaceEntity(), {
   name: 'Hoan Kiem Lake',
   description: 'Historic lake in central Hanoi',
   address: 'Hoan Kiem, Hanoi',
+  city: 'Hanoi',
   countryCode: 'VN',
   provinceCode: 'HN',
   timezone: 'Asia/Ho_Chi_Minh',
@@ -25,9 +27,32 @@ const entity = Object.assign(new PlaceEntity(), {
   longitude: 105.8542,
   status: PlaceStatus.ACTIVE,
   averageRating: 0,
+  reviewCount: 0,
   externalProviderId: 'google-place-1',
-  openingTime: 'Open 24 hours',
+  openingHours: { display: 'Open 24 hours' },
+  estimatedVisitDurationMinutes: 60,
+  amenities: [],
+  bestVisitTimes: [],
+  suitableFor: [],
+  contactPhone: null,
+  contactWebsite: null,
+  sourceType: PlaceSourceType.PROVIDER,
+  sourceProvider: 'LEGACY',
+  sourceUrl: null,
+  attributionText: null,
+  licenseCode: null,
+  lastRefreshedAt: null,
+  catalogVersion: 1,
 });
+const details = {
+  place: entity,
+  category: 'ATTRACTION',
+  primaryImageUrl: null,
+  price: { minPrice: 0, maxPrice: 0, currency: 'VND' },
+  categories: [{ code: 'ATTRACTION', name: 'Điểm tham quan' }],
+  tags: [],
+  images: [],
+};
 
 describe('Places API (e2e)', () => {
   let app: INestApplication<App>;
@@ -35,6 +60,7 @@ describe('Places API (e2e)', () => {
     create: jest.fn(),
     findPage: jest.fn(),
     findById: jest.fn(),
+    findDetailsById: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
   };
@@ -58,6 +84,7 @@ describe('Places API (e2e)', () => {
 
   it('creates a place and returns its location', async () => {
     service.create.mockResolvedValue(entity);
+    service.findDetailsById.mockResolvedValue(details);
 
     await request(app.getHttpServer())
       .post('/api/v1/places')
@@ -76,6 +103,13 @@ describe('Places API (e2e)', () => {
           name: 'Hoan Kiem Lake',
           countryCode: 'VN',
           averageRating: 0,
+          category: 'ATTRACTION',
+          price: {
+            isFree: true,
+            minPrice: 0,
+            maxPrice: 0,
+            currency: 'VND',
+          },
         });
         expect(body).not.toHaveProperty('searchDocument');
       });
@@ -103,7 +137,7 @@ describe('Places API (e2e)', () => {
   });
 
   it('maps a missing place to problem details', async () => {
-    service.findById.mockRejectedValue(new PlaceNotFoundException(id));
+    service.findDetailsById.mockRejectedValue(new PlaceNotFoundException(id));
 
     await request(app.getHttpServer())
       .get(`/api/v1/places/${id}`)

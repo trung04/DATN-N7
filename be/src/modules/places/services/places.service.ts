@@ -11,6 +11,7 @@ import {
 } from '../exceptions/place.exceptions';
 import { PLACE_REPOSITORY } from '../interfaces/place.repository.interface';
 import type {
+  PlaceDetailsData,
   PlacePage,
   PlaceRepository,
 } from '../interfaces/place.repository.interface';
@@ -34,6 +35,7 @@ export class PlacesService {
       name: input.name.trim(),
       description: this.normalizeNullable(input.description),
       address: this.normalizeNullable(input.address),
+      city: null,
       countryCode: this.normalizeCode(input.countryCode),
       provinceCode: this.normalizeCode(input.provinceCode),
       timezone: this.normalizeNullable(input.timezone),
@@ -41,13 +43,22 @@ export class PlacesService {
       longitude,
       status: input.status,
       averageRating: 0,
+      reviewCount: 0,
+      openingHours: input.openingTime
+        ? { display: input.openingTime.trim() }
+        : null,
+      estimatedVisitDurationMinutes: null,
+      amenities: [],
+      bestVisitTimes: [],
+      suitableFor: [],
+      contactPhone: null,
+      contactWebsite: null,
       // shortcut: legacy requests do not identify the provider, require it when the UC06 provider contract is expanded.
       sourceType: externalProviderId
         ? PlaceSourceType.PROVIDER
         : PlaceSourceType.MANUAL,
       sourceProvider: externalProviderId ? 'LEGACY' : null,
       externalProviderId,
-      openingTime: this.normalizeNullable(input.openingTime),
       sourceUrl: null,
       attributionText: null,
       licenseCode: null,
@@ -71,6 +82,12 @@ export class PlacesService {
 
   async findById(id: string): Promise<PlaceEntity> {
     const place = await this.repository.findById(id);
+    if (!place) throw new PlaceNotFoundException(id);
+    return place;
+  }
+
+  async findDetailsById(id: string): Promise<PlaceDetailsData> {
+    const place = await this.repository.findDetailsById(id);
     if (!place) throw new PlaceNotFoundException(id);
     return place;
   }
@@ -115,7 +132,8 @@ export class PlacesService {
     if (input.longitude !== undefined) place.longitude = input.longitude;
     if (input.status !== undefined) place.status = input.status;
     if (input.openingTime !== undefined) {
-      place.openingTime = this.normalizeNullable(input.openingTime);
+      const display = this.normalizeNullable(input.openingTime);
+      place.openingHours = display ? { display } : null;
     }
 
     return this.repository.save(place);

@@ -19,12 +19,14 @@ import { HOTEL_IMAGE_REPOSITORY } from './interfaces/hotel-image.repository.inte
 import { HOTEL_IMAGE_STORAGE } from './interfaces/hotel-image-storage.interface';
 import { TypeOrmHotelImageRepository } from './repositories/typeorm-hotel-image.repository';
 import { S3HotelImageStorage } from './integrations/s3-hotel-image.storage';
+import { ImageEntity } from '../media/entities/image.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       HotelEntity,
       HotelImageEntity,
+      ImageEntity,
       HotelDocumentEntity,
       HotelReviewHistoryEntity,
     ]),

@@ -54,6 +54,9 @@ import { HotelImageEntity } from '../modules/hotels/entities/hotel-image.entity'
 import { CreateHotelImages1794400000000 } from './migrations/1794400000000-CreateHotelImages';
 import { AddUserTwoFactorFlag1794400001000 } from './migrations/1794400001000-AddUserTwoFactorFlag';
 import { AddHotelOwnerTimestamps1794400002000 } from './migrations/1794400002000-AddHotelOwnerTimestamps';
+import { ExpandPlaceCatalog1794500000000 } from './migrations/1794500000000-ExpandPlaceCatalog';
+import { BackfillPlaceCatalog1794500001000 } from './migrations/1794500001000-BackfillPlaceCatalog';
+import { NormalizeImages1794500002000 } from './migrations/1794500002000-NormalizeImages';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -121,6 +124,9 @@ export default new DataSource({
     CreateHotelImages1794400000000,
     AddUserTwoFactorFlag1794400001000,
     AddHotelOwnerTimestamps1794400002000,
+    ExpandPlaceCatalog1794500000000,
+    BackfillPlaceCatalog1794500001000,
+    NormalizeImages1794500002000,
   ],
   synchronize: false,
   logging: false,

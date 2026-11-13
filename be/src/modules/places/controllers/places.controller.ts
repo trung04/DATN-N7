@@ -48,7 +48,9 @@ export class PlacesController {
   ): Promise<PlaceResponse> {
     const place = await this.placesService.create(input);
     response.setHeader('Location', `/api/v1/places/${place.id}`);
-    return PlaceMapper.toResponse(place);
+    return PlaceMapper.toResponse(
+      await this.placesService.findDetailsById(place.id),
+    );
   }
 
   @Get()
@@ -72,7 +74,7 @@ export class PlacesController {
   async findById(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<PlaceResponse> {
-    return PlaceMapper.toResponse(await this.placesService.findById(id));
+    return PlaceMapper.toResponse(await this.placesService.findDetailsById(id));
   }
 
   @Patch(':placeId')
@@ -81,7 +83,10 @@ export class PlacesController {
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdatePlaceRequest,
   ): Promise<PlaceResponse> {
-    return PlaceMapper.toResponse(await this.placesService.update(id, input));
+    const place = await this.placesService.update(id, input);
+    return PlaceMapper.toResponse(
+      await this.placesService.findDetailsById(place.id),
+    );
   }
 
   @Delete(':placeId')
