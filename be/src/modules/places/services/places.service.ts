@@ -7,10 +7,13 @@ import {
   CoordinatePairRequiredException,
   EmptyPlaceUpdateException,
   ExternalProviderConflictException,
+  InvalidPlacePriceException,
   PlaceNotFoundException,
 } from '../exceptions/place.exceptions';
 import { PLACE_REPOSITORY } from '../interfaces/place.repository.interface';
 import type {
+  PlaceCatalogOptions,
+  PlaceCatalogWriteData,
   PlaceDetailsData,
   PlacePage,
   PlaceRepository,
@@ -31,11 +34,12 @@ export class PlacesService {
     const longitude = input.longitude;
     this.assertCoordinatePair(latitude, longitude);
 
+    this.assertReferencePrice(input.referencePrice);
     return this.repository.create({
       name: input.name.trim(),
       description: this.normalizeNullable(input.description),
       address: this.normalizeNullable(input.address),
-      city: null,
+      city: this.normalizeNullable(input.city),
       countryCode: this.normalizeCode(input.countryCode),
       provinceCode: this.normalizeCode(input.provinceCode),
       timezone: this.normalizeNullable(input.timezone),
@@ -63,7 +67,11 @@ export class PlacesService {
       attributionText: null,
       licenseCode: null,
       lastRefreshedAt: null,
-    });
+    }, this.catalogInput(input));
+  }
+
+  findCatalogOptions(): Promise<PlaceCatalogOptions> {
+    return this.repository.findCatalogOptions();
   }
 
   findPage(input: ListPlacesRequest): Promise<PlacePage> {
@@ -95,6 +103,7 @@ export class PlacesService {
   async update(id: string, input: UpdatePlaceRequest): Promise<PlaceEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyPlaceUpdateException();
     const place = await this.findById(id);
+    this.assertReferencePrice(input.referencePrice);
 
     const nextLatitude =
       input.latitude === undefined ? place.latitude : input.latitude;
@@ -119,6 +128,9 @@ export class PlacesService {
     if (input.address !== undefined) {
       place.address = this.normalizeNullable(input.address);
     }
+    if (input.city !== undefined) {
+      place.city = this.normalizeNullable(input.city);
+    }
     if (input.countryCode !== undefined) {
       place.countryCode = this.normalizeCode(input.countryCode);
     }
@@ -136,7 +148,7 @@ export class PlacesService {
       place.openingHours = display ? { display } : null;
     }
 
-    return this.repository.save(place);
+    return this.repository.save(place, this.catalogInput(input));
   }
 
   async delete(id: string): Promise<void> {
@@ -170,6 +182,7 @@ export class PlacesService {
       input.name,
       input.description,
       input.address,
+      input.city,
       input.countryCode,
       input.provinceCode,
       input.timezone,
@@ -178,7 +191,49 @@ export class PlacesService {
       input.status,
       input.externalProviderId,
       input.openingTime,
+      input.categoryCode,
+      input.topicCodes,
+      input.imageUrl,
+      input.imageAltText,
+      input.referencePrice,
     ].every((value) => value === undefined);
+  }
+
+  private catalogInput(input: CreatePlaceRequest | UpdatePlaceRequest): PlaceCatalogWriteData {
+    return {
+      ...(input.categoryCode !== undefined
+        ? { categoryCodes: [input.categoryCode.trim().toUpperCase()] }
+        : {}),
+      ...(input.topicCodes !== undefined
+        ? { topicCodes: input.topicCodes.map((code) => code.trim().toUpperCase()) }
+        : {}),
+      ...(input.imageUrl !== undefined
+        ? { imageUrl: this.normalizeNullable(input.imageUrl) }
+        : {}),
+      ...(input.imageAltText !== undefined
+        ? { imageAltText: this.normalizeNullable(input.imageAltText) }
+        : {}),
+      ...(input.referencePrice !== undefined
+        ? {
+            referencePrice: input.referencePrice
+              ? {
+                  ...input.referencePrice,
+                  currency: input.referencePrice.currency.toUpperCase(),
+                  pricingUnit: input.referencePrice.pricingUnit.trim(),
+                  description: this.normalizeNullable(input.referencePrice.description),
+                }
+              : null,
+          }
+        : {}),
+    };
+  }
+
+  private assertReferencePrice(
+    referencePrice: CreatePlaceRequest['referencePrice'] | UpdatePlaceRequest['referencePrice'],
+  ): void {
+    if (referencePrice && referencePrice.maxPrice < referencePrice.minPrice) {
+      throw new InvalidPlacePriceException();
+    }
   }
 
   private normalizeNullable(value?: string | null): string | null {

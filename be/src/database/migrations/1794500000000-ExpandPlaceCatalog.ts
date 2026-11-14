@@ -4,7 +4,11 @@ export class ExpandPlaceCatalog1794500000000 implements MigrationInterface {
   name = 'ExpandPlaceCatalog1794500000000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query('DROP INDEX "idx_places_active_search"');
+    // Support both the original index name and the name used by the
+    // already-aligned places schema.
+    await queryRunner.query(
+      'DROP INDEX IF EXISTS "idx_places_active_search"; DROP INDEX IF EXISTS "IDX_places_search_document"',
+    );
     await queryRunner.query(`
       ALTER TABLE "places"
         DROP COLUMN "search_document",

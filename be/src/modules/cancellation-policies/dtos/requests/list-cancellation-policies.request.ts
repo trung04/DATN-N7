@@ -16,8 +16,8 @@ const trim = ({ value }: { value: unknown }): unknown =>
 
 export enum CancellationPolicySortFieldQuery {
   NAME = 'name',
-  CANCELLATION_WINDOW = 'cancellationWindow',
-  CANCELLATION_FEE_RATE = 'cancellationFeeRate',
+  CANCEL_HOURS = 'cancelHours',
+  PENALTY_PERCENT = 'penaltyPercent',
 }
 
 export enum CancellationPolicySortOrderQuery {

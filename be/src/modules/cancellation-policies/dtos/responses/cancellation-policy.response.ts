@@ -2,10 +2,29 @@ export class CancellationPolicyResponse {
   id: string;
   hotelId: string;
   name: string;
-  cancellationWindow: number | null;
-  minHoursBeforeCheckIn: number;
-  maxHoursBeforeCheckIn: number | null;
-  cancellationFeeRate: number | null;
+  cancelHours: number;
+  penaltyPercent: number;
+  cancellationAllowed: boolean;
+  description: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class CancellationPolicyScheduleResponse {
+  hotelId: string;
+  version: string;
+  complete: boolean;
+  issue: string | null;
+  rules: CancellationPolicyScheduleRuleResponse[];
+}
+
+export class CancellationPolicyScheduleRuleResponse {
+  id: string;
+  name: string;
+  cancelHours: number;
+  penaltyPercent: number;
+  cancellationAllowed: boolean;
   description: string | null;
 }
 

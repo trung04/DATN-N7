@@ -1,5 +1,6 @@
 import { CancellationPolicyEntity } from '../entities/cancellation-policy.entity';
 import { UserRole } from '../../users/entities/user.entity';
+import { HotelsService } from '../../hotels/services/hotels.service';
 import {
   CancellationPolicyNameConflictException,
   CancellationPolicyNotFoundException,
@@ -22,10 +23,12 @@ const policy = (
     id: policyId,
     hotelId,
     name: 'Flexible',
-    cancellationWindow: 2,
-    minHoursBeforeCheckIn: 0,
-    maxHoursBeforeCheckIn: 48,
-    cancellationFeeRate: 10,
+    cancelHours: 24,
+    penaltyPercent: 10,
+    cancellationAllowed: true,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
     description: 'Cancel up to two days before check-in.',
     ...overrides,
   });
@@ -46,6 +49,7 @@ describe('CancellationPoliciesService', () => {
       findById: jest.fn(),
       findByHotelAndName: jest.fn(),
       findAllByHotel: jest.fn().mockResolvedValue([]),
+      findActiveByHotel: jest.fn().mockResolvedValue(null),
       findPage: jest.fn(),
       create: createPolicy,
       save: savePolicy,
@@ -68,10 +72,8 @@ describe('CancellationPoliciesService', () => {
         {
           hotelId,
           name: ' Flexible ',
-          cancellationWindow: 2,
-          minHoursBeforeCheckIn: 0,
-          maxHoursBeforeCheckIn: 48,
-          cancellationFeeRate: 10,
+          cancelHours: 24,
+          penaltyPercent: 10,
           description: ' Cancel up to two days before check-in. ',
         },
         ownerActor,
@@ -81,10 +83,10 @@ describe('CancellationPoliciesService', () => {
     expect(createPolicy).toHaveBeenCalledWith({
       hotelId,
       name: 'Flexible',
-      cancellationWindow: 2,
-      minHoursBeforeCheckIn: 0,
-      maxHoursBeforeCheckIn: 48,
-      cancellationFeeRate: 10,
+      cancelHours: 24,
+      penaltyPercent: 10,
+      cancellationAllowed: true,
+      isActive: true,
       description: 'Cancel up to two days before check-in.',
     });
   });
@@ -93,12 +95,17 @@ describe('CancellationPoliciesService', () => {
     repository.findByHotelAndName.mockResolvedValue(policy());
 
     await expect(
-      service.create({ hotelId, name: 'Flexible' }, ownerActor),
+      service.create({
+        hotelId,
+        name: 'Flexible',
+        cancelHours: 24,
+        penaltyPercent: 10,
+      }, ownerActor),
     ).rejects.toBeInstanceOf(CancellationPolicyNameConflictException);
     expect(createPolicy).not.toHaveBeenCalled();
   });
 
-  it('allows nullable policy values to be cleared', async () => {
+  it('updates policy values', async () => {
     const existing = policy();
     repository.findById.mockResolvedValue(existing);
     savePolicy.mockImplementation(async (value) => value);
@@ -106,16 +113,14 @@ describe('CancellationPoliciesService', () => {
     const updated = await service.update(
       policyId,
       {
-        cancellationWindow: null,
-        cancellationFeeRate: null,
-        description: null,
+        cancelHours: 12,
+        penaltyPercent: 15,
       },
       ownerActor,
     );
 
-    expect(updated.cancellationWindow).toBeNull();
-    expect(updated.cancellationFeeRate).toBeNull();
-    expect(updated.description).toBeNull();
+    expect(updated.cancelHours).toBe(12);
+    expect(updated.penaltyPercent).toBe(15);
     expect(savePolicy).toHaveBeenCalledWith(existing);
   });
 

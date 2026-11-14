@@ -68,6 +68,11 @@ export class PlacesController {
     );
   }
 
+  @Get('options')
+  async findCatalogOptions() {
+    return this.placesService.findCatalogOptions();
+  }
+
   @Get(':placeId')
   @Public()
   @ApiDetailOperation('Get a place', PlaceResponse, 'placeId')

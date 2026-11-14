@@ -9,31 +9,30 @@ import {
   Post,
   Put,
   Query,
-  Req,
   Res,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../authorization/decorators/roles.decorator';
+import { Public } from '../../authorization/decorators/public.decorator';
 import { UserEntity, UserRole } from '../../users/entities/user.entity';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import {
   ApiCreateOperation,
   ApiDetailOperation,
   ApiListOperation,
   ApiUpdateOperation,
 } from '../../../common/openapi/api-crud.decorator';
-import { CreateVnpayPaymentRequest } from '../dtos/requests/create-vnpay-payment.request';
 import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
+import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
 import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
-import { SettleBookingRequest } from '../dtos/requests/settle-booking.request';
 import { UpdateBookingRequest } from '../dtos/requests/update-booking.request';
 import {
   BookingListResponse,
   BookingResponse,
 } from '../dtos/responses/booking.response';
-import { VnpayPaymentResponse } from '../dtos/responses/vnpay-payment.response';
+import { SePayPaymentResponse } from '../dtos/responses/sepay-payment.response';
 import { BookingMapper } from '../mappers/booking.mapper';
 import { BookingsService } from '../services/bookings.service';
 
@@ -44,6 +43,19 @@ const idempotencyKeyPipe = new ParseUUIDPipe({ version: '4' });
 @Controller({ path: 'bookings', version: '1' })
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
+
+  @Get('availability')
+  @Public()
+  async searchRoomAvailability(
+    @Query() query: SearchRoomAvailabilityRequest,
+  ): Promise<{
+    hotelId: string | null;
+    checkInDate: string;
+    checkOutDate: string;
+    availableRoomIds: string[];
+  }> {
+    return this.bookingsService.searchRoomAvailability(query);
+  }
 
   @Post()
   @ApiCreateOperation('Create a booking', BookingResponse)
@@ -133,61 +145,52 @@ export class BookingsController {
     );
   }
 
-  @Put(':bookingId/payment/vnpay')
+  @Put(':bookingId/payment/sepay')
   @ApiUpdateOperation(
-    'Create a VNPAY Sandbox payment URL',
-    VnpayPaymentResponse,
+    'Create a SePay API v2 Sandbox virtual account order',
+    SePayPaymentResponse,
     'bookingId',
   )
-  async createVnpayPayment(
+  async createSePayPayment(
     @CurrentUser() user: UserEntity,
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() input: CreateVnpayPaymentRequest,
-    @Req() request: Request,
-  ): Promise<VnpayPaymentResponse> {
-    const result = await this.bookingsService.createVnpayPaymentForActor(
-      id,
-      input,
-      this.customerIp(request),
-      user,
-    );
+  ): Promise<SePayPaymentResponse> {
+    const result = await this.bookingsService.createSePayPaymentForActor(id, user);
     return {
       bookingId: result.booking.id,
       bookingCode: result.booking.bookingCode,
       paymentMethod: result.booking.paymentMethod,
       paymentStatus: result.booking.paymentStatus,
-      paymentUrl: result.paymentUrl,
-      expiresAt: result.booking.paymentExpiresAt!.toISOString(),
+      orderCode: result.booking.sepayOrderCode!,
+      vaNumber: result.booking.sepayVaNumber!,
+      qrCode: result.booking.sepayQrCode,
+      bankName: result.booking.sepayBankName,
+      accountNumber: result.booking.sepayAccountNumber,
+      accountHolderName: result.booking.sepayAccountHolderName,
+      expiresAt: result.booking.paymentExpiresAt?.toISOString() ?? null,
     };
-  }
-
-  @Put(':bookingId/settlement')
-  @Roles(UserRole.ADMIN)
-  @ApiUpdateOperation('Settle a paid booking', BookingResponse, 'bookingId')
-  async settle(
-    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() input: SettleBookingRequest,
-  ): Promise<BookingResponse> {
-    return BookingMapper.toResponse(
-      await this.bookingsService.settle(id, input),
-    );
   }
 
   @Put(':bookingId/refund')
   @Roles(UserRole.ADMIN)
-  @ApiUpdateOperation('Refund a paid booking', BookingResponse, 'bookingId')
+  @ApiUpdateOperation('Submit an automatic refund through SePay API v2', BookingResponse, 'bookingId')
   async refund(
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: RefundBookingRequest,
-    @Req() request: Request,
   ): Promise<BookingResponse> {
     return BookingMapper.toResponse(
-      await this.bookingsService.refund(id, input, this.customerIp(request)),
+      await this.bookingsService.refund(id, input),
     );
   }
 
-  private customerIp(request: Request): string {
-    const ip = request.ip ?? request.socket.remoteAddress ?? '127.0.0.1';
-    return ip.replace(/^::ffff:/, '');
+  @Put(':bookingId/refund/sync')
+  @Roles(UserRole.ADMIN)
+  @ApiUpdateOperation('Refresh the refund status from SePay API v2', BookingResponse, 'bookingId')
+  async syncRefund(
+    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<BookingResponse> {
+    return BookingMapper.toResponse(
+      await this.bookingsService.syncSePayRefund(id),
+    );
   }
 }

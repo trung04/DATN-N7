@@ -3,8 +3,8 @@ import { todayPlus } from '@/lib/utils'
 
 type ExtraSeed = Pick<AppData, 'destinations' | 'hotels' | 'rooms' | 'inventory' | 'restaurants' | 'trips' | 'stops' | 'activities' | 'bookings' | 'payments' | 'refunds' | 'reviews' | 'partners' | 'services' | 'settlements' | 'favorites'>
 
-const cancellationPolicy = 'Miễn phí khi hủy trước nhận phòng ít nhất 24 giờ; sau đó phí 50%.'
-const cancellationTerms: CancellationTerms = { freeUntilHours: 24, lateFeeRate: 0.5, checkInHour: 14 }
+const cancellationPolicy = 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.'
+const cancellationTerms: CancellationTerms = { basis: 'HOURS_AFTER_BOOKING', freeForHoursAfterBooking: 24, lateFeeRate: 0.5 }
 const daysAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString()
 
 export function createSeedExtras(): ExtraSeed {

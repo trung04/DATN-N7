@@ -38,6 +38,7 @@ export interface CreateRoomData {
 }
 
 export interface RoomRepository {
+  findBookableByHotel(hotelId?: string): Promise<RoomEntity[]>;
   findById(id: string): Promise<RoomWithAmenityIds | null>;
   findByIds(ids: string[]): Promise<RoomEntity[]>;
   findByHotelAndNumber(

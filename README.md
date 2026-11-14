@@ -37,7 +37,7 @@ Backend dùng PostgreSQL/PostGIS của Compose và Redis; AI vẫn có catalog r
 
 Chạy backend trên host: dùng Node.js 24, tạo `be/.env` theo `be/.env.example`, khởi động hạ tầng bằng `docker compose up -d postgres redis`, rồi chạy `npm ci` và `npm run start:dev` trong `be/`. Trong Compose hiện tại backend và frontend chạy image production và đều được bật mặc định.
 
-Session đăng nhập dùng `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS` và `FRONTEND_ORIGIN`. Google login chỉ bật khi có đủ `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Booking và VNPAY Sandbox có các biến được kiểm tra tại startup; xem `be/README.md` và `be/src/config/environment.validation.ts`. Các cấu hình tùy chọn chưa truyền qua Compose có thể dùng khi chạy native hoặc được bổ sung vào môi trường dịch vụ khi triển khai.
+Session đăng nhập dùng `AUTH_ACCESS_TTL_MS`, `AUTH_REFRESH_TTL_MS` và `FRONTEND_ORIGIN`. Google login chỉ bật khi có đủ `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`. Booking và SePay Sandbox có các biến được kiểm tra tại startup; xem `be/README.md` và `be/src/config/environment.validation.ts`. Các cấu hình tùy chọn chưa truyền qua Compose có thể dùng khi chạy native hoặc được bổ sung vào môi trường dịch vụ khi triển khai.
 
 PostgreSQL và Redis được publish trên loopback, mặc định lần lượt 5432 và 6379. Dịch vụ backend trong container dùng tên `postgres` và `redis`; chạy trên host dùng `localhost`. Redis cache dùng namespace `tourism:cache`, session dùng `tourism:auth`.
 

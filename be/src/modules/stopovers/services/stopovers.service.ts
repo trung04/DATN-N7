@@ -27,8 +27,9 @@ export class StopoversService {
   async create(
     itineraryId: string,
     input: CreateStopoverRequest,
+    touristUserId: string,
   ): Promise<StopoverEntity> {
-    await this.itinerariesService.findById(itineraryId);
+    await this.itinerariesService.findByIdForTourist(itineraryId, touristUserId);
     this.assertTimeRange(input.arrivalTime, input.departureTime);
     if (
       await this.repository.findByItineraryAndOrder(
@@ -51,8 +52,9 @@ export class StopoversService {
   async findPage(
     itineraryId: string,
     input: ListStopoversRequest,
+    touristUserId: string,
   ): Promise<StopoverPage> {
-    await this.itinerariesService.findById(itineraryId);
+    await this.itinerariesService.findByIdForTourist(itineraryId, touristUserId);
     return this.repository.findPage({
       itineraryId,
       page: input.page,
@@ -69,11 +71,24 @@ export class StopoversService {
     return stopover;
   }
 
+  async findByIdForTourist(
+    id: string,
+    touristUserId: string,
+  ): Promise<StopoverEntity> {
+    const stopover = await this.findById(id);
+    await this.itinerariesService.findByIdForTourist(
+      stopover.itineraryId,
+      touristUserId,
+    );
+    return stopover;
+  }
+
   async findByItineraryAndId(
     itineraryId: string,
     id: string,
+    touristUserId: string,
   ): Promise<StopoverEntity> {
-    await this.itinerariesService.findById(itineraryId);
+    await this.itinerariesService.findByIdForTourist(itineraryId, touristUserId);
     const stopover = await this.repository.findByIdAndItineraryId(
       id,
       itineraryId,
@@ -86,11 +101,12 @@ export class StopoversService {
     itineraryId: string,
     id: string,
     input: UpdateStopoverRequest,
+    touristUserId: string,
   ): Promise<StopoverEntity> {
     if (Object.values(input).every((value) => value === undefined)) {
       throw new EmptyStopoverUpdateException();
     }
-    const stopover = await this.findByItineraryAndId(itineraryId, id);
+    const stopover = await this.findByItineraryAndId(itineraryId, id, touristUserId);
     const stopOrder = input.stopOrder ?? stopover.stopOrder;
     const arrivalTime = input.arrivalTime ?? stopover.arrivalTime.toISOString();
     const departureTime =
@@ -116,9 +132,9 @@ export class StopoversService {
     return this.repository.save(stopover);
   }
 
-  async delete(itineraryId: string, id: string): Promise<void> {
+  async delete(itineraryId: string, id: string, touristUserId: string): Promise<void> {
     await this.repository.delete(
-      await this.findByItineraryAndId(itineraryId, id),
+      await this.findByItineraryAndId(itineraryId, id, touristUserId),
     );
   }
 

@@ -42,6 +42,8 @@ export interface PlacePriceData {
   minPrice: number;
   maxPrice: number;
   currency: string;
+  pricingUnit: string;
+  description: string | null;
 }
 
 export interface PlaceSummaryData {
@@ -55,6 +57,25 @@ export interface PlaceDetailsData extends PlaceSummaryData {
   categories: PlaceCategoryData[];
   tags: string[];
   images: PlaceImageData[];
+}
+
+export interface PlaceCatalogOptions {
+  categories: PlaceCategoryData[];
+  topics: PlaceCategoryData[];
+}
+
+export interface PlaceCatalogWriteData {
+  categoryCodes?: string[];
+  topicCodes?: string[];
+  imageUrl?: string | null;
+  imageAltText?: string | null;
+  referencePrice?: {
+    minPrice: number;
+    maxPrice: number;
+    currency: string;
+    pricingUnit: string;
+    description?: string | null;
+  } | null;
 }
 
 export interface CreatePlaceData {
@@ -93,7 +114,8 @@ export interface PlaceRepository {
     externalProviderId: string,
   ): Promise<PlaceEntity | null>;
   findPage(options: FindPlacesOptions): Promise<PlacePage>;
-  create(data: CreatePlaceData): Promise<PlaceEntity>;
-  save(place: PlaceEntity): Promise<PlaceEntity>;
+  findCatalogOptions(): Promise<PlaceCatalogOptions>;
+  create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity>;
+  save(place: PlaceEntity, catalog: PlaceCatalogWriteData): Promise<PlaceEntity>;
   delete(place: PlaceEntity): Promise<void>;
 }

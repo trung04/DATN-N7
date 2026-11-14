@@ -8,7 +8,6 @@ import {
   IsOptional,
   IsString,
   IsTimeZone,
-  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -22,14 +21,17 @@ const uppercase = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toUpperCase() : value;
 
 export class CreateItineraryRequest {
-  @IsUUID('4')
-  touristUserId: string;
-
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   name: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  destinationCity: string;
 
   @IsOptional()
   @Transform(trim)

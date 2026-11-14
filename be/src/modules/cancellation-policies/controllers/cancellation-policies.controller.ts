@@ -31,6 +31,7 @@ import { UpdateCancellationPolicyRequest } from '../dtos/requests/update-cancell
 import {
   CancellationPolicyListResponse,
   CancellationPolicyResponse,
+  CancellationPolicyScheduleResponse,
 } from '../dtos/responses/cancellation-policy.response';
 import { CancellationPolicyMapper } from '../mappers/cancellation-policy.mapper';
 import { CancellationPoliciesService } from '../services/cancellation-policies.service';
@@ -77,6 +78,15 @@ export class CancellationPoliciesController {
       query.limit,
       page.total,
     );
+  }
+
+  @Get('schedule/:hotelId')
+  @Public()
+  async schedule(
+    @Param('hotelId', new ParseUUIDPipe({ version: '4' })) hotelId: string,
+  ): Promise<CancellationPolicyScheduleResponse> {
+    const schedule = await this.cancellationPoliciesService.getSchedule(hotelId);
+    return schedule;
   }
 
   @Get(':policyId')

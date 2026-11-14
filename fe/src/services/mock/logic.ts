@@ -1,4 +1,4 @@
-import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'
@@ -6,8 +6,11 @@ import { cancellationQuote } from '@/lib/booking'
 import { commit, readData } from './store'
 
 const activeHold = (b: Booking) => b.status === 'PENDING_PAYMENT' && Date.parse(b.holdExpiresAt) > Date.now()
-const soldOn = (data: AppData, roomId: string, date: string) => data.bookings.filter(b => b.roomId === roomId && b.checkIn <= date && date < b.checkOut && (b.status === 'CONFIRMED' || b.status === 'COMPLETED')).reduce((n, b) => n + b.rooms, 0)
-const heldOn = (data: AppData, roomId: string, date: string) => data.bookings.filter(b => b.roomId === roomId && b.checkIn <= date && date < b.checkOut && activeHold(b)).reduce((n, b) => n + b.rooms, 0)
+const roomsBookedIn = (booking: Booking, roomId: string) => booking.roomIds
+  ? booking.roomIds.filter(id => id === roomId).length
+  : booking.roomId === roomId ? booking.rooms : 0
+const soldOn = (data: AppData, roomId: string, date: string) => data.bookings.filter(b => b.checkIn <= date && date < b.checkOut && (b.status === 'CONFIRMED' || b.status === 'COMPLETED')).reduce((n, b) => n + roomsBookedIn(b, roomId), 0)
+const heldOn = (data: AppData, roomId: string, date: string) => data.bookings.filter(b => b.checkIn <= date && date < b.checkOut && activeHold(b)).reduce((n, b) => n + roomsBookedIn(b, roomId), 0)
 export const inventoryView = (data: AppData, roomId: string, date: string) => {
   const row = data.inventory.find(i => i.roomId === roomId && i.date === date)
   const sold = soldOn(data, roomId, date)
@@ -141,27 +144,36 @@ export const mock = {
   }),
   currentUser: async (): Promise<User | null> => null,
   login: async (email: string, password: string): Promise<User> => {
-    const user = readData().users.find(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === email.toLowerCase())
+    const user = readData().users.find(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === email.toLowerCase() || u.adminMetadata?.username?.toLowerCase() === email.toLowerCase())
     assert(user && user.verified, 'LOGIN', 'Tài khoản không tồn tại hoặc chưa xác minh.', 401)
     const valid = user.passwordHash ? user.passwordHash === await hash(password) : user.id.startsWith('user-') && password === DEMO_PASSWORD
     assert(valid, 'LOGIN', 'Mật khẩu không chính xác.', 401)
     return user
   },
   logout: async (): Promise<void> => undefined,
-  register: async (name: string, email: string, password: string) => {
+  register: async (name: string, usernameOrEmail: string, emailOrPassword: string, maybePassword?: string) => {
+    const email = maybePassword === undefined ? usernameOrEmail : emailOrPassword
+    const password = maybePassword === undefined ? emailOrPassword : maybePassword
+    const username = maybePassword === undefined
+      ? (email.split('@')[0] ?? 'traveler').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 50).replace(/^[._-]+|[._-]+$/g, '') || 'traveler'
+      : usernameOrEmail
     assert(!readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
-    sessionStorage.setItem('smarttravel.pending', JSON.stringify({ name, email, passwordHash: await hash(password), expiresAt: Date.now() + 5 * 60000 }))
+    sessionStorage.setItem('smarttravel.pending', JSON.stringify({ name, username, email, passwordHash: await hash(password), expiresAt: Date.now() + 5 * 60000 }))
     return { demoOtp: '123456' }
   },
-  verifyOtp: async (otp: string): Promise<User> => {
+  verifyOtp: async (emailOrOtp: string, maybeOtp?: string): Promise<User> => {
     const raw = sessionStorage.getItem('smarttravel.pending')
     assert(raw, 'OTP', 'Không có yêu cầu xác thực. Vui lòng đăng ký lại.')
-    const pending = JSON.parse(raw) as { name: string; email: string; passwordHash: string; expiresAt: number }
+    const pending = JSON.parse(raw) as { name: string; username: string; email: string; passwordHash: string; expiresAt: number }
+    const email = maybeOtp === undefined ? pending.email : emailOrOtp
+    const otp = maybeOtp ?? emailOrOtp
+    assert(pending.email.toLowerCase() === email.toLowerCase(), 'OTP', 'Email khÃ´ng khá»›p yÃªu cáº§u xÃ¡c minh.')
     assert(pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã demo đã hết hạn. Vui lòng đăng ký lại.')
     assert(otp === '123456', 'OTP', 'Mã OTP demo không đúng.')
     const user = commit(data => {
       assert(!data.users.some(u => u.email.toLowerCase() === pending.email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
-      const record: User = { id: uid('tourist'), name: pending.name, email: pending.email, role: 'tourist', verified: true, passwordHash: pending.passwordHash }
+      const now = new Date().toISOString()
+      const record: User = { id: uid('tourist'), name: pending.name, email: pending.email, role: 'tourist', verified: true, passwordHash: pending.passwordHash, adminMetadata: { username: pending.username, googleAccountLinked: false, firstName: null, lastName: null, displayName: pending.name, phoneNumber: null, dateOfBirth: null, gender: null, role: 'TOURIST', status: 'ACTIVE', isEmailVerified: true, createdAt: now, updatedAt: now } }
       data.users.push(record)
       return record
     })
@@ -173,10 +185,11 @@ export const mock = {
     sessionStorage.setItem('smarttravel.reset', JSON.stringify({ email, expiresAt: Date.now() + 5 * 60000 }))
     return { demoOtp: '123456' }
   },
-  resendOtp: async () => {
+  resendOtp: async (email?: string) => {
     const raw = sessionStorage.getItem('smarttravel.pending')
     assert(raw, 'OTP', 'Không có yêu cầu xác thực.')
-    const pending = JSON.parse(raw) as { expiresAt: number }
+    const pending = JSON.parse(raw) as { email: string; expiresAt: number }
+    assert(!email || pending.email.toLowerCase() === email.toLowerCase(), 'OTP', 'Email khÃ´ng khá»›p yÃªu cáº§u xÃ¡c minh.')
     pending.expiresAt = Date.now() + 5 * 60000
     sessionStorage.setItem('smarttravel.pending', JSON.stringify(pending))
     return { demoOtp: '123456' }
@@ -191,9 +204,13 @@ export const mock = {
     commit(data => { const user = data.users.find(u => u.email === email); assert(user, 'USER', 'Không tìm thấy tài khoản.'); user.passwordHash = passwordHash })
     sessionStorage.removeItem('smarttravel.reset')
   },
-  saveProfile: async (userId: string, values: Pick<User, 'name' | 'phone'>) => commit(data => {
+  saveProfile: async (userId: string, values: UserProfileInput) => commit(data => {
     const user = data.users.find(u => u.id === userId); assert(user, 'USER', 'Không tìm thấy tài khoản.', 404)
-    user.name = values.name; user.phone = values.phone
+    user.name = values.name
+    user.phone = values.phone ?? undefined
+    user.dateOfBirth = values.dateOfBirth
+    user.gender = values.gender
+    if (user.adminMetadata) user.adminMetadata = { ...user.adminMetadata, displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null, updatedAt: new Date().toISOString() }
     return user
   }),
   requestDeletion: async (userId: string, password: string) => {
@@ -315,7 +332,7 @@ export const mock = {
     if (old) Object.assign(old, stop)
     else data.stops.push({ ...stop, id: uid('stop') })
   }),
-  deleteStop: async (userId: string, stopId: string) => commit(data => {
+  deleteStop: async (userId: string, stopId: string, _tripId?: string) => commit(data => {
     const stop = data.stops.find(s => s.id === stopId); assert(stop, 'NOT_FOUND', 'Không tìm thấy điểm dừng.', 404)
     assert(data.trips.some(t => t.id === stop.tripId && t.userId === userId), 'FORBIDDEN', 'Không có quyền xóa.', 403)
     data.stops = data.stops.filter(s => s.id !== stopId); data.activities = data.activities.filter(a => a.stopId !== stopId)
@@ -329,7 +346,7 @@ export const mock = {
     if (old) Object.assign(old, activity)
     else data.activities.push({ ...activity, id: uid('activity') })
   }),
-  deleteActivity: async (userId: string, activityId: string) => commit(data => {
+  deleteActivity: async (userId: string, activityId: string, _stopId?: string) => commit(data => {
     const activity = data.activities.find(a => a.id === activityId)
     const stop = data.stops.find(s => s.id === activity?.stopId)
     assert(stop && data.trips.some(t => t.id === stop.tripId && t.userId === userId), 'FORBIDDEN', 'Không có quyền xóa.', 403)
@@ -338,17 +355,21 @@ export const mock = {
   createBooking: async (userId: string, values: BookingInput) => commit(data => {
     assert(values.checkIn >= todayPlus(0) && nights(values.checkIn, values.checkOut) > 0, 'DATE', 'Ngày nhận/trả phòng không hợp lệ.')
     assert(values.rooms > 0 && values.adults > 0, 'GUESTS', 'Số khách và số phòng phải lớn hơn 0.')
-    const room = data.rooms.find(r => r.id === values.roomId && r.hotelId === values.hotelId)
+    // In mock data one room ID represents a room category. Keep repeated IDs
+    // because multiple rooms of the same category are booked as quantities.
+    const selectedIds = values.roomIds?.length ? values.roomIds : Array.from({ length: values.rooms }, () => values.roomId)
+    assert(selectedIds.length === values.rooms && selectedIds.length <= 10, 'ROOMS', 'Danh sách phòng không hợp lệ.')
+    const rooms = selectedIds.map(id => data.rooms.find(room => room.id === id && room.hotelId === values.hotelId)).filter((room): room is RoomType => Boolean(room))
     const hotel = data.hotels.find(h => h.id === values.hotelId)
-    assert(room && hotel, 'NOT_FOUND', 'Không tìm thấy phòng.', 404)
-    assert(values.adults + values.children <= room.capacity * values.rooms, 'CAPACITY', 'Số khách vượt sức chứa phòng.')
-    const existing = data.bookings.find(b => b.userId === userId && activeHold(b) && b.roomId === values.roomId && b.checkIn === values.checkIn && b.checkOut === values.checkOut && b.rooms === values.rooms)
+    assert(rooms.length === selectedIds.length && hotel, 'NOT_FOUND', 'Không tìm thấy phòng.', 404)
+    assert(values.adults + values.children <= rooms.reduce((sum, room) => sum + room.capacity, 0), 'CAPACITY', 'Số khách vượt sức chứa phòng.')
+    const existing = data.bookings.find(b => b.userId === userId && activeHold(b) && b.checkIn === values.checkIn && b.checkOut === values.checkOut && [...(b.roomIds ?? [b.roomId])].sort().join('|') === [...selectedIds].sort().join('|'))
     if (existing) return existing
     const dates = stayDays(values.checkIn, values.checkOut)
-    assert(dates.every(date => inventoryView(data, room.id, date).available >= values.rooms), 'SOLD_OUT', 'Không còn đủ phòng cho toàn bộ kỳ lưu trú.', 409)
-    const nightlyPrices = dates.map(date => data.inventory.find(i => i.roomId === room.id && i.date === date)?.price ?? room.basePrice)
-    const total = nightlyPrices.reduce((sum, price) => sum + price * values.rooms, 0)
-    const booking: Booking = { ...values, id: uid('BK'), userId, total, nightlyPrices, status: 'PENDING_PAYMENT', holdExpiresAt: new Date(Date.now() + 15 * 60000).toISOString(), createdAt: new Date().toISOString(), policySnapshot: hotel.cancellationPolicy, policyTermsSnapshot: { ...hotel.cancellationTerms } }
+    assert(rooms.every(room => dates.every(date => inventoryView(data, room.id, date).available >= 1)), 'SOLD_OUT', 'Không còn đủ phòng cho toàn bộ kỳ lưu trú.', 409)
+    const nightlyPrices = dates.map(date => rooms.reduce((sum, room) => sum + (data.inventory.find(i => i.roomId === room.id && i.date === date)?.price ?? room.basePrice), 0))
+    const total = nightlyPrices.reduce((sum, price) => sum + price, 0)
+    const booking: Booking = { ...values, roomId: selectedIds[0] ?? values.roomId, roomIds: selectedIds, rooms: selectedIds.length, id: uid('BK'), userId, total, nightlyPrices, status: 'PENDING_PAYMENT', holdExpiresAt: new Date(Date.now() + 15 * 60000).toISOString(), createdAt: new Date().toISOString(), policySnapshot: hotel.cancellationPolicy, policyTermsSnapshot: { ...hotel.cancellationTerms } }
     data.bookings.push(booking)
     data.payments.push({ id: uid('PAY'), bookingId: booking.id, status: 'PENDING', amount: total, createdAt: booking.createdAt })
     return booking

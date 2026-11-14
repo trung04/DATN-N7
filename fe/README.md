@@ -56,4 +56,4 @@ Mặc định VITE_DATA_MODE=mock. Để dùng backend theo [hợp đồng đề
 
 ## Giới hạn demo
 
-Gợi ý và lịch trình dùng quy tắc đơn giản trên dữ liệu có sẵn, không phải AI/LLM. VNPAY, Google OAuth, email OTP, hoàn tiền và chuyển khoản đều chưa kết nối thật. localStorage không bảo đảm giao dịch đồng thời giữa nhiều thiết bị. Ảnh dùng placeholder nội bộ để tránh phụ thuộc ảnh bên ngoài.
+Gợi ý và lịch trình dùng quy tắc đơn giản trên dữ liệu có sẵn, không phải AI/LLM. Thanh toán và hoàn tiền dùng SePay API v2 Sandbox; cần cấu hình API token, tài khoản ngân hàng Test mode và webhook tại backend. Google OAuth và email OTP cần cấu hình riêng. localStorage không bảo đảm giao dịch đồng thời giữa nhiều thiết bị. Ảnh dùng placeholder nội bộ để tránh phụ thuộc ảnh bên ngoài.

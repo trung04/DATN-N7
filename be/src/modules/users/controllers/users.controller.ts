@@ -13,9 +13,10 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../authorization/decorators/roles.decorator';
-import { UserRole } from '../entities/user.entity';
+import { UserEntity, UserRole } from '../entities/user.entity';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -29,6 +30,7 @@ import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
+import { UpdateMyProfileRequest } from '../dtos/requests/update-my-profile.request';
 import {
   UserListResponse,
   UserResponse,
@@ -41,6 +43,27 @@ import { UsersService } from '../services/users.service';
 @Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Get('me')
+  @Roles(UserRole.TOURIST, UserRole.HOTEL_OWNER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Get the authenticated user profile' })
+  @ApiOkResponse({ type: UserResponse })
+  getMyProfile(@CurrentUser() user: UserEntity): UserResponse {
+    return UserMapper.toResponse(user);
+  }
+
+  @Patch('me')
+  @Roles(UserRole.TOURIST, UserRole.HOTEL_OWNER, UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update the authenticated user profile' })
+  @ApiOkResponse({ type: UserResponse })
+  async updateMyProfile(
+    @CurrentUser() user: UserEntity,
+    @Body() input: UpdateMyProfileRequest,
+  ): Promise<UserResponse> {
+    return UserMapper.toResponse(
+      await this.usersService.updateMyProfile(user.id, input),
+    );
+  }
 
   @Post()
   @ApiCreateOperation('Create a user', UserResponse)

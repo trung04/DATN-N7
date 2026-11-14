@@ -47,8 +47,8 @@ describe('environment validation', () => {
     expect(result.BOOKING_HOLD_MINUTES).toBe(15);
     expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
     expect(result.DATABASE_PASSWORD).toBe(database.DATABASE_PASSWORD);
-    expect(result.VNPAY_PAYMENT_URL).toBe(
-      'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+    expect(result.SEPAY_V2_BASE_URL).toBe(
+      'https://userapi-sandbox.sepay.vn/v2',
     );
   });
 
@@ -138,29 +138,30 @@ describe('environment validation', () => {
     ).toThrow('FRONTEND_ORIGIN');
   });
 
-  it('accepts a complete VNPAY Sandbox configuration', () => {
+  it('accepts a complete SePay API v2 Sandbox configuration', () => {
     const result = validateEnvironment({
       ...database,
-      VNPAY_TMN_CODE: 'SANDBOX01',
-      VNPAY_HASH_SECRET: 'test-only-vnpay-secret',
-      VNPAY_RETURN_URL: 'http://localhost:3000/api/v1/payments/vnpay/return',
+      SEPAY_V2_API_TOKEN: 'test-only-sepay-token',
+      SEPAY_V2_BANK_ACCOUNT_XID: 'f9e8d7c6-b5a4-4210-8edc-ba0987654321',
+      SEPAY_WEBHOOK_SECRET: 'test-only-webhook-secret',
     });
-    expect(result.VNPAY_TMN_CODE).toBe('SANDBOX01');
+    expect(result.SEPAY_V2_BASE_URL).toBe('https://userapi-sandbox.sepay.vn/v2');
+    expect(result.SEPAY_WEBHOOK_AUTH_TYPE).toBe('HMAC_SHA256');
   });
 
-  it('rejects a partial VNPAY configuration', () => {
+  it('rejects incomplete SePay API v2 account configuration', () => {
     expect(() =>
-      validateEnvironment({ ...database, VNPAY_TMN_CODE: 'SANDBOX01' }),
-    ).toThrow('VNPAY_HASH_SECRET');
+      validateEnvironment({ ...database, SEPAY_V2_API_TOKEN: 'test-only-token' }),
+    ).toThrow('SEPAY_V2_API_TOKEN and SEPAY_V2_BANK_ACCOUNT_XID');
   });
 
-  it('rejects a production VNPAY payment URL', () => {
+  it('rejects a production SePay API URL in the Sandbox configuration', () => {
     expect(() =>
       validateEnvironment({
         ...database,
-        VNPAY_PAYMENT_URL: 'https://pay.vnpay.vn/paymentv2/vpcpay.html',
+        SEPAY_V2_BASE_URL: 'https://userapi.sepay.vn/v2',
       }),
-    ).toThrow('VNPAY_PAYMENT_URL');
+    ).toThrow('SEPAY_V2_BASE_URL');
   });
 
   it('rejects a partial Google configuration', () => {

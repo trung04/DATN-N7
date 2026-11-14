@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
 import {
   GoogleAccountConflictException,
   UserEmailConflictException,
@@ -8,12 +9,18 @@ import { UserEntity, UserStatus } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
 import { LoginRequest } from '../dtos/requests/login.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
+import { EmailOtpRequest } from '../dtos/requests/email-otp.request';
+import { RequestPasswordResetRequest, ResetPasswordRequest } from '../dtos/requests/request-password-reset.request';
 import {
   AccountUnavailableException,
   GoogleAccountLinkRequiredException,
   InvalidCredentialsException,
   InvalidGoogleStateException,
   InvalidSessionException,
+  AuthChallengeInvalidException,
+  AuthChallengeRateLimitException,
+  AuthEmailDeliveryException,
+  AuthEmailUnavailableException,
 } from '../exceptions/auth.exceptions';
 import {
   AUTH_SESSION_STORE,
@@ -27,8 +34,14 @@ import type {
 } from '../interfaces/google-identity-provider.interface';
 import { GOOGLE_OAUTH_STATE_STORE } from '../interfaces/google-oauth-state-store.interface';
 import type { GoogleOAuthStateStore } from '../interfaces/google-oauth-state-store.interface';
+import { AUTH_CHALLENGE_STORE } from '../interfaces/auth-challenge-store.interface';
+import type { AuthChallengePurpose, AuthChallengeStore } from '../interfaces/auth-challenge-store.interface';
+import { EMAIL_SENDER } from '../interfaces/email-sender.interface';
+import type { EmailSender } from '../interfaces/email-sender.interface';
 
 const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
+const AUTH_OTP_TTL_MS = 10 * 60 * 1000;
+const AUTH_OTP_COOLDOWN_MS = 60 * 1000;
 
 export interface AuthenticatedSession extends SessionTokens {
   user: UserEntity;
@@ -48,15 +61,97 @@ export class AuthService {
     private readonly googleStates: GoogleOAuthStateStore,
     @Inject(GOOGLE_IDENTITY_PROVIDER)
     private readonly google: GoogleIdentityProvider,
+    @Inject(AUTH_CHALLENGE_STORE)
+    private readonly challenges: AuthChallengeStore,
+    @Inject(EMAIL_SENDER)
+    private readonly emailSender: EmailSender,
+    private readonly config: ConfigService,
   ) {}
 
-  register(input: RegisterRequest): Promise<UserEntity> {
-    return this.usersService.create({
+  async register(input: RegisterRequest): Promise<void> {
+    this.assertEmailConfigured();
+    const email = input.email.trim().toLowerCase();
+    await this.usersService.create({
       username: input.username,
-      email: input.email,
+      email,
+      displayName: input.displayName,
       password: input.password,
-      status: UserStatus.ACTIVE,
+      status: UserStatus.INACTIVE,
     });
+    await this.issueOtp(email, 'EMAIL_VERIFICATION');
+  }
+
+  async verifyEmail(input: EmailOtpRequest): Promise<void> {
+    const email = input.email.trim().toLowerCase();
+    await this.consumeOtp(email, 'EMAIL_VERIFICATION', input.otp);
+    const user = await this.usersService.findByEmail(email);
+    if (!user || user.status !== UserStatus.INACTIVE) throw new AuthChallengeInvalidException();
+    await this.usersService.verifyEmail(user.id);
+  }
+
+  async resendVerification(input: RequestPasswordResetRequest): Promise<void> {
+    this.assertEmailConfigured();
+    const email = input.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email);
+    if (!user || user.isEmailVerified || user.status !== UserStatus.INACTIVE) return;
+    try {
+      await this.issueOtp(email, 'EMAIL_VERIFICATION');
+    } catch (error) {
+      if (error instanceof AuthChallengeRateLimitException || error instanceof AuthEmailDeliveryException) return;
+      throw error;
+    }
+  }
+
+  async requestPasswordReset(input: RequestPasswordResetRequest): Promise<void> {
+    this.assertEmailConfigured();
+    const email = input.email.trim().toLowerCase();
+    const user = await this.usersService.findByEmail(email);
+    if (!user || !user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) return;
+    try {
+      await this.issueOtp(email, 'PASSWORD_RESET');
+    } catch (error) {
+      if (error instanceof AuthChallengeRateLimitException || error instanceof AuthEmailDeliveryException) return;
+      throw error;
+    }
+  }
+
+  async resetPassword(input: ResetPasswordRequest): Promise<void> {
+    const email = input.email.trim().toLowerCase();
+    await this.consumeOtp(email, 'PASSWORD_RESET', input.otp);
+    const user = await this.usersService.findByEmail(email);
+    if (!user || !user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) {
+      throw new AuthChallengeInvalidException();
+    }
+    await this.usersService.resetPassword(user.id, { newPassword: input.password });
+  }
+
+  private async issueOtp(email: string, purpose: AuthChallengePurpose): Promise<void> {
+    this.assertEmailConfigured();
+    const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const codeHash = this.hashOtp(email, purpose, otp);
+    if (!(await this.challenges.issue(email, purpose, codeHash, AUTH_OTP_TTL_MS, AUTH_OTP_COOLDOWN_MS))) {
+      throw new AuthChallengeRateLimitException();
+    }
+    try {
+      await this.emailSender.sendOtp(email, purpose, otp);
+    } catch {
+      await this.challenges.clear(email, purpose);
+      throw new AuthEmailDeliveryException();
+    }
+  }
+
+  private async consumeOtp(email: string, purpose: AuthChallengePurpose, otp: string): Promise<void> {
+    const result = await this.challenges.consume(email, purpose, this.hashOtp(email, purpose, otp));
+    if (result !== 'valid') throw new AuthChallengeInvalidException();
+  }
+
+  private hashOtp(email: string, purpose: AuthChallengePurpose, otp: string): string {
+    const pepper = this.config.getOrThrow<string>('AUTH_OTP_PEPPER');
+    return createHmac('sha256', pepper).update(`${purpose}:${email}:${otp}`).digest('hex');
+  }
+
+  private assertEmailConfigured(): void {
+    if (!this.emailSender.isConfigured()) throw new AuthEmailUnavailableException();
   }
 
   async login(input: LoginRequest): Promise<AuthenticatedSession> {

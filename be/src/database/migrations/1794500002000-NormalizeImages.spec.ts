@@ -21,18 +21,23 @@ describe('NormalizeImages1794500002000', () => {
     expect(sql).toContain('"image_order" integer NOT NULL DEFAULT 1');
   });
 
-  it('refuses to rebuild image tables containing data', async () => {
+  it('archives the legacy hotel image table before creating the new mapping', async () => {
     const migration = new NormalizeImages1794500002000();
-    const query = jest.fn().mockResolvedValue([{ count: 1 }]);
+    const query = jest.fn().mockResolvedValue(undefined);
 
-    await expect(
-      migration.up({
-        hasTable: jest.fn().mockResolvedValue(true),
-        query,
-      } as unknown as QueryRunner),
-    ).rejects.toThrow('migration stopped to prevent data loss');
+    await migration.up({
+      hasTable: jest
+        .fn()
+        .mockImplementation(
+          (table: string) => table === 'hotel_images',
+        ),
+      hasColumn: jest.fn().mockResolvedValue(true),
+      query,
+    } as unknown as QueryRunner);
 
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(query.mock.calls[0][0]).toContain('FROM "hotel_images"');
+    expect(query.mock.calls[0][0]).toContain(
+      'ALTER TABLE "hotel_images" RENAME TO "hotel_images_legacy_1794500002000"',
+    );
+    expect(query.mock.calls[2][0]).toContain('CREATE TABLE "hotel_images"');
   });
 });

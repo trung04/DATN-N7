@@ -5,8 +5,8 @@ export class AddHotelOwnerTimestamps1794400002000 implements MigrationInterface 
 
   async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`ALTER TABLE "hotel_owners"
-      ADD COLUMN "created_at" timestamptz NOT NULL DEFAULT now(),
-      ADD COLUMN "updated_at" timestamptz NOT NULL DEFAULT now()`);
+      ADD COLUMN IF NOT EXISTS "created_at" timestamptz NOT NULL DEFAULT now(),
+      ADD COLUMN IF NOT EXISTS "updated_at" timestamptz NOT NULL DEFAULT now()`);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {

@@ -14,7 +14,8 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { Roles } from '../../authorization/decorators/roles.decorator';
-import { UserRole } from '../../users/entities/user.entity';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { UserEntity, UserRole } from '../../users/entities/user.entity';
 import { CreateActivityRequest } from '../dtos/requests/create-activity.request';
 import { ListActivitiesRequest } from '../dtos/requests/list-activities.request';
 import { UpdateActivityRequest } from '../dtos/requests/update-activity.request';
@@ -35,9 +36,14 @@ export class ActivitiesController {
     @Param('stopoverId', new ParseUUIDPipe({ version: '4' }))
     stopoverId: string,
     @Body() input: CreateActivityRequest,
+    @CurrentUser() user: UserEntity,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ActivityResponse> {
-    const activity = await this.activitiesService.create(stopoverId, input);
+    const activity = await this.activitiesService.create(
+      stopoverId,
+      input,
+      user.id,
+    );
     response.setHeader(
       'Location',
       `/api/v1/stopovers/${stopoverId}/activities/${activity.id}`,
@@ -50,8 +56,13 @@ export class ActivitiesController {
     @Param('stopoverId', new ParseUUIDPipe({ version: '4' }))
     stopoverId: string,
     @Query() query: ListActivitiesRequest,
+    @CurrentUser() user: UserEntity,
   ): Promise<ActivityListResponse> {
-    const page = await this.activitiesService.findPage(stopoverId, query);
+    const page = await this.activitiesService.findPage(
+      stopoverId,
+      query,
+      user.id,
+    );
     return ActivityMapper.toListResponse(
       page.items,
       query.page,
@@ -65,9 +76,10 @@ export class ActivitiesController {
     @Param('stopoverId', new ParseUUIDPipe({ version: '4' }))
     stopoverId: string,
     @Param('activityId', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() user: UserEntity,
   ): Promise<ActivityResponse> {
     return ActivityMapper.toResponse(
-      await this.activitiesService.findById(stopoverId, id),
+      await this.activitiesService.findById(stopoverId, id, user.id),
     );
   }
 
@@ -77,9 +89,10 @@ export class ActivitiesController {
     stopoverId: string,
     @Param('activityId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdateActivityRequest,
+    @CurrentUser() user: UserEntity,
   ): Promise<ActivityResponse> {
     return ActivityMapper.toResponse(
-      await this.activitiesService.update(stopoverId, id, input),
+      await this.activitiesService.update(stopoverId, id, input, user.id),
     );
   }
 
@@ -89,7 +102,8 @@ export class ActivitiesController {
     @Param('stopoverId', new ParseUUIDPipe({ version: '4' }))
     stopoverId: string,
     @Param('activityId', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() user: UserEntity,
   ): Promise<void> {
-    await this.activitiesService.delete(stopoverId, id);
+    await this.activitiesService.delete(stopoverId, id, user.id);
   }
 }

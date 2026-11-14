@@ -186,52 +186,32 @@ export class BookingPaymentAlreadyInitializedException extends DomainException {
   }
 }
 
-export class VnpayCurrencyNotSupportedException extends DomainException {
+export class SePayCurrencyNotSupportedException extends DomainException {
   constructor() {
     super(
-      'VNPAY Sandbox payments require VND currency.',
-      'VNPAY_CURRENCY_NOT_SUPPORTED',
+      'SePay Sandbox payments require VND currency.',
+      'SEPAY_CURRENCY_NOT_SUPPORTED',
       'validation',
     );
   }
 }
 
-export class VnpayAmountNotSupportedException extends DomainException {
+export class SePayAmountNotSupportedException extends DomainException {
   constructor() {
     super(
-      'VNPAY Sandbox payments require a whole-number amount of at least 5,000 VND.',
-      'VNPAY_AMOUNT_NOT_SUPPORTED',
+      'SePay Sandbox payments require a whole-number amount greater than zero VND.',
+      'SEPAY_AMOUNT_NOT_SUPPORTED',
       'validation',
     );
   }
 }
 
-export class VnpayNotConfiguredException extends DomainException {
+export class SePayNotConfiguredException extends DomainException {
   constructor() {
     super(
-      'VNPAY Sandbox is not configured.',
-      'VNPAY_NOT_CONFIGURED',
+      'SePay Sandbox is not configured.',
+      'SEPAY_NOT_CONFIGURED',
       'service_unavailable',
-    );
-  }
-}
-
-export class VnpayUnavailableException extends DomainException {
-  constructor() {
-    super(
-      'VNPAY Sandbox is temporarily unavailable.',
-      'VNPAY_UNAVAILABLE',
-      'service_unavailable',
-    );
-  }
-}
-
-export class VnpayInvalidResponseException extends DomainException {
-  constructor() {
-    super(
-      'VNPAY Sandbox returned an invalid response.',
-      'VNPAY_INVALID_RESPONSE',
-      'bad_gateway',
     );
   }
 }
@@ -299,6 +279,12 @@ export class BookingActionNotAllowedException extends DomainException {
       'BOOKING_ACTION_NOT_ALLOWED',
       'conflict',
     );
+  }
+}
+
+export class BookingCancellationNotAllowedException extends DomainException {
+  constructor(reason: string) {
+    super(reason, 'BOOKING_CANCELLATION_NOT_ALLOWED', 'conflict');
   }
 }
 

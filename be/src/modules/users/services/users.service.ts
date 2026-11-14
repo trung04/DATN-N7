@@ -4,6 +4,7 @@ import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
+import { UpdateMyProfileRequest } from '../dtos/requests/update-my-profile.request';
 import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
@@ -73,9 +74,9 @@ export class UsersService {
     username: string,
     password: string,
   ): Promise<UserEntity | null> {
-    const user = await this.repository.findByUsername(
-      this.normalizeUsername(username),
-    );
+    const normalized = this.normalizeUsername(username);
+    const user = await this.repository.findByUsername(normalized) ??
+      (normalized.includes('@') ? await this.repository.findByEmail(normalized) : null);
     if (
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
@@ -182,6 +183,31 @@ export class UsersService {
     return this.repository.save(user);
   }
 
+  async updateMyProfile(
+    id: string,
+    input: UpdateMyProfileRequest,
+  ): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (
+      input.displayName === undefined &&
+      input.phoneNumber === undefined &&
+      input.dateOfBirth === undefined &&
+      input.gender === undefined
+    ) {
+      throw new EmptyUserUpdateException();
+    }
+    if (input.displayName !== undefined)
+      user.displayName = this.normalizeNullable(input.displayName);
+    if (input.phoneNumber !== undefined)
+      user.phoneNumber = this.normalizeNullable(input.phoneNumber);
+    if (input.dateOfBirth !== undefined) {
+      this.assertDateOfBirth(input.dateOfBirth ?? undefined);
+      user.dateOfBirth = input.dateOfBirth;
+    }
+    if (input.gender !== undefined) user.gender = input.gender;
+    return this.repository.save(user);
+  }
+
   async resetPassword(
     id: string,
     input: ResetUserPasswordRequest,
@@ -189,6 +215,14 @@ export class UsersService {
     const user = await this.findById(id);
     user.passwordHash = await this.passwordHasher.hash(input.newPassword);
     await this.repository.save(user);
+  }
+
+  async verifyEmail(id: string): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (user.isEmailVerified && user.status === UserStatus.ACTIVE) return user;
+    user.isEmailVerified = true;
+    if (user.status === UserStatus.INACTIVE) user.status = UserStatus.ACTIVE;
+    return this.repository.save(user);
   }
 
   async delete(id: string): Promise<void> {

@@ -1,24 +1,23 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { HotelsService } from '../../hotels/services/hotels.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { NotificationType } from '../../notifications/entities/notification.entity';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
 import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
 import { RoomsService } from '../../rooms/services/rooms.service';
-import { CreateVnpayPaymentRequest } from '../dtos/requests/create-vnpay-payment.request';
 import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
+import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
 import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
-import { SettleBookingRequest } from '../dtos/requests/settle-booking.request';
+import { SePayV2RequestException } from '../integrations/sepay/sepay-v2.client';
 import { UpdateBookingRequest } from '../dtos/requests/update-booking.request';
 import {
-  VnpayIpnResponse,
-  VnpayReturnResponse,
-} from '../dtos/responses/vnpay-payment.response';
-import {
+  BookingCancellationRuleSnapshot,
   BookingEntity,
   BookingStatus,
   PaymentMethod,
@@ -28,8 +27,8 @@ import {
 } from '../entities/booking.entity';
 import {
   BookingActionNotAllowedException,
+  BookingCancellationNotAllowedException,
   BookingAlreadyPaidException,
-  BookingAlreadySettledException,
   BookingNotFoundException,
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
@@ -45,9 +44,8 @@ import {
   InvalidBookingFinancialTimestampException,
   InvalidBookingTransitionException,
   RefundAmountExceededException,
-  SettlementBaseAmountExceededException,
-  VnpayAmountNotSupportedException,
-  VnpayCurrencyNotSupportedException,
+  SePayAmountNotSupportedException,
+  SePayCurrencyNotSupportedException,
 } from '../exceptions/booking.exceptions';
 import { BOOKING_CODE_GENERATOR } from '../interfaces/booking-code-generator.interface';
 import type { BookingCodeGenerator } from '../interfaces/booking-code-generator.interface';
@@ -57,31 +55,60 @@ import type {
   BookingRepository,
   CreatedBookingResult,
 } from '../interfaces/booking.repository.interface';
-import { VNPAY_PAYMENT_GATEWAY } from '../interfaces/vnpay-payment-gateway.interface';
-import type {
-  VnpayPaymentGateway,
-  VnpayRefundResult,
-} from '../interfaces/vnpay-payment-gateway.interface';
+import { SEPAY_V2_CLIENT } from '../interfaces/sepay-v2.interface';
+import type { SePayV2Client, SePayWebhookPayload } from '../interfaces/sepay-v2.interface';
+import { assessCancellation } from './cancellation-assessment';
 
-export interface CreatedVnpayPayment {
+export interface CreatedSePayPayment {
   booking: BookingEntity;
-  paymentUrl: string;
 }
 
 @Injectable()
 export class BookingsService {
+  private readonly logger = new Logger(BookingsService.name);
+
   constructor(
     @Inject(BOOKING_REPOSITORY)
     private readonly repository: BookingRepository,
     @Inject(BOOKING_CODE_GENERATOR)
     private readonly codeGenerator: BookingCodeGenerator,
-    @Inject(VNPAY_PAYMENT_GATEWAY)
-    private readonly vnpayGateway: VnpayPaymentGateway,
+    @Inject(SEPAY_V2_CLIENT)
+    private readonly sepay: SePayV2Client,
     private readonly cancellationPoliciesService: CancellationPoliciesService,
     private readonly roomsService: RoomsService,
     private readonly configService: ConfigService,
     private readonly hotelsService: HotelsService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
+
+  async searchRoomAvailability(
+    input: SearchRoomAvailabilityRequest,
+  ): Promise<{
+    hotelId: string | null;
+    checkInDate: string;
+    checkOutDate: string;
+    availableRoomIds: string[];
+  }> {
+    this.resolveNumberOfNights(input.checkInDate, input.checkOutDate);
+    if (input.hotelId) await this.hotelsService.assertActive(input.hotelId);
+    const [bookableRooms, unavailableRoomIds] = await Promise.all([
+      this.roomsService.findBookableByHotel(input.hotelId),
+      this.repository.findUnavailableRoomIds(
+        input.hotelId,
+        input.checkInDate,
+        input.checkOutDate,
+      ),
+    ]);
+    const unavailable = new Set(unavailableRoomIds);
+    return {
+      hotelId: input.hotelId ?? null,
+      checkInDate: input.checkInDate,
+      checkOutDate: input.checkOutDate,
+      availableRoomIds: bookableRooms
+        .filter((room) => !unavailable.has(room.id))
+        .map((room) => room.id),
+    };
+  }
 
   async create(
     touristId: string,
@@ -99,7 +126,9 @@ export class BookingsService {
 
     const rooms = await this.roomsService.findEntitiesByIds(input.roomIds);
     const hotelId = rooms[0].hotelId;
-    await this.hotelsService.assertActive(hotelId);
+    const hotel = await this.hotelsService.assertActive(hotelId);
+    const cancellationSchedule = await this.cancellationPoliciesService
+      .getCompleteScheduleForBooking(hotelId, input.cancellationPolicyVersion);
     const currency = rooms[0].currency;
     if (rooms.some((room) => room.hotelId !== hotelId)) {
       throw new BookingRoomsHotelMismatchException();
@@ -166,10 +195,33 @@ export class BookingsService {
         paymentStatus: PaymentStatus.PENDING,
         settlementStatus: SettlementStatus.PENDING,
         cancellationPolicyId: null,
+        cancellationPolicySnapshot: {
+          version: cancellationSchedule.version,
+          basis: 'HOURS_AFTER_BOOKING',
+          cancelHours: cancellationSchedule.rules[0]!.cancelHours,
+          penaltyPercent: cancellationSchedule.rules[0]!.penaltyPercent,
+          cancellationAllowed: cancellationSchedule.rules[0]!.cancellationAllowed,
+          policyName: cancellationSchedule.rules[0]!.name,
+          policyDescription: cancellationSchedule.rules[0]!.description,
+          timezone: 'Asia/Ho_Chi_Minh',
+          checkInTime: hotel.checkInTime,
+          rules: cancellationSchedule.rules.map((rule) => ({
+            ...rule,
+            minHoursAfterBooking: 0,
+            maxHoursAfterBooking: null,
+            cancellationFeeRate: rule.penaltyPercent,
+          })),
+        },
         cancellationWindowSnapshot: null,
         cancellationFeeRateSnapshot: null,
         cancellationDescriptionSnapshot: null,
         refundStatus: RefundStatus.NONE,
+        refundRequestedAt: null,
+        refundProcessingAt: null,
+        refundAttempt: 0,
+        refundFailureReason: null,
+        refundFailedAt: null,
+        refundHandledBy: null,
       },
       rooms.map((room) => ({
         roomId: room.id,
@@ -204,6 +256,7 @@ export class BookingsService {
       guestEmail: input.guestEmail.trim().toLowerCase(),
       guestPhone: input.guestPhone.trim(),
       specialRequests: this.normalizeNullable(input.specialRequests),
+      cancellationPolicyVersion: input.cancellationPolicyVersion,
     };
     return createHash('sha256')
       .update(JSON.stringify(canonicalRequest))
@@ -341,303 +394,448 @@ export class BookingsService {
     const existing = await this.findById(id);
     this.assertCanModify(existing, actor);
     const cancelled = await this.repository.withLockedById(id, async (booking) => {
-      if (booking.bookingStatus !== BookingStatus.CONFIRMED) {
+      const unpaidPending =
+        booking.bookingStatus === BookingStatus.PENDING &&
+        booking.paymentStatus !== PaymentStatus.PAID;
+      if (!unpaidPending && booking.bookingStatus !== BookingStatus.CONFIRMED) {
         throw new BookingActionNotAllowedException('cancel this booking');
       }
-      const hotel = await this.hotelsService.findById(booking.hotelId);
-      const checkInAt = new Date(`${booking.checkInDate}T${hotel.checkInTime}+07:00`);
-      const hoursBeforeCheckIn = (checkInAt.getTime() - Date.now()) / 3_600_000;
-      if (hoursBeforeCheckIn < 0) {
-        throw new BookingActionNotAllowedException('cancel after check-in');
+      let policy: BookingCancellationRuleSnapshot | null = null;
+      if (!unpaidPending) {
+        const assessment = assessCancellation(booking);
+        if (!assessment.allowed || !assessment.rule) {
+          throw new BookingCancellationNotAllowedException(
+            assessment.reason ?? 'Booking không đủ điều kiện hủy theo chính sách đã xác nhận.',
+          );
+        }
+        policy = assessment.rule;
       }
-      const policies = await this.cancellationPoliciesService.findPage({
-        page: 1,
-        limit: 1000,
-        hotelId: booking.hotelId,
-        sortBy: 'name',
-        sortOrder: 'ASC',
-      });
-      const eligible = policies.items.filter((policy) =>
-        hoursBeforeCheckIn >= policy.minHoursBeforeCheckIn &&
-        (policy.maxHoursBeforeCheckIn === null || hoursBeforeCheckIn < policy.maxHoursBeforeCheckIn),
-      );
-      if (eligible.length !== 1) {
-        throw new BookingActionNotAllowedException('cancel without an applicable cancellation policy');
-      }
-      const policy = eligible[0];
-      const feeRate = policy.cancellationFeeRate ?? 0;
-      const feeAmount = this.roundMoney(booking.amount * feeRate / 100);
-      booking.cancellationPolicyId = policy.id;
-      booking.cancellationWindowSnapshot = policy.maxHoursBeforeCheckIn;
+      const feeRate = policy
+        ? policy.cancellationFeeRate ?? policy.penaltyPercent ?? 0
+        : 0;
+      const feeAmount = unpaidPending
+        ? 0
+        : this.roundVnd(booking.amount * feeRate / 100);
+      if (policy) booking.cancellationPolicyId = policy.id;
+      if (policy) booking.cancellationWindowSnapshot = policy.cancelHours ?? policy.maxHoursAfterBooking ??
+        policy.maxHoursBeforeCheckIn ?? null;
       booking.cancellationFeeRateSnapshot = feeRate;
-      booking.cancellationDescriptionSnapshot = policy.description ?? policy.name;
+      booking.cancellationDescriptionSnapshot = unpaidPending
+        ? 'Hủy trước khi thanh toán; không phát sinh phí hủy.'
+        : policy!.description ?? policy!.name;
       booking.cancellationFeeAmount = feeAmount;
       booking.bookingStatus = BookingStatus.CANCELLED;
       booking.cancelledAt = new Date();
-      const refundAmount = this.roundMoney(Math.max(0, booking.amount - feeAmount));
-      booking.refundAmount = booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
+      // Keep PAYMENT_PENDING intact: if a payment races with cancellation,
+      // the SePay webhook can recognize it and trigger a full refund.
+      const refundAmount = this.roundVnd(Math.max(0, booking.amount - feeAmount));
+      booking.refundAmount = !unpaidPending && booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
         ? refundAmount
         : null;
       booking.refundReason = booking.refundAmount === null
         ? null
-        : `Khách hủy booking theo chính sách: ${policy.name}`;
+        : `Khách hủy booking theo chính sách: ${policy?.name ?? 'đã xác nhận'}`;
       booking.refundStatus = booking.refundAmount === null ? RefundStatus.NONE : RefundStatus.PENDING;
+      booking.refundRequestedAt = booking.refundAmount === null ? null : booking.cancelledAt;
+      booking.refundProcessingAt = null;
+      booking.refundAttempt = booking.refundAmount === null ? 0 : 1;
+      booking.refundFailureReason = null;
+      booking.refundFailedAt = null;
+      booking.refundHandledBy = null;
       return booking;
     });
     if (!cancelled) throw new BookingNotFoundException(id);
-    return cancelled;
+    await this.notify(
+      cancelled,
+      NotificationType.BOOKING_CANCELLED,
+      `booking:${cancelled.id}:cancelled`,
+      'Booking đã được hủy',
+      `Booking ${cancelled.bookingCode} đã được hủy theo chính sách.`,
+    );
+    return cancelled.refundAmount !== null && cancelled.refundAmount > 0
+      ? this.submitSePayRefund(id)
+      : cancelled;
   }
 
-  async createVnpayPaymentForActor(
+  async createSePayPaymentForActor(
     id: string,
-    input: CreateVnpayPaymentRequest,
-    customerIp: string,
     actor: AuthorizationActor,
-  ): Promise<CreatedVnpayPayment> {
+  ): Promise<CreatedSePayPayment> {
     const booking = await this.findById(id);
     this.assertCanModify(booking, actor);
-    return this.createVnpayPayment(id, input, customerIp);
+    return this.createSePayPayment(id);
   }
 
-  async createVnpayPayment(
-    id: string,
-    input: CreateVnpayPaymentRequest,
-    customerIp: string,
-  ): Promise<CreatedVnpayPayment> {
+  async createSePayPayment(id: string): Promise<CreatedSePayPayment> {
     const now = new Date();
     const holdMinutes = this.configService.getOrThrow<number>(
       'BOOKING_HOLD_MINUTES',
     );
     const expiresAt = new Date(now.getTime() + holdMinutes * 60_000);
-    const result = await this.repository.withLockedById(id, (booking) => {
-      this.assertPayable(booking, 'create VNPAY payment');
+    const reservation = await this.repository.withLockedById(id, (booking) => {
+      this.assertPayable(booking, 'create SePay payment');
       if (booking.reservationExpiresAt <= now) {
         throw new BookingReservationExpiredException();
       }
       if (
+        booking.paymentStatus === PaymentStatus.PAYMENT_PENDING &&
+        booking.paymentCreatedAt !== null &&
+        booking.paymentExpiresAt !== null &&
+        booking.paymentExpiresAt > now
+      ) {
+        if (booking.sepayOrderXid) return { booking, createOrder: false };
+        if (booking.paymentCreatedAt.getTime() > now.getTime() - 30_000) {
+          throw new BookingPaymentAlreadyInitializedException();
+        }
+      }
+      if (booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING && (
         booking.paymentStatus !== PaymentStatus.PENDING ||
         booking.paymentCreatedAt !== null
-      ) {
+      )) {
         throw new BookingPaymentAlreadyInitializedException();
       }
       if (booking.currency !== 'VND') {
-        throw new VnpayCurrencyNotSupportedException();
+        throw new SePayCurrencyNotSupportedException();
       }
-      if (!Number.isInteger(booking.amount) || booking.amount < 5_000) {
-        throw new VnpayAmountNotSupportedException();
+      if (!Number.isInteger(booking.amount) || booking.amount <= 0) {
+        throw new SePayAmountNotSupportedException();
       }
 
-      booking.paymentMethod = null;
+      booking.paymentMethod = PaymentMethod.BANK_TRANSFER;
       booking.paymentStatus = PaymentStatus.PAYMENT_PENDING;
-      booking.paymentCreatedAt = now;
-      booking.paymentExpiresAt = expiresAt;
-      booking.reservationExpiresAt = expiresAt;
-      const paymentUrl = this.vnpayGateway.createPaymentUrl({
-        bookingId: booking.id,
-        bookingCode: booking.bookingCode,
-        amount: booking.amount,
-        customerIp,
-        createdAt: now,
-        expiresAt,
-        locale: input.locale,
-      });
-      return { booking, paymentUrl };
+      booking.paymentCreatedAt ??= now;
+      booking.paymentExpiresAt ??= expiresAt;
+      booking.reservationExpiresAt = booking.paymentExpiresAt;
+      booking.sepayOrderCode ??= `BK${createHash('sha256').update(booking.id).digest('hex').slice(0, 13).toUpperCase()}`;
+      return { booking, createOrder: !booking.sepayOrderXid };
     });
-    if (!result) throw new BookingNotFoundException(id);
-    return result;
+    if (!reservation) throw new BookingNotFoundException(id);
+    if (!reservation.createOrder) return { booking: reservation.booking };
+
+    const order = await this.sepay.createOrder({
+      orderCode: reservation.booking.sepayOrderCode!,
+      amount: reservation.booking.amount,
+      durationSeconds: holdMinutes * 60,
+    });
+    const saved = await this.repository.withLockedById(id, (booking) => {
+      if (booking.sepayOrderCode !== order.order_code) {
+        throw new BookingActionNotAllowedException('save the SePay order');
+      }
+      booking.sepayOrderXid = order.id;
+      booking.sepayOrderCode = order.order_code;
+      booking.sepayVaNumber = order.va_number ?? null;
+      booking.sepayQrCode = order.qr_code ?? order.qr_code_url ?? null;
+      booking.sepayBankName = order.bank_name ?? null;
+      booking.sepayAccountNumber = order.account_number ?? null;
+      booking.sepayAccountHolderName = order.account_holder_name ?? order.va_holder_name ?? null;
+      booking.sepayOrderStatus = order.status;
+      if (order.expired_at) {
+        const expires = new Date(order.expired_at.replace(' ', 'T') + '+07:00');
+        if (!Number.isNaN(expires.getTime())) booking.paymentExpiresAt = expires;
+      }
+      return booking;
+    });
+    if (!saved) throw new BookingNotFoundException(id);
+    return { booking: saved };
   }
 
-  async handleVnpayIpn(
-    query: Record<string, unknown>,
-  ): Promise<VnpayIpnResponse> {
-    const callback = this.vnpayGateway.verifyPaymentCallback(query);
-    if (!callback.signatureValid || !callback.terminalCodeValid) {
-      return { RspCode: '97', Message: 'Invalid signature' };
-    }
-    if (!callback.bookingId) {
-      return { RspCode: '01', Message: 'Order not found' };
-    }
+  async handleSePayV2Webhook(payload: SePayWebhookPayload): Promise<boolean> {
+    const code = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
+    const booking = code ? await this.repository.findBySePayOrderCode(code) : null;
+    if (!booking) return false;
+    if (String(payload.transferType ?? '').toLowerCase() !== 'in') return false;
+    if (Number(payload.transferAmount) !== booking.amount) return false;
+    if (payload.subAccount && booking.sepayVaNumber &&
+      payload.subAccount.toUpperCase() !== booking.sepayVaNumber.toUpperCase()) return false;
+    const transactionId = payload.id === undefined ? '' : String(payload.id);
+    if (!transactionId) return false;
 
-    const response = await this.repository.withLockedById(
-      callback.bookingId,
-      (booking): VnpayIpnResponse => {
-        if (callback.amount !== booking.amount) {
-          return { RspCode: '04', Message: 'Invalid amount' };
-        }
-        if (
-          booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
-          booking.paymentTransactionId !== null
-        ) {
-          return { RspCode: '02', Message: 'Order already confirmed' };
-        }
+    const updated = await this.repository.withLockedById(booking.id, (current) => {
+      if (current.paymentStatus === PaymentStatus.PAID) {
+        return {
+          accepted: current.paymentTransactionId === transactionId,
+          newlyPaid: false,
+          booking: current,
+          wasConfirmed: false,
+        };
+      }
+      if (current.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
+        current.paymentTransactionId !== null) {
+        return { accepted: false, newlyPaid: false, booking: current, wasConfirmed: false };
+      }
 
-        const successful =
-          callback.responseCode === '00' && callback.transactionStatus === '00';
-        if (successful) {
-          if (!callback.transactionId || !callback.paidAt) {
-            return { RspCode: '99', Message: 'Invalid payment data' };
-          }
-          booking.paymentStatus = PaymentStatus.PAID;
-          booking.paymentMethod = this.resolveVnpayPaymentMethod(
-            callback.cardType,
-            callback.bankCode,
-          );
-          booking.paymentTransactionId = callback.transactionId;
-          booking.paidAt = callback.paidAt;
-          if (booking.bookingStatus === BookingStatus.PENDING) {
-            booking.bookingStatus = BookingStatus.CONFIRMED;
-          }
-        } else {
-          booking.paymentStatus =
-            callback.responseCode === '11'
-              ? PaymentStatus.EXPIRED
-              : PaymentStatus.FAILED;
-        }
-        return { RspCode: '00', Message: 'Confirm Success' };
-      },
-    );
-    return response ?? { RspCode: '01', Message: 'Order not found' };
-  }
-
-  async getVnpayReturn(
-    query: Record<string, unknown>,
-  ): Promise<VnpayReturnResponse> {
-    const callback = this.vnpayGateway.verifyPaymentCallback(query);
-    const signatureValid =
-      callback.signatureValid && callback.terminalCodeValid;
-    if (!signatureValid || !callback.bookingId) {
+      current.paymentStatus = PaymentStatus.PAID;
+      current.paymentMethod = PaymentMethod.BANK_TRANSFER;
+      current.paymentTransactionId = transactionId;
+      current.sepayOrderStatus = 'Paid';
+      const paidAt = typeof payload.transactionDate === 'string'
+        ? new Date(payload.transactionDate.replace(' ', 'T') + '+07:00')
+        : new Date();
+      current.paidAt = Number.isNaN(paidAt.getTime()) ? new Date() : paidAt;
+      const wasConfirmed = current.bookingStatus === BookingStatus.PENDING;
+      const latePaymentAfterCancellation = current.bookingStatus === BookingStatus.CANCELLED;
+      if (current.bookingStatus === BookingStatus.PENDING) {
+        current.bookingStatus = BookingStatus.CONFIRMED;
+      }
+      if (latePaymentAfterCancellation) {
+        current.refundAmount = current.amount;
+        current.refundReason = 'Thanh toán nhận được sau khi booking đã bị hủy.';
+        current.refundStatus = RefundStatus.PENDING;
+        current.refundRequestedAt = new Date();
+        current.refundProcessingAt = null;
+        current.refundAttempt = 1;
+        current.refundFailureReason = null;
+        current.refundFailedAt = null;
+        current.refundHandledBy = null;
+      }
       return {
-        signatureValid: false,
-        bookingId: null,
-        bookingCode: null,
-        paymentStatus: null,
-        responseCode: callback.responseCode,
-        transactionStatus: callback.transactionStatus,
+        accepted: true,
+        newlyPaid: true,
+        booking: current,
+        wasConfirmed,
+        latePaymentAfterCancellation,
       };
+    });
+    if (!updated?.accepted) return false;
+    if (updated.newlyPaid) {
+      const amount = this.formatVnd(updated.booking.amount);
+      await this.notify(
+        updated.booking,
+        NotificationType.PAYMENT_SUCCEEDED,
+        `booking:${updated.booking.id}:payment-succeeded`,
+        'Thanh toán thành công',
+        `Đã nhận thanh toán ${amount} cho booking ${updated.booking.bookingCode}.${this.sandboxNotice()}`,
+      );
+      if (updated.wasConfirmed) {
+        await this.notify(
+          updated.booking,
+          NotificationType.BOOKING_CONFIRMED,
+          `booking:${updated.booking.id}:confirmed`,
+          'Booking đã được xác nhận',
+          `Booking ${updated.booking.bookingCode} đã được khách sạn xác nhận.`,
+        );
+      }
     }
-    const booking = await this.repository.findById(callback.bookingId);
-    return {
-      signatureValid: true,
-      bookingId: booking?.id ?? callback.bookingId,
-      bookingCode: booking?.bookingCode ?? null,
-      paymentStatus: booking?.paymentStatus ?? null,
-      responseCode: callback.responseCode,
-      transactionStatus: callback.transactionStatus,
-    };
-  }
-
-  async settle(
-    id: string,
-    input: SettleBookingRequest,
-  ): Promise<BookingEntity> {
-    const booking = await this.findById(id);
-    if (booking.paymentStatus !== PaymentStatus.PAID) {
-      throw new BookingPaymentRequiredException('settlement');
+    if (
+      updated.booking.bookingStatus === BookingStatus.CANCELLED &&
+      updated.booking.refundStatus === RefundStatus.PENDING &&
+      updated.booking.refundAmount !== null &&
+      !updated.booking.sepayRefundId
+    ) {
+      await this.submitSePayRefund(updated.booking.id);
     }
-    if (booking.settlementStatus === SettlementStatus.SETTLED) {
-      throw new BookingAlreadySettledException();
-    }
-    if (input.settlementBaseAmount > booking.amount) {
-      throw new SettlementBaseAmountExceededException();
-    }
-
-    const commissionAmount = this.roundMoney(
-      (input.settlementBaseAmount * booking.appliedCommissionRate) / 100,
-    );
-    booking.settlementBaseAmount = input.settlementBaseAmount;
-    booking.commissionAmount = commissionAmount;
-    booking.partnerReceivableAmount = this.roundMoney(
-      input.settlementBaseAmount - commissionAmount,
-    );
-    booking.settlementStatus = SettlementStatus.SETTLED;
-    booking.transactionId = input.transactionId.trim();
-    booking.bankNameSnapshot = input.bankNameSnapshot.trim();
-    booking.bankAccountNumberSnapshot = input.bankAccountNumberSnapshot.trim();
-    booking.bankAccountHolderSnapshot = input.bankAccountHolderSnapshot.trim();
-    booking.settledAt = this.resolveNotFutureTimestamp(
-      input.settledAt,
-      'settledAt',
-    );
-    return this.repository.save(booking);
+    return true;
   }
 
   async refund(
     id: string,
     input: RefundBookingRequest,
-    customerIp: string,
+    _customerIp?: string,
   ): Promise<BookingEntity> {
-    const prepared = await this.repository.withLockedById(id, (booking) => {
+    const initialized = await this.repository.withLockedById(id, (booking) => {
       if (booking.paymentStatus !== PaymentStatus.PAID) {
         throw new BookingPaymentRequiredException('refund');
       }
-      const policyRefund =
-        booking.bookingStatus === BookingStatus.CANCELLED &&
-        booking.refundStatus === RefundStatus.PENDING &&
-        booking.refundAmount !== null;
-      if (booking.refundStatus !== RefundStatus.NONE && !policyRefund) {
+      if (booking.settlementStatus !== SettlementStatus.PENDING) {
+        throw new BookingActionNotAllowedException(
+          'refund after hotel settlement has started',
+        );
+      }
+      if (!booking.sepayOrderXid) {
+        throw new BookingActionNotAllowedException('SePay v2 refund without a VA order');
+      }
+      const retry = booking.refundStatus === RefundStatus.FAILED && booking.refundAmount !== null;
+      const active = [RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus);
+      if (booking.refundStatus !== RefundStatus.NONE && !retry && !active) {
         throw new BookingRefundAlreadyInitializedException();
       }
-      if (policyRefund && input.refundAmount !== booking.refundAmount) {
+      if ((retry || active) && input.refundAmount !== booking.refundAmount) {
         throw new RefundAmountExceededException();
       }
       if (input.refundAmount > booking.amount) {
         throw new RefundAmountExceededException();
       }
-      if (!booking.paymentTransactionId || !booking.paymentCreatedAt) {
-        throw new BookingActionNotAllowedException('VNPAY refund');
+      if (!Number.isInteger(input.refundAmount) || input.refundAmount <= 0) {
+        throw new SePayAmountNotSupportedException();
       }
-      if (!policyRefund) {
+      booking.refundReason = input.refundReason.trim();
+      if (booking.refundStatus === RefundStatus.NONE) {
         booking.refundAmount = input.refundAmount;
-        booking.refundReason = input.refundReason.trim();
+        booking.refundAttempt = 1;
+      } else if (retry) {
+        booking.refundAttempt = (booking.refundAttempt ?? 0) + 1;
+        booking.sepayRefundId = null;
+        booking.sepayRefundProviderStatus = null;
+        booking.sepayRefundIdempotencyKey = null;
       }
       booking.refundStatus = RefundStatus.PENDING;
+      booking.refundRequestedAt = new Date();
+      booking.refundProcessingAt = null;
+      booking.refundHandledBy = null;
+      return booking;
+    });
+    if (!initialized) throw new BookingNotFoundException(id);
+    return this.submitSePayRefund(id);
+  }
+
+  async syncSePayRefund(id: string): Promise<BookingEntity> {
+    const booking = await this.findById(id);
+    if (!booking.sepayRefundId) return this.submitSePayRefund(id);
+    let refund;
+    try {
+      refund = await this.sepay.getRefund(booking.sepayRefundId);
+    } catch {
+      return booking;
+    }
+    const updated = await this.repository.withLockedById(id, (current) => {
+      if (current.sepayRefundId !== refund.refund_id) return current;
+      current.sepayRefundProviderStatus = refund.status;
+      current.refundTransactionId = refund.refund_id;
+      if (refund.status === 'succeeded') {
+        current.refundStatus = RefundStatus.REFUNDED;
+        current.refundedAt ??= new Date();
+        current.refundFailureReason = null;
+      } else if (refund.status === 'failed' || refund.status === 'rejected') {
+        current.refundStatus = RefundStatus.FAILED;
+      current.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
+        current.refundFailedAt = new Date();
+      } else {
+        current.refundStatus = RefundStatus.PROCESSING;
+      }
+      return current;
+    });
+    if (!updated) throw new BookingNotFoundException(id);
+    await this.notifyRefundStatus(updated);
+    return updated;
+  }
+
+  private async submitSePayRefund(id: string): Promise<BookingEntity> {
+    const request = await this.repository.withLockedById(id, (booking) => {
+      if (!booking.sepayOrderXid || booking.refundAmount === null || booking.refundAmount <= 0) {
+        throw new BookingActionNotAllowedException('submit SePay v2 refund');
+      }
+      if (![RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus)) {
+        throw new BookingActionNotAllowedException('retry this SePay refund');
+      }
+      booking.sepayRefundIdempotencyKey ??= `refund-${booking.id.replaceAll('-', '')}-${booking.refundAttempt || 1}`;
+      booking.refundStatus = RefundStatus.PROCESSING;
+      booking.refundProcessingAt ??= new Date();
       return {
-        originalAmount: booking.amount,
-        originalTransactionId: booking.paymentTransactionId,
-        originalTransactionDate: booking.paymentCreatedAt,
+        orderXid: booking.sepayOrderXid,
+        amount: booking.refundAmount,
+        key: booking.sepayRefundIdempotencyKey,
       };
     });
-    if (!prepared) throw new BookingNotFoundException(id);
+    if (!request) throw new BookingNotFoundException(id);
 
-    let result: VnpayRefundResult;
+    let refund;
     try {
-      result = await this.vnpayGateway.refund({
-        bookingId: id,
-        amount: input.refundAmount,
-        originalAmount: prepared.originalAmount,
-        originalTransactionId: prepared.originalTransactionId,
-        originalTransactionDate: prepared.originalTransactionDate,
-        reason: input.refundReason.trim(),
-        customerIp,
-      });
+      refund = await this.sepay.refundOrder(request.orderXid, request.amount, request.key);
     } catch (error) {
-      await this.repository.withLockedById(id, (booking) => {
-        if (booking.refundStatus === RefundStatus.PENDING) {
+      const rejection = error instanceof SePayV2RequestException ? error : null;
+      const permanentRejection = rejection !== null &&
+        rejection.providerStatus >= 400 && rejection.providerStatus < 500 &&
+        rejection.providerStatus !== 408 && rejection.providerStatus !== 429;
+      const current = await this.repository.withLockedById(id, (booking) => {
+        if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
+        if (permanentRejection) {
           booking.refundStatus = RefundStatus.FAILED;
+          booking.refundFailureReason = `SePay từ chối yêu cầu hoàn tiền (HTTP ${rejection!.providerStatus}, ${rejection!.providerErrorCode}).`;
+          booking.refundFailedAt = new Date();
+        } else {
+          booking.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
         }
+        return booking;
       });
-      throw error;
+      if (!current) throw new BookingNotFoundException(id);
+      await this.notifyRefundStatus(current);
+      return current;
     }
-
     const updated = await this.repository.withLockedById(id, (booking) => {
-      booking.refundTransactionId = result.transactionId ?? result.requestId;
-      if (result.responseCode === '00' && result.transactionStatus === '00') {
+      if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
+      booking.sepayRefundId = refund.refund_id;
+      booking.sepayRefundProviderStatus = refund.status;
+      booking.refundTransactionId = refund.refund_id;
+      booking.refundFailureReason = null;
+      if (refund.status === 'succeeded') {
         booking.refundStatus = RefundStatus.REFUNDED;
-        booking.refundedAt = result.payDate ?? new Date();
-        booking.bookingStatus = BookingStatus.CANCELLED;
-        booking.cancelledAt ??= new Date();
-      } else if (
-        result.responseCode === '00' &&
-        ['05', '06'].includes(result.transactionStatus ?? '')
-      ) {
-        booking.refundStatus = RefundStatus.PENDING;
-      } else {
+        booking.refundedAt ??= new Date();
+      } else if (refund.status === 'failed' || refund.status === 'rejected') {
         booking.refundStatus = RefundStatus.FAILED;
+        booking.refundFailureReason = `SePay refund ${refund.status}.`;
+        booking.refundFailedAt = new Date();
+      } else {
+        booking.refundStatus = RefundStatus.PROCESSING;
       }
       return booking;
     });
     if (!updated) throw new BookingNotFoundException(id);
+    await this.notifyRefundStatus(updated);
     return updated;
+  }
+
+  private async notifyRefundStatus(booking: BookingEntity): Promise<void> {
+    if (booking.refundStatus === RefundStatus.NONE || booking.refundAmount === null) return;
+    const amount = this.formatVnd(booking.refundAmount);
+    if (booking.refundStatus === RefundStatus.PROCESSING) {
+      await this.notify(
+        booking,
+        NotificationType.REFUND_PROCESSING,
+        `booking:${booking.id}:refund:${booking.refundAttempt}:processing`,
+        'Hoàn tiền đang được xử lý',
+        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} đang chờ SePay xác nhận.`,
+      );
+    } else if (booking.refundStatus === RefundStatus.REFUNDED) {
+      await this.notify(
+        booking,
+        NotificationType.REFUND_SUCCEEDED,
+        `booking:${booking.id}:refund:${booking.refundAttempt}:succeeded`,
+        'SePay đã xác nhận hoàn tiền',
+        `SePay xác nhận hoàn ${amount} cho booking ${booking.bookingCode} thành công.${this.sandboxNotice()}`,
+      );
+    } else if (booking.refundStatus === RefundStatus.FAILED) {
+      const reason = booking.refundFailureReason ? ` Lý do: ${booking.refundFailureReason}` : '';
+      await this.notify(
+        booking,
+        NotificationType.REFUND_FAILED,
+        `booking:${booking.id}:refund:${booking.refundAttempt}:failed`,
+        'Hoàn tiền chưa thành công',
+        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} chưa thành công.${reason}`,
+      );
+    }
+  }
+
+  private async notify(
+    booking: BookingEntity,
+    type: NotificationType,
+    eventKey: string,
+    title: string,
+    message: string,
+  ): Promise<void> {
+    if (!this.notificationsService) return;
+    try {
+      await this.notificationsService.createOnce({
+        userId: booking.touristId,
+        type,
+        title,
+        message,
+        link: `/bookings/${booking.id}`,
+        eventKey,
+      });
+    } catch {
+      this.logger.error(
+        `Failed to persist booking notification (${type}).`,
+      );
+    }
+  }
+
+  private formatVnd(amount: number): string {
+    return new Intl.NumberFormat('vi-VN').format(amount) + ' ₫';
+  }
+
+  private sandboxNotice(): string {
+    const baseUrl = this.configService.get<string>('SEPAY_V2_BASE_URL') ?? '';
+    return baseUrl.includes('sandbox') ? ' Đây là kết quả mô phỏng trong môi trường thử nghiệm.' : '';
   }
 
   private async assertCanView(
@@ -745,26 +943,11 @@ export class BookingsService {
     return numberOfNights;
   }
 
-  private resolveVnpayPaymentMethod(
-    cardType: string | null,
-    bankCode: string | null,
-  ): PaymentMethod {
-    const normalizedCardType = cardType?.trim().toUpperCase() ?? '';
-    const normalizedBankCode = bankCode?.trim().toUpperCase() ?? '';
-
-    if (normalizedCardType === 'QRCODE' || normalizedBankCode === 'VNPAYQR') {
-      return PaymentMethod.QR;
-    }
-    if (
-      ['CREDIT', 'INTCARD'].includes(normalizedCardType) ||
-      ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'UPI'].includes(normalizedBankCode)
-    ) {
-      return PaymentMethod.CARD;
-    }
-    return PaymentMethod.BANK_TRANSFER;
-  }
-
   private roundMoney(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  private roundVnd(value: number): number {
+    return Math.round(value + Number.EPSILON);
   }
 }

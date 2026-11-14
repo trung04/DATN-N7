@@ -9,7 +9,7 @@ import {
   Repository,
 } from 'typeorm';
 import { RoomAmenityEntity } from '../entities/room-amenity.entity';
-import { RoomEntity } from '../entities/room.entity';
+import { RoomEntity, RoomOperationalStatus } from '../entities/room.entity';
 import { RoomNumberConflictException } from '../exceptions/room.exceptions';
 import type {
   CreateRoomData,
@@ -28,6 +28,16 @@ export class TypeOrmRoomRepository implements RoomRepository {
     private readonly roomAmenityRepository: Repository<RoomAmenityEntity>,
     private readonly dataSource: DataSource,
   ) {}
+
+  findBookableByHotel(hotelId?: string): Promise<RoomEntity[]> {
+    return this.roomRepository.find({
+      where: {
+        ...(hotelId ? { hotelId } : {}),
+        operationalStatus: RoomOperationalStatus.AVAILABLE,
+      },
+      order: { roomNumber: 'ASC', id: 'ASC' },
+    });
+  }
 
   async findById(id: string): Promise<RoomWithAmenityIds | null> {
     const room = await this.roomRepository.findOneBy({ id });

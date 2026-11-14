@@ -1,12 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { PlaceEntity } from '../entities/place.entity';
-import { ExternalProviderConflictException } from '../exceptions/place.exceptions';
+import {
+  ExternalProviderConflictException,
+  InvalidPlaceCatalogValueException,
+} from '../exceptions/place.exceptions';
 import type {
   CreatePlaceData,
   FindPlacesOptions,
   PlaceDetailsData,
+  PlaceCatalogOptions,
+  PlaceCatalogWriteData,
   PlacePage,
   PlaceRepository,
   PlaceSummaryData,
@@ -22,7 +27,7 @@ interface PlaceCatalogRow {
     altText: string | null;
     attributionText: string | null;
   }>;
-  price: { minPrice: number; maxPrice: number; currency: string } | null;
+  price: { minPrice: number; maxPrice: number; currency: string; pricingUnit: string; description: string | null } | null;
 }
 
 @Injectable()
@@ -30,6 +35,7 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
   constructor(
     @InjectRepository(PlaceEntity)
     private readonly repository: Repository<PlaceEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   findById(id: string): Promise<PlaceEntity | null> {
@@ -96,17 +102,39 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
     };
   }
 
-  async create(data: CreatePlaceData): Promise<PlaceEntity> {
+  async findCatalogOptions(): Promise<PlaceCatalogOptions> {
+    const [categories, topics] = (await Promise.all([
+      this.repository.query(
+        `SELECT code, name FROM place_categories WHERE deleted_at IS NULL ORDER BY name`,
+      ),
+      this.repository.query(
+        `SELECT code, name FROM topics WHERE deleted_at IS NULL ORDER BY name`,
+      ),
+    ])) as [PlaceCatalogOptions['categories'], PlaceCatalogOptions['topics']];
+    return { categories, topics };
+  }
+
+  async create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity> {
     try {
-      return await this.repository.save(this.repository.create(data));
+      return await this.dataSource.transaction(async (manager) => {
+        const place = await manager.getRepository(PlaceEntity).save(
+          manager.getRepository(PlaceEntity).create(data),
+        );
+        await this.syncCatalog(manager, place.id, catalog);
+        return place;
+      });
     } catch (error) {
       this.rethrowProviderConflict(error);
     }
   }
 
-  async save(place: PlaceEntity): Promise<PlaceEntity> {
+  async save(place: PlaceEntity, catalog: PlaceCatalogWriteData): Promise<PlaceEntity> {
     try {
-      return await this.repository.save(place);
+      return await this.dataSource.transaction(async (manager) => {
+        const saved = await manager.getRepository(PlaceEntity).save(place);
+        await this.syncCatalog(manager, saved.id, catalog);
+        return saved;
+      });
     } catch (error) {
       this.rethrowProviderConflict(error);
     }
@@ -114,6 +142,127 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
 
   async delete(place: PlaceEntity): Promise<void> {
     await this.repository.softRemove(place);
+  }
+
+  private async syncCatalog(
+    manager: import('typeorm').EntityManager,
+    placeId: string,
+    catalog: PlaceCatalogWriteData,
+  ): Promise<void> {
+    if (catalog.categoryCodes !== undefined) {
+      await manager.query(
+        `UPDATE place_category_mappings SET deleted_at = now(), updated_at = now()
+         WHERE place_id = $1 AND deleted_at IS NULL`,
+        [placeId],
+      );
+      const categories = [...new Set(catalog.categoryCodes)];
+      if (categories.length) {
+        const rows = (await manager.query(
+          `SELECT id, code FROM place_categories
+           WHERE code = ANY($1::varchar[]) AND deleted_at IS NULL`,
+          [categories],
+        )) as Array<{ id: string; code: string }>;
+        const found = new Set(rows.map((row) => row.code));
+        const unknown = categories.filter((code) => !found.has(code));
+        if (unknown.length) throw new InvalidPlaceCatalogValueException('category', unknown);
+        for (const category of rows) {
+          await manager.query(
+            `INSERT INTO place_category_mappings (place_id, place_category_id)
+             VALUES ($1, $2)`,
+            [placeId, category.id],
+          );
+        }
+      }
+    }
+
+    if (catalog.topicCodes !== undefined) {
+      await manager.query(
+        `UPDATE place_topics SET deleted_at = now(), updated_at = now()
+         WHERE place_id = $1 AND deleted_at IS NULL`,
+        [placeId],
+      );
+      const topics = [...new Set(catalog.topicCodes)];
+      if (topics.length) {
+        const rows = (await manager.query(
+          `SELECT id, code FROM topics
+           WHERE code = ANY($1::varchar[]) AND deleted_at IS NULL`,
+          [topics],
+        )) as Array<{ id: string; code: string }>;
+        const found = new Set(rows.map((row) => row.code));
+        const unknown = topics.filter((code) => !found.has(code));
+        if (unknown.length) throw new InvalidPlaceCatalogValueException('topic', unknown);
+        for (const topic of rows) {
+          await manager.query(
+            `INSERT INTO place_topics (place_id, topic_id) VALUES ($1, $2)`,
+            [placeId, topic.id],
+          );
+        }
+      }
+    }
+
+    if (catalog.imageUrl !== undefined) {
+      await manager.query(
+        `UPDATE place_images SET deleted_at = now(), updated_at = now()
+         WHERE place_id = $1 AND deleted_at IS NULL`,
+        [placeId],
+      );
+      if (catalog.imageUrl) {
+        let images = (await manager.query(
+          `SELECT id FROM images
+           WHERE image_url = $1 AND deleted_at IS NULL LIMIT 1`,
+          [catalog.imageUrl],
+        )) as Array<{ id: string }>;
+        let imageId = images[0]?.id;
+        if (!imageId) {
+          const inserted = (await manager.query(
+            `INSERT INTO images (storage_provider, object_key, image_url, alt_text,
+                                 source_provider, source_url, attribution_text,
+                                 created_at, updated_at)
+             VALUES ('EXTERNAL', NULL, $1, $2, $3, $1, NULL, now(), now())
+             RETURNING id`,
+            [catalog.imageUrl, catalog.imageAltText ?? null,
+              catalog.imageUrl.startsWith('/images/') ? 'APP_ASSET' : 'EXTERNAL_URL'],
+          )) as Array<{ id: string }>;
+          imageId = inserted[0].id;
+        } else if (catalog.imageAltText !== undefined) {
+          await manager.query(
+            `UPDATE images SET alt_text = $2, updated_at = now() WHERE id = $1`,
+            [imageId, catalog.imageAltText],
+          );
+        }
+        await manager.query(
+          `INSERT INTO place_images (place_id, image_id, image_order)
+           VALUES ($1, $2, 1)`,
+          [placeId, imageId],
+        );
+      }
+    } else if (catalog.imageAltText !== undefined) {
+      await manager.query(
+        `UPDATE images SET alt_text = $2, updated_at = now()
+         WHERE id = (SELECT image_id FROM place_images
+                     WHERE place_id = $1 AND deleted_at IS NULL
+                     ORDER BY image_order, id LIMIT 1)`,
+        [placeId, catalog.imageAltText],
+      );
+    }
+
+    if (catalog.referencePrice !== undefined) {
+      await manager.query(
+        `UPDATE reference_prices SET deleted_at = now(), updated_at = now()
+         WHERE place_id = $1 AND deleted_at IS NULL`,
+        [placeId],
+      );
+      if (catalog.referencePrice) {
+        const price = catalog.referencePrice;
+        await manager.query(
+          `INSERT INTO reference_prices (place_id, cost_type, min_price, max_price,
+             currency, pricing_unit, description, price_source, created_at, updated_at)
+           VALUES ($1, 'ADMISSION', $2, $3, $4, $5, $6, 'ADMIN', now(), now())`,
+          [placeId, price.minPrice, price.maxPrice, price.currency,
+            price.pricingUnit, price.description ?? null],
+        );
+      }
+    }
   }
 
   private rethrowProviderConflict(error: unknown): never {
@@ -172,7 +321,9 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
             SELECT jsonb_build_object(
               'minPrice', rp.min_price,
               'maxPrice', rp.max_price,
-              'currency', rp.currency
+              'currency', rp.currency,
+              'pricingUnit', rp.pricing_unit,
+              'description', rp.description
             )
             FROM reference_prices rp
             WHERE rp.place_id = p.id

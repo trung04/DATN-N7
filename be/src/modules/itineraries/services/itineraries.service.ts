@@ -23,12 +23,15 @@ export class ItinerariesService {
     private readonly usersService: UsersService,
   ) {}
 
-  async create(input: CreateItineraryRequest): Promise<ItineraryEntity> {
+  async create(
+    input: CreateItineraryRequest & { touristUserId: string },
+  ): Promise<ItineraryEntity> {
     await this.usersService.findById(input.touristUserId);
     this.assertDateRange(input.startDate, input.endDate);
     return this.repository.create({
       touristUserId: input.touristUserId,
       name: input.name.trim(),
+      destinationCity: input.destinationCity.trim(),
       description: this.normalizeNullable(input.description),
       startDate: input.startDate,
       endDate: input.endDate,
@@ -52,19 +55,36 @@ export class ItinerariesService {
     return itinerary;
   }
 
+  async findByIdForTourist(
+    id: string,
+    touristUserId: string,
+  ): Promise<ItineraryEntity> {
+    const itinerary = await this.findById(id);
+    if (itinerary.touristUserId !== touristUserId) {
+      throw new ItineraryNotFoundException(id);
+    }
+    return itinerary;
+  }
+
   async update(
     id: string,
     input: UpdateItineraryRequest,
+    touristUserId?: string,
   ): Promise<ItineraryEntity> {
     if (Object.values(input).every((value) => value === undefined)) {
       throw new EmptyItineraryUpdateException();
     }
-    const itinerary = await this.findById(id);
+    const itinerary = touristUserId
+      ? await this.findByIdForTourist(id, touristUserId)
+      : await this.findById(id);
     const startDate = input.startDate ?? itinerary.startDate;
     const endDate = input.endDate ?? itinerary.endDate;
     this.assertDateRange(startDate, endDate);
 
     if (input.name !== undefined) itinerary.name = input.name.trim();
+    if (input.destinationCity !== undefined) {
+      itinerary.destinationCity = input.destinationCity.trim();
+    }
     if (input.description !== undefined) {
       itinerary.description = this.normalizeNullable(input.description);
     }
@@ -81,8 +101,11 @@ export class ItinerariesService {
     return this.repository.save(itinerary);
   }
 
-  async delete(id: string): Promise<void> {
-    await this.repository.delete(await this.findById(id));
+  async delete(id: string, touristUserId?: string): Promise<void> {
+    const itinerary = touristUserId
+      ? await this.findByIdForTourist(id, touristUserId)
+      : await this.findById(id);
+    await this.repository.delete(itinerary);
   }
 
   private assertDateRange(startDate: string, endDate: string): void {

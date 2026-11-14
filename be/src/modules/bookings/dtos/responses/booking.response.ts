@@ -5,6 +5,7 @@ import {
   RefundStatus,
   SettlementStatus,
 } from '../../entities/booking.entity';
+import type { BookingCancellationPolicySnapshot } from '../../entities/booking.entity';
 
 export class BookingRoomResponse {
   id: string;
@@ -56,6 +57,10 @@ export class BookingResponse {
   bankAccountHolderSnapshot: string | null;
   settledAt: string | null;
   cancellationPolicyId: string | null;
+  cancellationPolicySnapshot: BookingCancellationPolicySnapshot | null;
+  cancellationAllowedNow: boolean;
+  cancellationUnavailableReason: string | null;
+  cancellationFeeAmountNow: number | null;
   cancellationWindowSnapshot: number | null;
   cancellationFeeRateSnapshot: number | null;
   cancellationDescriptionSnapshot: string | null;
@@ -63,6 +68,11 @@ export class BookingResponse {
   refundAmount: number | null;
   refundReason: string | null;
   refundStatus: RefundStatus;
+  refundRequestedAt: string | null;
+  refundProcessingAt: string | null;
+  refundAttempt: number;
+  refundFailureReason: string | null;
+  refundFailedAt: string | null;
   refundedAt: string | null;
   refundTransactionId: string | null;
   roomItems: BookingRoomResponse[];

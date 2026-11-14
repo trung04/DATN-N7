@@ -54,6 +54,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         not_found: HttpStatus.NOT_FOUND,
         conflict: HttpStatus.CONFLICT,
         bad_gateway: HttpStatus.BAD_GATEWAY,
+        rate_limited: HttpStatus.TOO_MANY_REQUESTS,
         service_unavailable: HttpStatus.SERVICE_UNAVAILABLE,
       };
       const status = statusByCategory[exception.category];

@@ -13,6 +13,7 @@ import { TravelPreferenceTopicEntity } from '../modules/users/entities/travel-pr
 import { TravelPreferenceEntity } from '../modules/users/entities/travel-preference.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
 import { UserImageEntity } from '../modules/users/entities/user-image.entity';
+import { UserFavoriteEntity } from '../modules/users/entities/user-favorite.entity';
 import { ImageEntity } from '../modules/media/entities/image.entity';
 import { ItineraryEntity } from '../modules/itineraries/entities/itinerary.entity';
 import { StopoverEntity } from '../modules/stopovers/entities/stopover.entity';
@@ -55,8 +56,25 @@ import { CreateHotelImages1794400000000 } from './migrations/1794400000000-Creat
 import { AddUserTwoFactorFlag1794400001000 } from './migrations/1794400001000-AddUserTwoFactorFlag';
 import { AddHotelOwnerTimestamps1794400002000 } from './migrations/1794400002000-AddHotelOwnerTimestamps';
 import { ExpandPlaceCatalog1794500000000 } from './migrations/1794500000000-ExpandPlaceCatalog';
+import { CreatePlaceCatalogRelations1794500000500 } from './migrations/1794500000500-CreatePlaceCatalogRelations';
 import { BackfillPlaceCatalog1794500001000 } from './migrations/1794500001000-BackfillPlaceCatalog';
 import { NormalizeImages1794500002000 } from './migrations/1794500002000-NormalizeImages';
+import { AlignPlacesSchema1794400003000 } from './migrations/1794400003000-AlignPlacesSchema';
+import { RequireCancellationPolicySnapshot1794400004000 } from './migrations/1794400004000-RequireCancellationPolicySnapshot';
+import { UseHoursAfterBookingForCancellation1794400005000 } from './migrations/1794400005000-UseHoursAfterBookingForCancellation';
+import { SimplifyCancellationPolicies1794400006000 } from './migrations/1794400006000-SimplifyCancellationPolicies';
+import { CompleteManualBookingRefundWorkflow1794400007000 } from './migrations/1794400007000-CompleteManualBookingRefundWorkflow';
+import { UseSePayV2SandboxOrders1794400008000 } from './migrations/1794400008000-UseSePayV2SandboxOrders';
+import { NotificationEntity } from '../modules/notifications/entities/notification.entity';
+import { CreateNotifications1794400009000 } from './migrations/1794400009000-CreateNotifications';
+import { CreateTravelPreferences1794500003000 } from './migrations/1794500003000-CreateTravelPreferences';
+import { AddItineraryDestinationCity1794500004000 } from './migrations/1794500004000-AddItineraryDestinationCity';
+import { CreateSettlementBatches1794500005000 } from './migrations/1794500005000-CreateSettlementBatches';
+import { SettlementBatchEntity } from '../modules/bookings/entities/settlement-batch.entity';
+import { SettlementItemEntity } from '../modules/bookings/entities/settlement-item.entity';
+import { SettlementBatchEventEntity } from '../modules/bookings/entities/settlement-batch-event.entity';
+import { CreateSettlementBatchEvents1794500006000 } from './migrations/1794500006000-CreateSettlementBatchEvents';
+import { CreateUserFavorites1794500007000 } from './migrations/1794500007000-CreateUserFavorites';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -82,6 +100,7 @@ export default new DataSource({
     TravelPreferenceTopicEntity,
     ImageEntity,
     UserImageEntity,
+    UserFavoriteEntity,
     ItineraryEntity,
     StopoverEntity,
     ActivityEntity,
@@ -95,12 +114,16 @@ export default new DataSource({
     BookingEntity,
     BookingRoomEntity,
     BookingIdempotencyKeyEntity,
+    SettlementBatchEntity,
+    SettlementItemEntity,
+    SettlementBatchEventEntity,
     HotelEntity,
     HotelImageEntity,
     HotelDocumentEntity,
     HotelReviewHistoryEntity,
     ReviewEntity,
     ReviewModerationHistoryEntity,
+    NotificationEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -125,8 +148,21 @@ export default new DataSource({
     AddUserTwoFactorFlag1794400001000,
     AddHotelOwnerTimestamps1794400002000,
     ExpandPlaceCatalog1794500000000,
+    CreatePlaceCatalogRelations1794500000500,
     BackfillPlaceCatalog1794500001000,
     NormalizeImages1794500002000,
+    AlignPlacesSchema1794400003000,
+    RequireCancellationPolicySnapshot1794400004000,
+    UseHoursAfterBookingForCancellation1794400005000,
+    SimplifyCancellationPolicies1794400006000,
+    CompleteManualBookingRefundWorkflow1794400007000,
+    UseSePayV2SandboxOrders1794400008000,
+    CreateNotifications1794400009000,
+    CreateTravelPreferences1794500003000,
+    AddItineraryDestinationCity1794500004000,
+    CreateSettlementBatches1794500005000,
+    CreateSettlementBatchEvents1794500006000,
+    CreateUserFavorites1794500007000,
   ],
   synchronize: false,
   logging: false,

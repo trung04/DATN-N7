@@ -3,7 +3,7 @@ import { todayPlus } from '@/lib/utils'
 import { mergeSeedExtras } from './seed-extras'
 
 export const DEMO_PASSWORD = 'Demo@123'
-export const DEMO_CANCELLATION_TERMS = { freeUntilHours: 24, lateFeeRate: 0.5, checkInHour: 14 }
+export const DEMO_CANCELLATION_TERMS = { basis: 'HOURS_AFTER_BOOKING' as const, freeForHoursAfterBooking: 24, lateFeeRate: 0.5 }
 export const demoAccounts = [
   { email: 'khach@demo.vn', role: 'Du khách' },
   { email: 'doitac@demo.vn', role: 'Đối tác' },
@@ -39,9 +39,9 @@ export function seedData(): AppData {
       { id: 'thung-lung-tinh-yeu', name: 'Thung lũng Tình Yêu', city: 'Đà Lạt', region: 'Phường 8', category: 'Thiên nhiên', description: 'Không gian đồi thông và hồ nước với nhiều tuyến dạo bộ.', tags: ['Thiên nhiên', 'Gia đình'], price: 250000, openingHours: '07:00–17:00', rating: 4.4 },
     ],
     hotels: [
-      { id: 'sea-garden', name: 'Sea Garden Hotel', city: 'Đà Nẵng', area: 'Sơn Trà', address: '68 Võ Nguyên Giáp, Sơn Trà, Đà Nẵng', description: 'Khách sạn ven biển với phòng nghỉ sáng thoáng, phù hợp chuyến đi nghỉ dưỡng.', stars: 4, rating: 4.7, amenities: ['Wi-Fi', 'Hồ bơi', 'Bữa sáng', 'Gần biển'], partnerId: 'partner-sea', cancellationPolicy: 'Miễn phí khi hủy trước nhận phòng ít nhất 24 giờ; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
-      { id: 'river-light', name: 'River Light Hotel', city: 'Đà Nẵng', area: 'Hải Châu', address: '12 Bạch Đằng, Hải Châu, Đà Nẵng', description: 'Lưu trú thuận tiện bên sông Hàn, gần trung tâm và các điểm ăn uống.', stars: 3, rating: 4.4, amenities: ['Wi-Fi', 'Điều hòa', 'Gần trung tâm'], partnerId: 'partner-river', cancellationPolicy: 'Miễn phí khi hủy trước nhận phòng ít nhất 24 giờ; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
-      { id: 'pine-house', name: 'Pine House Đà Lạt', city: 'Đà Lạt', area: 'Trung tâm', address: '25 Trần Hưng Đạo, Đà Lạt', description: 'Không gian yên tĩnh nhìn ra vườn thông, phù hợp nghỉ ngơi cuối tuần.', stars: 3, rating: 4.5, amenities: ['Wi-Fi', 'Sân vườn', 'Bữa sáng'], partnerId: 'partner-river', cancellationPolicy: 'Miễn phí khi hủy trước nhận phòng ít nhất 24 giờ; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
+      { id: 'sea-garden', name: 'Sea Garden Hotel', city: 'Đà Nẵng', area: 'Sơn Trà', address: '68 Võ Nguyên Giáp, Sơn Trà, Đà Nẵng', description: 'Khách sạn ven biển với phòng nghỉ sáng thoáng, phù hợp chuyến đi nghỉ dưỡng.', stars: 4, rating: 4.7, amenities: ['Wi-Fi', 'Hồ bơi', 'Bữa sáng', 'Gần biển'], partnerId: 'partner-sea', cancellationPolicy: 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
+      { id: 'river-light', name: 'River Light Hotel', city: 'Đà Nẵng', area: 'Hải Châu', address: '12 Bạch Đằng, Hải Châu, Đà Nẵng', description: 'Lưu trú thuận tiện bên sông Hàn, gần trung tâm và các điểm ăn uống.', stars: 3, rating: 4.4, amenities: ['Wi-Fi', 'Điều hòa', 'Gần trung tâm'], partnerId: 'partner-river', cancellationPolicy: 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
+      { id: 'pine-house', name: 'Pine House Đà Lạt', city: 'Đà Lạt', area: 'Trung tâm', address: '25 Trần Hưng Đạo, Đà Lạt', description: 'Không gian yên tĩnh nhìn ra vườn thông, phù hợp nghỉ ngơi cuối tuần.', stars: 3, rating: 4.5, amenities: ['Wi-Fi', 'Sân vườn', 'Bữa sáng'], partnerId: 'partner-river', cancellationPolicy: 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.', cancellationTerms: { ...DEMO_CANCELLATION_TERMS } },
     ],
     rooms: [
       { id: 'room-deluxe', hotelId: 'sea-garden', name: 'Deluxe Double', description: 'Phòng đôi có ban công hướng biển.', capacity: 2, area: 30, bed: '1 giường đôi', basePrice: 1200000, amenities: ['Wi-Fi', 'TV', 'Điều hòa', 'Ban công'] },
@@ -59,7 +59,7 @@ export function seedData(): AppData {
     trips: [{ id: 'trip-demo', userId: 'user-tourist', name: 'Đà Nẵng cuối tuần', city: 'Đà Nẵng', startDate: todayPlus(10), endDate: todayPlus(12), adults: 2, children: 0, budget: 6000000, note: 'Ưu tiên biển và ẩm thực địa phương', source: 'manual', status: 'SAVED' }],
     stops: [{ id: 'stop-demo', tripId: 'trip-demo', placeId: 'my-khe', name: 'Bãi biển Mỹ Khê', address: 'Sơn Trà, Đà Nẵng', start: todayPlus(10) + 'T09:00', end: todayPlus(10) + 'T11:00', order: 1, note: '' }],
     activities: [{ id: 'activity-demo', stopId: 'stop-demo', name: 'Dạo biển và chụp ảnh', start: todayPlus(10) + 'T09:00', end: todayPlus(10) + 'T10:00', placeId: 'my-khe', note: '', cost: 0 }],
-    bookings: [{ id: 'BK-DEMO-001', userId: 'user-tourist', hotelId: 'sea-garden', roomId: 'room-deluxe', checkIn: todayPlus(-23), checkOut: todayPlus(-21), rooms: 1, adults: 2, children: 0, guestName: 'Nguyễn Minh Anh', guestEmail: 'khach@demo.vn', guestPhone: '0901234567', specialRequest: '', total: 2400000, nightlyPrices: [1200000, 1200000], status: 'COMPLETED', holdExpiresAt: earlier, createdAt: earlier, policySnapshot: 'Miễn phí khi hủy trước nhận phòng ít nhất 24 giờ; sau đó phí 50%.', policyTermsSnapshot: { ...DEMO_CANCELLATION_TERMS } }],
+    bookings: [{ id: 'BK-DEMO-001', userId: 'user-tourist', hotelId: 'sea-garden', roomId: 'room-deluxe', checkIn: todayPlus(-23), checkOut: todayPlus(-21), rooms: 1, adults: 2, children: 0, guestName: 'Nguyễn Minh Anh', guestEmail: 'khach@demo.vn', guestPhone: '0901234567', specialRequest: '', total: 2400000, nightlyPrices: [1200000, 1200000], status: 'COMPLETED', holdExpiresAt: earlier, createdAt: earlier, policySnapshot: 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.', policyTermsSnapshot: { ...DEMO_CANCELLATION_TERMS } }],
     payments: [{ id: 'PAY-DEMO-001', bookingId: 'BK-DEMO-001', status: 'PAID', amount: 2400000, createdAt: earlier, reference: 'MOCK-PAID-001' }],
     refunds: [],
     reviews: [],

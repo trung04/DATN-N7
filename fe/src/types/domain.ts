@@ -41,7 +41,8 @@ export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NEEDS_IN
 export type ReviewStatus = 'VISIBLE' | 'HIDDEN' | 'PENDING'
 
 export interface AdminUserMetadata { username: string; googleAccountLinked: boolean; firstName: string | null; lastName: string | null; displayName: string | null; phoneNumber: string | null; dateOfBirth: string | null; gender: AdminUserGender | null; status: AdminUserStatus; role: AdminUserRole; isEmailVerified: boolean; createdAt: string; updatedAt: string }
-export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; passwordHash?: string; deletionRequestedAt?: string; adminMetadata?: AdminUserMetadata }
+export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; passwordHash?: string; deletionRequestedAt?: string; dateOfBirth?: string | null; gender?: AdminUserGender | null; adminMetadata?: AdminUserMetadata }
+export interface UserProfileInput { name: string; phone?: string | null; dateOfBirth?: string | null; gender?: AdminUserGender | null }
 export type PartnerHotelStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED' | 'INACTIVE' | 'SUSPENDED'
 export type HotelDocumentType = 'BUSINESS_LICENSE' | 'HOTEL_LICENSE' | 'OWNERSHIP_DOCUMENT' | 'TAX_DOCUMENT' | 'OTHER'
 export interface PartnerHotelDocument { id: string; documentType: HotelDocumentType; documentNumber: string; fileUrl: string; issuedAt: string | null; expiresAt: string | null; createdAt: string; updatedAt: string }
@@ -61,28 +62,61 @@ export interface HotelOwnerPage { data: HotelOwnerProfile[]; meta: { page: numbe
 export interface ManagedRoom { id: string; hotelId: string; roomNumber: string; maxOccupancy: number; pricePerNight: number; currency: string; description: string | null; operationalStatus: RoomOperationalStatus; roomType: string; amenities: AmenityOption[]; createdAt: string; updatedAt: string }
 export interface ManagedRoomPage { data: ManagedRoom[]; meta: { page: number; limit: number; total: number } }
 export interface ManagedRoomInput { hotelId: string; roomNumber: string; maxOccupancy: number; pricePerNight: number; currency: string; description?: string | null; operationalStatus: RoomOperationalStatus; roomType: string; amenityIds: string[] }
-export interface CancellationPolicy { id: string; hotelId: string; name: string; minHoursBeforeCheckIn: number; maxHoursBeforeCheckIn: number | null; cancellationFeeRate: number | null; description: string | null }
-export interface CancellationPolicyInput { hotelId: string; name: string; minHoursBeforeCheckIn: number; maxHoursBeforeCheckIn: number | null; cancellationFeeRate: number; description?: string | null }
+export interface CancellationPolicy { id: string; hotelId: string; name: string; cancelHours: number; penaltyPercent: number; cancellationAllowed: boolean; description: string | null; isActive: boolean; createdAt: string; updatedAt: string }
+export interface CancellationPolicyInput { hotelId: string; name: string; cancelHours: number; penaltyPercent: number; cancellationAllowed: boolean; description?: string | null; isActive?: boolean }
+export interface CancellationPolicyScheduleRule { id: string; name: string; cancelHours: number; penaltyPercent: number; cancellationAllowed: boolean; description: string | null }
+export interface CancellationPolicySchedule { hotelId: string; version: string; complete: boolean; issue: string | null; rules: CancellationPolicyScheduleRule[] }
+export interface CancellationPolicySnapshot { version: string; basis?: 'HOURS_AFTER_BOOKING' | 'HOURS_BEFORE_CHECK_IN'; cancelHours?: number; penaltyPercent?: number; cancellationAllowed?: boolean; policyName?: string; policyDescription?: string | null; timezone: 'Asia/Ho_Chi_Minh'; checkInTime: string; rules: Array<{ id: string; name: string; cancelHours?: number; penaltyPercent?: number; minHoursAfterBooking?: number; maxHoursAfterBooking?: number | null; minHoursBeforeCheckIn?: number; maxHoursBeforeCheckIn?: number | null; cancellationAllowed: boolean; cancellationFeeRate: number | null; description: string | null }> }
 export type ManagedBookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'
 export type ManagedPaymentStatus = 'PENDING' | 'PAYMENT_PENDING' | 'PAID' | 'FAILED' | 'EXPIRED'
-export type ManagedRefundStatus = 'NONE' | 'PENDING' | 'REFUNDED' | 'FAILED'
+export type ManagedRefundStatus = 'NONE' | 'PENDING' | 'PROCESSING' | 'REFUNDED' | 'FAILED'
 export type ManagedSettlementStatus = 'PENDING' | 'PROCESSING' | 'SETTLED' | 'FAILED'
 export interface ManagedBookingRoom { id: string; roomId: string; roomNumberSnapshot: string; roomTypeSnapshot: string; maxOccupancySnapshot: number; pricePerNight: number; currency: string; numberOfNights: number; subtotal: number }
-export interface ManagedBooking { id: string; hotelId: string; touristId: string; bookingCode: string; createdAt: string; checkInDate: string; checkOutDate: string; adultCount: number; childCount: number; guestName: string; guestEmail: string; guestPhone: string; specialRequests: string | null; bookingStatus: ManagedBookingStatus; cancelledAt: string | null; totalAmount: number; currency: string; amount: number; paymentMethod: string | null; paymentStatus: ManagedPaymentStatus; paidAt: string | null; settlementBaseAmount: number | null; commissionAmount: number | null; partnerReceivableAmount: number | null; settlementStatus: ManagedSettlementStatus; settledAt: string | null; cancellationPolicyId: string | null; cancellationFeeRateSnapshot: number | null; cancellationDescriptionSnapshot: string | null; cancellationFeeAmount: number | null; refundAmount: number | null; refundReason: string | null; refundStatus: ManagedRefundStatus; refundedAt: string | null; roomItems: ManagedBookingRoom[] }
+export interface ManagedBooking { id: string; hotelId: string; touristId: string; bookingCode: string; createdAt: string; checkInDate: string; checkOutDate: string; adultCount: number; childCount: number; guestName: string; guestEmail: string; guestPhone: string; specialRequests: string | null; bookingStatus: ManagedBookingStatus; cancelledAt: string | null; totalAmount: number; currency: string; amount: number; paymentMethod: string | null; paymentStatus: ManagedPaymentStatus; paidAt: string | null; settlementBaseAmount: number | null; commissionAmount: number | null; partnerReceivableAmount: number | null; settlementStatus: ManagedSettlementStatus; settledAt: string | null; cancellationPolicyId: string | null; cancellationFeeRateSnapshot: number | null; cancellationDescriptionSnapshot: string | null; cancellationFeeAmount: number | null; refundAmount: number | null; refundReason: string | null; refundStatus: ManagedRefundStatus; refundRequestedAt: string | null; refundProcessingAt: string | null; refundAttempt: number; refundFailureReason: string | null; refundFailedAt: string | null; refundedAt: string | null; refundTransactionId: string | null; roomItems: ManagedBookingRoom[] }
 export interface BookingListQuery { page: number; limit: number; search?: string; hotelId?: string; bookingStatus?: ManagedBookingStatus; paymentStatus?: ManagedPaymentStatus; settlementStatus?: ManagedSettlementStatus; refundStatus?: ManagedRefundStatus; createdFrom?: string; createdTo?: string; sortBy: 'createdAt' | 'bookingCode' | 'totalAmount' | 'amount'; sortOrder: 'ASC' | 'DESC' }
 export interface TravelPreference { userId: string; interests: string[]; budget: number; style: string; transport: string; destinations: string[] }
 export interface Destination { id: string; name: string; city: string; region: string; category: string; description: string; tags: string[]; price: number; openingHours?: string; image?: string; rating?: number; lat?: number; lng?: number }
-export interface CancellationTerms { freeUntilHours: number; lateFeeRate: number; checkInHour: number }
+export type PlaceStatus = 'ACTIVE' | 'INACTIVE'
+export interface PlaceCatalogOption { code: string; name: string }
+export interface PlaceCatalogOptions { categories: PlaceCatalogOption[]; topics: PlaceCatalogOption[] }
+export interface AdminPlace {
+  id: string; name: string; city: string | null; category: string | null; address: string | null
+  latitude: number | null; longitude: number | null; status: PlaceStatus; description: string | null
+  countryCode: string | null; provinceCode: string | null; timezone: string | null
+  categories: PlaceCatalogOption[]; tags: string[]; amenities: string[]
+  images: Array<{ imageUrl: string; isPrimary: boolean; altText: string | null; attributionText: string | null }>
+  openingHours: { display?: string } | null; bestVisitTimes: string[]; suitableFor: string[]
+  contact: { phone: string | null; website: string | null }
+  price: { isFree: boolean; minPrice: number; maxPrice: number; currency: string; pricingUnit: string; description: string | null } | null
+}
+export interface PlaceAdminListItem {
+  id: string; name: string; city: string | null; category: string | null; address: string | null
+  latitude: number | null; longitude: number | null; status: PlaceStatus; averageRating: number
+  reviewCount: number; primaryImageUrl: string | null
+  price: { isFree: boolean; minPrice: number; maxPrice: number; currency: string; pricingUnit: string; description: string | null } | null
+}
+export interface PlaceAdminInput {
+  name: string; city: string; description: string; address: string; countryCode: string
+  provinceCode: string; timezone: string; latitude: number; longitude: number; status: PlaceStatus
+  openingTime: string; categoryCode: string; topicCodes: string[]; imageUrl: string | null
+  imageAltText: string | null
+  referencePrice: { minPrice: number; maxPrice: number; currency: string; pricingUnit: string; description: string } | null
+}
+export type PlaceAdminRequest = Omit<PlaceAdminInput, 'address' | 'description' | 'openingTime'> & {
+  address: string | null; description: string | null; openingTime: string | null
+}
+export interface CancellationTerms { basis?: 'HOURS_AFTER_BOOKING' | 'HOURS_BEFORE_CHECK_IN'; freeForHoursAfterBooking?: number; freeUntilHours?: number; lateFeeRate: number; checkInHour?: number }
 export interface Hotel { id: string; name: string; city: string; area: string; address: string; description: string; stars: number; rating?: number; amenities: string[]; image?: string; partnerId: string; cancellationPolicy: string; cancellationTerms: CancellationTerms }
-export interface RoomType { id: string; hotelId: string; name: string; description: string; capacity: number; area: number; bed: string; basePrice: number; amenities: string[]; image?: string }
+export interface RoomType { id: string; hotelId: string; name: string; description: string; capacity: number; area: number; bed: string; basePrice: number; amenities: string[]; image?: string; roomNumber?: string; operationalStatus?: RoomOperationalStatus }
 export interface RoomInventory { roomId: string; date: string; offered: number; price: number; revision: number }
 export interface Restaurant { id: string; name: string; city: string; area: string; cuisine: string; description: string; price: number; openingHours: string; rating?: number; image?: string }
-export interface TravelActivity { id: string; stopId: string; name: string; start: string; end: string; placeId?: string; note: string; cost: number }
+export interface TravelActivity { id: string; stopId: string; name: string; start: string; end: string; placeId?: string; order?: number; note: string; cost: number }
 export interface Stopover { id: string; tripId: string; placeId?: string; name: string; address: string; start: string; end: string; order: number; note: string }
-export interface Itinerary { id: string; userId: string; name: string; city: string; startDate: string; endDate: string; adults: number; children: number; budget: number; note: string; source: 'manual' | 'demo-planner'; status: 'DRAFT' | 'SAVED' }
-export interface Booking { id: string; userId: string; hotelId: string; roomId: string; checkIn: string; checkOut: string; rooms: number; adults: number; children: number; guestName: string; guestEmail: string; guestPhone: string; specialRequest: string; total: number; nightlyPrices: number[]; status: BookingStatus; holdExpiresAt: string; createdAt: string; cancelledAt?: string; cancellationFee?: number; policySnapshot: string; policyTermsSnapshot: CancellationTerms; refundId?: string; tripId?: string }
+export interface Itinerary { id: string; userId: string; name: string; city: string; startDate: string; endDate: string; adults: number; children: number; budget: number; note: string; source: 'manual' | 'demo-planner'; status: 'DRAFT' | 'SAVED' | 'ARCHIVED' }
+export interface Booking { id: string; bookingCode?: string; userId: string; hotelId: string; roomId: string; roomIds?: string[]; checkIn: string; checkOut: string; rooms: number; adults: number; children: number; guestName: string; guestEmail: string; guestPhone: string; specialRequest: string; total: number; nightlyPrices: number[]; status: BookingStatus; holdExpiresAt: string; createdAt: string; cancelledAt?: string; cancellationFee?: number; cancellationAllowedNow?: boolean; cancellationUnavailableReason?: string | null; cancellationFeeAmountNow?: number | null; cancellationPolicySnapshot?: CancellationPolicySnapshot; cancellationRulesSnapshot?: CancellationPolicySnapshot['rules']; policySnapshot: string; policyTermsSnapshot: CancellationTerms; refundId?: string; tripId?: string }
 export interface Payment { id: string; bookingId: string; status: PaymentStatus; amount: number; createdAt: string; reference?: string }
-export interface Refund { id: string; bookingId: string; status: RefundStatus; amount: number; createdAt: string }
+export interface Refund { id: string; bookingId: string; status: RefundStatus; amount: number; createdAt: string; failureReason?: string; failedAt?: string; reference?: string }
+export interface Notification { id: string; type: 'PAYMENT_SUCCEEDED' | 'BOOKING_CONFIRMED' | 'BOOKING_CANCELLED' | 'REFUND_PROCESSING' | 'REFUND_SUCCEEDED' | 'REFUND_FAILED'; title: string; message: string; link: string; readAt: string | null; createdAt: string }
 export interface Review { id: string; bookingId: string; bookingCode?: string; hotelId: string; hotelName?: string; userId: string; reviewerName?: string; reviewerEmail?: string | null; stars: number; content: string; status: ReviewStatus; moderationReason?: string | null; moderatedBy?: string | null; moderatedAt?: string | null; updatedAt?: string; createdAt: string }
 export type ReviewModerationAction = 'APPROVE' | 'HIDE' | 'RESTORE'
 export interface ReviewManagementQuery { page: number; limit: number; hotelId?: string; status?: ReviewStatus; stars?: number; search?: string; createdFrom?: string; createdTo?: string; sortBy: 'createdAt' | 'stars'; sortOrder: 'ASC' | 'DESC' }
@@ -100,6 +134,9 @@ export interface Partner { id: string; userId: string; name: string; email: stri
 export interface ServiceCategory { id: string; name: string; description: string; active: boolean }
 export interface TravelService { id: string; name: string; categoryId: string; partnerId: string; city: string; price: number; active: boolean }
 export interface Settlement { id: string; partnerId: string; hotelId: string; periodStart: string; periodEnd: string; bookingIds: string[]; gross: number; commission: number; adjustment: number; net: number; status: SettlementStatus; revision: number; transferReference?: string }
+export interface SettlementBatchItem { id: string; settlementBatchId: string; bookingId: string; bookingCodeSnapshot: string; checkOutDateSnapshot: string; paymentReferenceSnapshot: string | null; currencySnapshot: string; grossAmount: number; commissionRateSnapshot: number; commissionAmount: number; netAmount: number; createdAt: string }
+export interface SettlementBatchEvent { id: string; settlementBatchId: string; fromStatus: SettlementStatus | null; toStatus: SettlementStatus; actorUserId: string | null; note: string | null; transferReference: string | null; createdAt: string }
+export interface SettlementBatch { id: string; hotelId: string; hotelNameSnapshot: string; ownerUserId: string; periodStart: string; periodEnd: string; currency: string; bookingCount: number; grossAmount: number; commissionAmount: number; adjustmentAmount: number; netAmount: number; status: SettlementStatus; bankNameSnapshot: string; bankAccountNumberSnapshot: string; bankAccountHolderSnapshot: string; approvedBy: string | null; approvedAt: string | null; processingAt: string | null; paidAt: string | null; failedAt: string | null; failureReason: string | null; transferReference: string | null; revision: number; createdAt: string; updatedAt: string; items: SettlementBatchItem[]; events: SettlementBatchEvent[] }
 
 export interface AppData {
   version: number
@@ -126,5 +163,5 @@ export interface AppData {
 
 export interface PlannerInput { city: string; startDate: string; endDate: string; adults: number; children: number; budget: number; interests: string[]; style: string; note: string }
 export interface PlannerResult { trip: Itinerary; stops: Stopover[]; activities: TravelActivity[]; totalCost: number; explanation: string; costBreakdown?: { lodging: number; food: number; activities: number }; reasons?: Record<string, string>; input?: PlannerInput }
-export interface BookingInput { hotelId: string; roomId: string; checkIn: string; checkOut: string; rooms: number; adults: number; children: number; guestName: string; guestEmail: string; guestPhone: string; specialRequest: string }
+export interface BookingInput { hotelId: string; roomId: string; roomIds?: string[]; idempotencyKey?: string; cancellationPolicyVersion?: string; checkIn: string; checkOut: string; rooms: number; adults: number; children: number; guestName: string; guestEmail: string; guestPhone: string; specialRequest: string }
 export interface AppError { code: string; message: string; status?: number }

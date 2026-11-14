@@ -5,6 +5,7 @@ export type DomainExceptionCategory =
   | 'not_found'
   | 'conflict'
   | 'bad_gateway'
+  | 'rate_limited'
   | 'service_unavailable';
 
 export abstract class DomainException extends Error {

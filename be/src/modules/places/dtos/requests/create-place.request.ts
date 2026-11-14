@@ -4,6 +4,10 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsArray,
+  ArrayMaxSize,
+  ArrayUnique,
+  ValidateNested,
   IsString,
   IsTimeZone,
   Matches,
@@ -39,6 +43,13 @@ export class CreatePlaceRequest {
   @IsNotEmpty()
   @MaxLength(500)
   address?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  city?: string | null;
 
   @IsOptional()
   @Transform(uppercase)
@@ -86,4 +97,64 @@ export class CreatePlaceRequest {
   @IsNotEmpty()
   @MaxLength(255)
   openingTime?: string | null;
+
+  @IsOptional()
+  @Transform(uppercase)
+  @Matches(/^[A-Z0-9_-]{1,50}$/)
+  categoryCode?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @Matches(/^[A-Z0-9_-]{1,50}$/, { each: true })
+  topicCodes?: string[];
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @Matches(/^(https?:\/\/|\/images\/)[^\s]+$/i, {
+    message: 'imageUrl must be an http(s) URL or an /images/ asset path',
+  })
+  imageUrl?: string | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255)
+  imageAltText?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PlaceReferencePriceRequest)
+  referencePrice?: PlaceReferencePriceRequest | null;
+}
+
+export class PlaceReferencePriceRequest {
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minPrice: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxPrice: number;
+
+  @IsOptional()
+  @Transform(uppercase)
+  @Matches(/^[A-Z]{3}$/)
+  currency = 'VND';
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(60)
+  pricingUnit = 'người';
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
 }

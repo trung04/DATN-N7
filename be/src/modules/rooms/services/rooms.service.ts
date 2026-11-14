@@ -105,6 +105,10 @@ export class RoomsService {
     return uniqueIds.map((id) => roomsById.get(id)!);
   }
 
+  findBookableByHotel(hotelId?: string): Promise<RoomEntity[]> {
+    return this.repository.findBookableByHotel(hotelId);
+  }
+
   async update(
     id: string,
     input: UpdateRoomRequest,

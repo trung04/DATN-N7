@@ -14,6 +14,18 @@ export function readData(): AppData {
     changed = !raw
     if (data.version === 2) { data = mergeSeedExtras(data); changed = true }
     else if (data.version !== 3) { data = seedData(); changed = true }
+    for (const hotel of data.hotels) {
+      const terms = hotel.cancellationTerms
+      if (terms.basis !== 'HOURS_AFTER_BOOKING') {
+        hotel.cancellationPolicy = 'Miễn phí hủy trong 24 giờ kể từ lúc đặt; sau đó phí 50%.'
+        hotel.cancellationTerms = {
+          basis: 'HOURS_AFTER_BOOKING',
+          freeForHoursAfterBooking: terms.freeUntilHours ?? 24,
+          lateFeeRate: terms.lateFeeRate,
+        }
+        changed = true
+      }
+    }
   } catch { data = seedData(); changed = true }
   const now = Date.now()
   for (const booking of data.bookings) {

@@ -5,7 +5,9 @@ export const CANCELLATION_POLICY_REPOSITORY = Symbol(
 );
 
 export type CancellationPolicySortField =
-  'name' | 'cancellationWindow' | 'cancellationFeeRate';
+  | 'name'
+  | 'cancelHours'
+  | 'penaltyPercent';
 
 export interface FindCancellationPoliciesOptions {
   page: number;
@@ -24,11 +26,28 @@ export interface CancellationPolicyPage {
 export interface CreateCancellationPolicyData {
   hotelId: string;
   name: string;
-  cancellationWindow: number | null;
-  minHoursBeforeCheckIn: number;
-  maxHoursBeforeCheckIn: number | null;
-  cancellationFeeRate: number | null;
+  cancelHours: number;
+  penaltyPercent: number;
+  cancellationAllowed: boolean;
   description: string | null;
+  isActive: boolean;
+}
+
+export interface CancellationPolicyScheduleRule {
+  id: string;
+  name: string;
+  cancelHours: number;
+  penaltyPercent: number;
+  cancellationAllowed: boolean;
+  description: string | null;
+}
+
+export interface CancellationPolicySchedule {
+  hotelId: string;
+  version: string;
+  complete: boolean;
+  issue: string | null;
+  rules: CancellationPolicyScheduleRule[];
 }
 
 export interface CancellationPolicyRepository {
@@ -38,6 +57,7 @@ export interface CancellationPolicyRepository {
     name: string,
   ): Promise<CancellationPolicyEntity | null>;
   findAllByHotel(hotelId: string): Promise<CancellationPolicyEntity[]>;
+  findActiveByHotel(hotelId: string): Promise<CancellationPolicyEntity | null>;
   findPage(
     options: FindCancellationPoliciesOptions,
   ): Promise<CancellationPolicyPage>;

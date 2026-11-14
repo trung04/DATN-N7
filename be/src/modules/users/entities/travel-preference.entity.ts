@@ -44,6 +44,15 @@ export class TravelPreferenceEntity {
   @Column({ name: 'preferred_duration_days', type: 'integer', nullable: true })
   preferredDurationDays: number | null;
 
+  @Column({ name: 'travel_style', type: 'varchar', length: 50 })
+  travelStyle: string;
+
+  @Column({ name: 'preferred_transport', type: 'varchar', length: 50 })
+  preferredTransport: string;
+
+  @Column({ name: 'preferred_destinations', type: 'text', array: true, default: '{}' })
+  preferredDestinations: string[];
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

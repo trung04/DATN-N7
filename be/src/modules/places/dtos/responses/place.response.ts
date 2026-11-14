@@ -40,6 +40,8 @@ export class PlacePriceResponse {
   minPrice: number;
   maxPrice: number;
   currency: string;
+  pricingUnit: string;
+  description: string | null;
 }
 
 export class PlaceContactResponse {

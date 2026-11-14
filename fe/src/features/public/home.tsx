@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router'
 import { ArrowRight, CalendarDays, MapPin, Search, Sparkles, UsersRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DetailLink, ErrorState, LoadingState } from '@/components/common'
-import { DestinationCard, HotelCard, RestaurantCard } from './catalog'
+import { DestinationCard, HotelCard } from './catalog'
 import { useCatalog } from '@/hooks/data'
 import { errorMessage, nights, todayPlus } from '@/lib/utils'
 import { heroImage, travelImage } from '@/lib/travel-images'
@@ -69,7 +69,7 @@ export function HomePage() {
         ].map(([number, title, text]) => <div key={number} className="rounded-2xl border border-slate-200 bg-white p-6"><span className="text-sm font-bold text-[#5D8BA5]">{number}</span><h3 className="mt-4 text-lg font-semibold text-[#1E3A5F]">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{text}</p></div>)}</div>
       </div></section>
       <section className="container-travel section-pad"><SectionHeading eyebrow="Nơi ở" title="Khách sạn cho hành trình sắp tới" description="So sánh tiện nghi và mức giá trước khi chọn phòng." to="/hotels" link="Tìm khách sạn" /><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{data.hotels.slice(0, 4).map(item => <HotelCard key={item.id} item={item} price={Math.min(...data.rooms.filter(room => room.hotelId === item.id).map(room => room.basePrice))} />)}</div></section>
-      <section className="bg-[#F7F9FC]"><div className="container-travel section-pad"><SectionHeading eyebrow="Trải nghiệm" title="Một chuyến đi, nhiều điều để nhớ" description="Địa điểm và hương vị địa phương đang chờ bạn khám phá." to="/explore" link="Khám phá thêm" /><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{data.destinations.slice(0, 2).map(item => <DestinationCard key={item.id} item={item} />)}{data.restaurants.slice(0, 2).map(item => <RestaurantCard key={item.id} item={item} />)}</div></div></section>
+      <section className="bg-[#F7F9FC]"><div className="container-travel section-pad"><SectionHeading eyebrow="Trải nghiệm" title="Khám phá điểm đến nổi bật" description="Tìm những địa điểm phù hợp cho hành trình sắp tới." to="/explore" link="Khám phá thêm" /><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{data.destinations.slice(0, 4).map(item => <DestinationCard key={item.id} item={item} />)}</div></div></section>
     </>}
   </div>
 }

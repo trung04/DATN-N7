@@ -13,7 +13,7 @@ const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', so
 const statuses: Array<['bookingStatus' | 'paymentStatus' | 'refundStatus' | 'settlementStatus', string, string[]]> = [
   ['bookingStatus', 'Booking', ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED']],
   ['paymentStatus', 'Thanh toán', ['PENDING', 'PAYMENT_PENDING', 'PAID', 'FAILED', 'EXPIRED']],
-  ['refundStatus', 'Hoàn tiền', ['NONE', 'PENDING', 'REFUNDED', 'FAILED']],
+  ['refundStatus', 'Hoàn tiền', ['NONE', 'PENDING', 'PROCESSING', 'REFUNDED', 'FAILED']],
   ['settlementStatus', 'Đối soát', ['PENDING', 'PROCESSING', 'SETTLED', 'FAILED']],
 ]
 const labels: Record<string, string> = { PENDING: 'Chờ xử lý', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất', PAYMENT_PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', FAILED: 'Thất bại', EXPIRED: 'Hết hạn', NONE: 'Chưa yêu cầu', REFUNDED: 'Đã hoàn', PROCESSING: 'Đang xử lý', SETTLED: 'Đã quyết toán' }
@@ -41,20 +41,19 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
   const bookings = useQuery({ queryKey: ['managed-bookings', admin, query], queryFn: () => api.managedBookings(query), enabled: admin || Boolean(selectedHotelId) })
   const [selectedId, setSelectedId] = useState('')
   const detail = useQuery({ queryKey: ['managed-booking', selectedId], queryFn: () => api.managedBooking(selectedId), enabled: Boolean(selectedId) })
-  const [action, setAction] = useState<'refund' | 'settlement' | null>(null)
+  const [action, setAction] = useState<'refund' | null>(null)
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
-  const [transactionId, setTransactionId] = useState('')
-  const [bankName, setBankName] = useState('')
-  const [bankAccountNumber, setBankAccountNumber] = useState('')
-  const [bankAccountHolder, setBankAccountHolder] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
 
   const updateParams = (values: Record<string, string | undefined>) => {
     const next = new URLSearchParams(params)
-    for (const [key, value] of Object.entries(values)) value ? next.set(key, value) : next.delete(key)
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    }
     next.set('page', '1')
     setParams(next, { replace: true })
   }
@@ -62,18 +61,16 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
     await queryClient.invalidateQueries({ queryKey: ['managed-bookings'] })
     if (selectedId) await queryClient.invalidateQueries({ queryKey: ['managed-booking', selectedId] })
   }
-  const beginAction = (next: 'refund' | 'settlement', booking: ManagedBooking) => {
+  const beginAction = (next: 'refund', booking: ManagedBooking) => {
     setAction(next); setError('')
-    if (next === 'refund') { setAmount(String(booking.refundAmount ?? booking.amount)); setReason(booking.refundReason ?? `Hoàn tiền booking ${booking.bookingCode}`) }
-    else { setAmount(String(booking.settlementBaseAmount ?? booking.amount)); setTransactionId(''); setBankName(''); setBankAccountNumber(''); setBankAccountHolder('') }
+    setAmount(String(booking.refundAmount ?? booking.amount)); setReason(booking.refundReason ?? `Hoàn tiền booking ${booking.bookingCode}`)
   }
   const submitAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!detail.data) return
     setBusy(true); setError('')
     try {
-      if (action === 'refund') await api.refundManagedBooking(detail.data.id, Number(amount), reason.trim())
-      else if (action === 'settlement') await api.settleManagedBooking(detail.data.id, { settlementBaseAmount: Number(amount), transactionId: transactionId.trim(), bankNameSnapshot: bankName.trim(), bankAccountNumberSnapshot: bankAccountNumber.trim(), bankAccountHolderSnapshot: bankAccountHolder.trim() })
-      await refresh(); setAction(null); setNotice(action === 'refund' ? 'Đã gửi yêu cầu hoàn tiền qua VNPAY.' : 'Đã ghi nhận quyết toán booking.')
+      await api.refundManagedBooking(detail.data.id, Number(amount), reason.trim())
+      await refresh(); setAction(null); setNotice('Đã gửi yêu cầu hoàn tiền tới SePay; trạng thái sẽ được cập nhật từ phía ngân hàng.')
     } catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
   }
   const completeBooking = async () => {
@@ -82,7 +79,12 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
     try { await api.completeManagedBooking(detail.data.id); await refresh(); setNotice('Đã đánh dấu booking hoàn tất.') }
     catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
   }
-
+  const syncRefund = async () => {
+    if (!detail.data) return
+    setBusy(true); setError('')
+    try { await api.syncManagedRefund(detail.data.id); await refresh(); setNotice('Đã đồng bộ trạng thái hoàn tiền từ SePay.') }
+    catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
+  }
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
   if (!admin && hotels.data.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi quản lý đặt phòng." />
@@ -111,10 +113,10 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
         <div className="flex flex-wrap gap-2"><StatusBadge status={detail.data.bookingStatus} /><StatusBadge status={detail.data.paymentStatus} /><StatusBadge status={detail.data.refundStatus} /><StatusBadge status={detail.data.settlementStatus} /></div>
         <Card className="grid gap-2 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Khách sạn</span><br /><strong>{hotelName(detail.data.hotelId)}</strong></p><p><span className="text-slate-500">Khách đặt</span><br /><strong>{detail.data.guestName}</strong></p><p>{detail.data.guestEmail}</p><p>{detail.data.guestPhone}</p><p><span className="text-slate-500">Nhận phòng</span><br />{day(detail.data.checkInDate)}</p><p><span className="text-slate-500">Trả phòng</span><br />{day(detail.data.checkOutDate)}</p><p><span className="text-slate-500">Số khách</span><br />{detail.data.adultCount} người lớn · {detail.data.childCount} trẻ em</p><p><span className="text-slate-500">Phương thức</span><br />{detail.data.paymentMethod ?? '—'}</p></Card>
         <Card className="p-4"><h3 className="font-semibold">Phòng và chi phí</h3><div className="mt-3 grid gap-2 text-sm">{detail.data.roomItems.map(item => <div className="flex justify-between gap-3" key={item.id}><span>{item.roomNumberSnapshot} · {item.roomTypeSnapshot} · {item.numberOfNights} đêm</span><strong>{currency(item.subtotal)}</strong></div>)}</div><div className="mt-3 flex justify-between border-t pt-3 font-semibold"><span>Tổng booking</span><span>{currency(detail.data.amount)}</span></div></Card>
-        <Card className="grid gap-2 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Đã thanh toán</span><br />{detail.data.paidAt ? day(detail.data.paidAt) : 'Chưa thanh toán'}</p><p><span className="text-slate-500">Phí hủy</span><br />{detail.data.cancellationFeeAmount === null ? '—' : currency(detail.data.cancellationFeeAmount)}{detail.data.cancellationFeeRateSnapshot !== null ? ` (${detail.data.cancellationFeeRateSnapshot}%)` : ''}</p><p><span className="text-slate-500">Chính sách đã áp dụng</span><br />{detail.data.cancellationDescriptionSnapshot ?? 'Chưa hủy'}</p><p><span className="text-slate-500">Số tiền hoàn</span><br />{detail.data.refundAmount === null ? '—' : currency(detail.data.refundAmount)}</p><p><span className="text-slate-500">Cơ sở quyết toán</span><br />{detail.data.settlementBaseAmount === null ? '—' : currency(detail.data.settlementBaseAmount)}</p><p><span className="text-slate-500">Đã quyết toán</span><br />{detail.data.settledAt ? day(detail.data.settledAt) : 'Chưa quyết toán'}</p><p className="sm:col-span-2"><span className="text-slate-500">Yêu cầu đặc biệt</span><br />{detail.data.specialRequests || 'Không có'}</p></Card>
+        <Card className="grid gap-2 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Đã thanh toán</span><br />{detail.data.paidAt ? day(detail.data.paidAt) : 'Chưa thanh toán'}</p><p><span className="text-slate-500">Phí hủy</span><br />{detail.data.cancellationFeeAmount === null ? '—' : currency(detail.data.cancellationFeeAmount)}{detail.data.cancellationFeeRateSnapshot !== null ? ` (${detail.data.cancellationFeeRateSnapshot}%)` : ''}</p><p><span className="text-slate-500">Chính sách đã áp dụng</span><br />{detail.data.cancellationDescriptionSnapshot ?? 'Chưa hủy'}</p><p><span className="text-slate-500">Số tiền hoàn</span><br />{detail.data.refundAmount === null ? '—' : currency(detail.data.refundAmount)}</p><p><span className="text-slate-500">Lý do hoàn</span><br />{detail.data.refundReason ?? '—'}</p><p><span className="text-slate-500">Ngày yêu cầu hoàn</span><br />{detail.data.refundRequestedAt ? day(detail.data.refundRequestedAt) : '—'}</p><p><span className="text-slate-500">Bắt đầu xử lý</span><br />{detail.data.refundProcessingAt ? day(detail.data.refundProcessingAt) : 'Chưa bắt đầu'}</p><p><span className="text-slate-500">Lần yêu cầu</span><br />{detail.data.refundAttempt}</p><p><span className="text-slate-500">Mã giao dịch hoàn</span><br />{detail.data.refundTransactionId ?? 'Chưa có'}</p>{detail.data.refundFailureReason && <p className="sm:col-span-2"><span className="text-slate-500">Lý do thất bại gần nhất{detail.data.refundFailedAt ? ` · ${day(detail.data.refundFailedAt)}` : ''}</span><br />{detail.data.refundFailureReason}</p>}<p><span className="text-slate-500">Thời điểm hoàn</span><br />{detail.data.refundedAt ? day(detail.data.refundedAt) : 'Chưa hoàn'}</p><p><span className="text-slate-500">Cơ sở quyết toán</span><br />{detail.data.settlementBaseAmount === null ? '—' : currency(detail.data.settlementBaseAmount)}</p><p><span className="text-slate-500">Đã quyết toán</span><br />{detail.data.settledAt ? day(detail.data.settledAt) : 'Chưa quyết toán'}</p><p className="sm:col-span-2"><span className="text-slate-500">Yêu cầu đặc biệt</span><br />{detail.data.specialRequests || 'Không có'}</p></Card>
         <Feedback message={error} kind="error" /><Feedback message={notice} />
-        {!action && <div className="flex flex-wrap justify-end gap-2">{!admin && detail.data.bookingStatus === 'CONFIRMED' && detail.data.paymentStatus === 'PAID' && <Button disabled={busy} onClick={() => { void completeBooking() }}>Đánh dấu hoàn tất</Button>}{admin && detail.data.paymentStatus === 'PAID' && ['NONE', 'PENDING'].includes(detail.data.refundStatus) && <Button variant="secondary" onClick={() => beginAction('refund', detail.data!)}>Hoàn tiền</Button>}{admin && detail.data.paymentStatus === 'PAID' && detail.data.settlementStatus !== 'SETTLED' && <Button onClick={() => beginAction('settlement', detail.data!)}>Ghi nhận quyết toán</Button>}</div>}
-        {action && <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={submitAction}><h3 className="font-semibold">{action === 'refund' ? 'Xử lý hoàn tiền VNPAY' : 'Ghi nhận quyết toán'}</h3><FormField label={action === 'refund' ? 'Số tiền hoàn' : 'Cơ sở quyết toán'}><input required type="number" min="0.01" step="0.01" max={detail.data.amount} value={amount} readOnly={action === 'refund' && detail.data.refundStatus === 'PENDING'} onChange={event => setAmount(event.target.value)} /></FormField>{action === 'refund' ? <FormField label="Lý do hoàn tiền"><textarea required maxLength={5000} value={reason} onChange={event => setReason(event.target.value)} /></FormField> : <><FormField label="Mã giao dịch"><input required maxLength={255} value={transactionId} onChange={event => setTransactionId(event.target.value)} /></FormField><FormField label="Ngân hàng"><input required maxLength={255} value={bankName} onChange={event => setBankName(event.target.value)} /></FormField><FormField label="Số tài khoản"><input required maxLength={255} value={bankAccountNumber} onChange={event => setBankAccountNumber(event.target.value)} /></FormField><FormField label="Chủ tài khoản"><input required maxLength={255} value={bankAccountHolder} onChange={event => setBankAccountHolder(event.target.value)} /></FormField></>}<Feedback message={error} kind="error" /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setAction(null); setError('') }}>Quay lại</Button><Button disabled={busy}>{busy ? 'Đang xử lý...' : 'Xác nhận'}</Button></div></form>}
+        {!action && <div className="flex flex-wrap justify-end gap-2">{!admin && detail.data.bookingStatus === 'CONFIRMED' && detail.data.paymentStatus === 'PAID' && <Button disabled={busy} onClick={() => { void completeBooking() }}>Đánh dấu hoàn tất</Button>}{admin && detail.data.paymentStatus === 'PAID' && (detail.data.refundStatus === 'NONE' || detail.data.refundStatus === 'FAILED') && <Button variant="secondary" onClick={() => beginAction('refund', detail.data!)}>{detail.data.refundStatus === 'FAILED' ? 'Tạo lại yêu cầu hoàn tiền' : 'Tạo yêu cầu hoàn tiền'}</Button>}{admin && ['PENDING', 'PROCESSING'].includes(detail.data.refundStatus) && <Button disabled={busy} onClick={() => { void syncRefund() }}>Đồng bộ trạng thái hoàn tiền</Button>}</div>}
+        {action && <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={submitAction}><h3 className="font-semibold">Gửi yêu cầu hoàn tiền qua SePay</h3><p className="text-sm text-amber-800">Backend sẽ gửi lệnh hoàn tiền tự động qua SePay API v2 và cập nhật trạng thái từ SePay.</p><FormField label="Số tiền hoàn"><input required type="number" min="1" step="1" max={detail.data.amount} value={amount} readOnly={detail.data.refundStatus === 'FAILED'} onChange={event => setAmount(event.target.value)} /></FormField><FormField label="Lý do hoàn tiền"><textarea required maxLength={5000} value={reason} onChange={event => setReason(event.target.value)} /></FormField><Feedback message={error} kind="error" /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setAction(null); setError('') }}>Quay lại</Button><Button disabled={busy}>{busy ? 'Đang xử lý...' : 'Xác nhận'}</Button></div></form>}
       </div> : null}
     </DialogContent></Dialog>
   </div>

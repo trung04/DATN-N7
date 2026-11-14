@@ -7,10 +7,12 @@ export class AlignAuthenticationSchema1793898000000 implements MigrationInterfac
     await queryRunner.query(`
       ALTER TABLE "users"
         ALTER COLUMN "password_hash" DROP NOT NULL,
+        DROP CONSTRAINT IF EXISTS "CHK_users_auth_method";
+      ALTER TABLE "users"
         ADD CONSTRAINT "CHK_users_auth_method"
           CHECK ("password_hash" IS NOT NULL OR "google_account_id" IS NOT NULL);
 
-      DROP INDEX "UQ_users_google_account_id";
+      DROP INDEX IF EXISTS "UQ_users_google_account_id";
       CREATE UNIQUE INDEX "UQ_users_google_account_id"
         ON "users" ("google_account_id")
         WHERE "google_account_id" IS NOT NULL;

@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
+  IsOptional,
   IsString,
   Matches,
   MaxLength,
@@ -19,6 +20,12 @@ export class RegisterRequest {
     message: 'username contains invalid characters',
   })
   username: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(150)
+  displayName?: string;
 
   @Transform(lowercase)
   @IsEmail()

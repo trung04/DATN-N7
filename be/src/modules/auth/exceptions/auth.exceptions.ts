@@ -69,3 +69,27 @@ export class AccountUnavailableException extends DomainException {
     );
   }
 }
+
+export class AuthChallengeInvalidException extends DomainException {
+  constructor() {
+    super('The verification code is invalid, expired, or has been used.', 'AUTH_OTP_INVALID', 'validation');
+  }
+}
+
+export class AuthChallengeRateLimitException extends DomainException {
+  constructor() {
+    super('Please wait before requesting another verification code.', 'AUTH_OTP_RATE_LIMITED', 'rate_limited');
+  }
+}
+
+export class AuthEmailUnavailableException extends DomainException {
+  constructor() {
+    super('Email delivery is not configured. Contact the administrator.', 'AUTH_EMAIL_UNAVAILABLE', 'service_unavailable');
+  }
+}
+
+export class AuthEmailDeliveryException extends DomainException {
+  constructor() {
+    super('The verification email could not be delivered. Please try again later.', 'AUTH_EMAIL_DELIVERY_FAILED', 'service_unavailable');
+  }
+}

@@ -108,6 +108,27 @@ export function validateEnvironment(input: Record<string, unknown>) {
   }
   integer('AUTH_ACCESS_TTL_MS', 900000, 60000, 3600000);
   integer('AUTH_REFRESH_TTL_MS', 604800000, 3600000, 2592000000);
+  integer('SMTP_PORT', 587, 1, 65535);
+  config.SMTP_HOST ??= '';
+  config.SMTP_USER ??= '';
+  config.SMTP_PASSWORD ??= '';
+  config.EMAIL_FROM ??= '';
+  config.AUTH_OTP_PEPPER ??= '';
+  if (typeof config.SMTP_HOST !== 'string' || typeof config.SMTP_USER !== 'string' || typeof config.SMTP_PASSWORD !== 'string' || typeof config.EMAIL_FROM !== 'string' || typeof config.AUTH_OTP_PEPPER !== 'string') {
+    throw new Error('SMTP and auth OTP settings must be strings');
+  }
+  const smtpSecure = config.SMTP_SECURE ?? 'false';
+  if (smtpSecure !== 'true' && smtpSecure !== 'false') throw new Error('SMTP_SECURE must be true or false');
+  config.SMTP_SECURE = smtpSecure === 'true';
+  if (Boolean(config.SMTP_HOST) !== Boolean(config.EMAIL_FROM)) {
+    throw new Error('SMTP_HOST and EMAIL_FROM must be configured together');
+  }
+  if (Boolean(config.SMTP_USER) !== Boolean(config.SMTP_PASSWORD)) {
+    throw new Error('SMTP_USER and SMTP_PASSWORD must be configured together');
+  }
+  if (config.SMTP_HOST && (config.AUTH_OTP_PEPPER as string).length < 32) {
+    throw new Error('AUTH_OTP_PEPPER must contain at least 32 characters when SMTP is configured');
+  }
   if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {
     throw new Error('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
   }
@@ -153,37 +174,25 @@ export function validateEnvironment(input: Record<string, unknown>) {
     validateHttpUrl(config, 'GOOGLE_REDIRECT_URI');
   }
 
-  config.VNPAY_PAYMENT_URL ??=
-    'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
-  config.VNPAY_REFUND_URL ??=
-    'https://sandbox.vnpayment.vn/merchant_webapi/api/transaction';
-  config.VNPAY_REFUND_CREATE_BY ??= 'system';
-
-  for (const key of ['VNPAY_PAYMENT_URL', 'VNPAY_REFUND_URL']) {
-    validateSandboxVnpayUrl(config, key);
+  config.SEPAY_V2_BASE_URL ??= 'https://userapi-sandbox.sepay.vn/v2';
+  validateHttpUrl(config, 'SEPAY_V2_BASE_URL');
+  const sepayBaseUrl = new URL(config.SEPAY_V2_BASE_URL as string);
+  if (sepayBaseUrl.protocol !== 'https:' || sepayBaseUrl.origin !== 'https://userapi-sandbox.sepay.vn' || sepayBaseUrl.pathname !== '/v2') {
+    throw new Error('SEPAY_V2_BASE_URL must use https://userapi-sandbox.sepay.vn/v2 in test mode');
   }
-  if (
-    typeof config.VNPAY_REFUND_CREATE_BY !== 'string' ||
-    !config.VNPAY_REFUND_CREATE_BY.trim()
-  ) {
-    throw new Error('VNPAY_REFUND_CREATE_BY must be nonempty');
+  for (const key of ['SEPAY_V2_API_TOKEN', 'SEPAY_V2_BANK_ACCOUNT_XID', 'SEPAY_V2_TERMINAL_ID', 'SEPAY_WEBHOOK_SECRET', 'SEPAY_WEBHOOK_API_KEY']) {
+    config[key] ??= '';
+    if (typeof config[key] !== 'string') throw new Error(`${key} must be a string`);
   }
-
-  const requiredVnpayKeys = [
-    'VNPAY_TMN_CODE',
-    'VNPAY_HASH_SECRET',
-    'VNPAY_RETURN_URL',
-  ];
-  const hasVnpayConfiguration = requiredVnpayKeys.some(
-    (key) => config[key] !== undefined,
-  );
-  if (hasVnpayConfiguration) {
-    for (const key of requiredVnpayKeys) {
-      if (typeof config[key] !== 'string' || !config[key].trim()) {
-        throw new Error(`${key} is required when VNPAY is configured`);
-      }
-    }
-    validateHttpUrl(config, 'VNPAY_RETURN_URL');
+  if (Boolean(config.SEPAY_V2_API_TOKEN) !== Boolean(config.SEPAY_V2_BANK_ACCOUNT_XID)) {
+    throw new Error('SEPAY_V2_API_TOKEN and SEPAY_V2_BANK_ACCOUNT_XID must be configured together');
+  }
+  if (config.SEPAY_V2_BANK_ACCOUNT_XID && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.SEPAY_V2_BANK_ACCOUNT_XID as string)) {
+    throw new Error('SEPAY_V2_BANK_ACCOUNT_XID must be a UUID');
+  }
+  config.SEPAY_WEBHOOK_AUTH_TYPE ??= 'HMAC_SHA256';
+  if (!['HMAC_SHA256', 'API_KEY'].includes(config.SEPAY_WEBHOOK_AUTH_TYPE as string)) {
+    throw new Error('SEPAY_WEBHOOK_AUTH_TYPE must be HMAC_SHA256 or API_KEY');
   }
   return config;
 }
@@ -196,17 +205,6 @@ function validateHttpOrigin(
   const value = config[key] as string;
   if (new URL(value).origin !== value) {
     throw new Error(`${key} must be an HTTP origin without a path`);
-  }
-}
-
-function validateSandboxVnpayUrl(
-  config: Record<string, unknown>,
-  key: string,
-): void {
-  validateHttpUrl(config, key);
-  const url = new URL(config[key] as string);
-  if (url.protocol !== 'https:' || url.hostname !== 'sandbox.vnpayment.vn') {
-    throw new Error(`${key} must use the VNPAY Sandbox HTTPS host`);
   }
 }
 

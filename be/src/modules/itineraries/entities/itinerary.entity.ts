@@ -38,6 +38,9 @@ export class ItineraryEntity {
   @Column({ type: 'varchar', length: 200 })
   name: string;
 
+  @Column({ name: 'destination_city', type: 'varchar', length: 120 })
+  destinationCity: string;
+
   @Column({ type: 'text', nullable: true })
   description: string | null;
 

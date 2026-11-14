@@ -1,18 +1,24 @@
 import {
   Column,
+  CreateDateColumn,
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
   ValueTransformer,
 } from 'typeorm';
 
-const nullableDecimalTransformer: ValueTransformer = {
-  to: (value: number | null) => value,
-  from: (value: string | null) => (value === null ? null : Number(value)),
+const decimalTransformer: ValueTransformer = {
+  to: (value: number) => value,
+  from: (value: string) => Number(value),
 };
 
 @Entity({ name: 'cancellation_policies' })
 @Index('IDX_cancellation_policies_hotel_id', ['hotelId'])
+@Index('UQ_cancellation_policies_one_active_per_hotel', ['hotelId'], {
+  unique: true,
+  where: 'is_active = true',
+})
 export class CancellationPolicyEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -20,28 +26,34 @@ export class CancellationPolicyEntity {
   @Column({ name: 'hotel_id', type: 'uuid' })
   hotelId: string;
 
-  @Column({ type: 'varchar', length: 120 })
+  @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ name: 'cancellation_window', type: 'integer', nullable: true })
-  cancellationWindow: number | null;
-
-  @Column({ name: 'min_hours_before_check_in', type: 'integer', default: 0 })
-  minHoursBeforeCheckIn: number;
-
-  @Column({ name: 'max_hours_before_check_in', type: 'integer', nullable: true })
-  maxHoursBeforeCheckIn: number | null;
+  @Column({ name: 'cancel_hours', type: 'integer', default: 24 })
+  cancelHours: number;
 
   @Column({
-    name: 'cancellation_fee_rate',
+    name: 'penalty_percent',
     type: 'numeric',
     precision: 5,
     scale: 2,
-    nullable: true,
-    transformer: nullableDecimalTransformer,
+    default: 0,
+    transformer: decimalTransformer,
   })
-  cancellationFeeRate: number | null;
+  penaltyPercent: number;
+
+  @Column({ name: 'cancellation_allowed', type: 'boolean', default: true })
+  cancellationAllowed: boolean;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  @Column({ name: 'is_active', type: 'boolean', default: false })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
 }

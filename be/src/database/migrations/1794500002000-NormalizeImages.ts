@@ -1,19 +1,36 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-const IMAGE_TABLES = [
-  'hotel_images',
-  'room_images',
-  'place_images',
-  'user_images',
-  'images',
-] as const;
+const LEGACY_HOTEL_IMAGES = 'hotel_images_legacy_1794500002000';
+const IMAGE_MAPPINGS = ['hotel_images', 'room_images', 'place_images', 'user_images'];
 
 export class NormalizeImages1794500002000 implements MigrationInterface {
   name = 'NormalizeImages1794500002000';
 
   async up(queryRunner: QueryRunner): Promise<void> {
-    await this.assertEmpty(queryRunner);
-    await this.dropImageTables(queryRunner);
+    // Preserve the legacy hotel upload records instead of dropping the table.
+    // The original schema stores object metadata directly on hotel_images.
+    if (await queryRunner.hasTable('hotel_images')) {
+      if (!(await queryRunner.hasColumn('hotel_images', 'object_key'))) {
+        throw new Error(
+          'NormalizeImages found an unexpected hotel_images schema; stopping without changing image data',
+        );
+      }
+      if (await queryRunner.hasTable(LEGACY_HOTEL_IMAGES)) {
+        throw new Error(
+          `NormalizeImages archive table ${LEGACY_HOTEL_IMAGES} already exists`,
+        );
+      }
+      await queryRunner.query(
+        `ALTER TABLE "hotel_images" RENAME TO "${LEGACY_HOTEL_IMAGES}"`,
+      );
+      await queryRunner.query(`
+        ALTER TABLE "${LEGACY_HOTEL_IMAGES}"
+          RENAME CONSTRAINT "PK_hotel_images"
+          TO "PK_hotel_images_legacy_1794500002000";
+        ALTER INDEX IF EXISTS "IDX_hotel_images_hotel_created"
+          RENAME TO "IDX_hotel_images_hotel_created_legacy_1794500002000";
+      `);
+    }
 
     await queryRunner.query(`
       CREATE TABLE "images" (
@@ -37,17 +54,11 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
           CHECK ("storage_provider" IN ('MINIO', 'EXTERNAL')),
         CONSTRAINT "CHK_images_storage_location" CHECK (
           ("storage_provider" = 'MINIO' AND "object_key" IS NOT NULL AND "image_url" IS NULL)
-          OR
-          ("storage_provider" = 'EXTERNAL' AND "image_url" IS NOT NULL AND "object_key" IS NULL)
+          OR ("storage_provider" = 'EXTERNAL' AND "image_url" IS NOT NULL AND "object_key" IS NULL)
         ),
         CONSTRAINT "CHK_images_managed_metadata" CHECK (
           "storage_provider" <> 'MINIO'
-          OR (
-            "content_type" IS NOT NULL
-            AND "byte_size" > 0
-            AND "width" > 0
-            AND "height" > 0
-          )
+          OR ("content_type" IS NOT NULL AND "byte_size" > 0 AND "width" > 0 AND "height" > 0)
         ),
         CONSTRAINT "CHK_images_optional_metadata" CHECK (
           ("byte_size" IS NULL OR "byte_size" > 0)
@@ -61,9 +72,7 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
       CREATE UNIQUE INDEX "UQ_images_object_key_active"
         ON "images" ("object_key")
         WHERE "deleted_at" IS NULL AND "object_key" IS NOT NULL;
-    `);
 
-    await queryRunner.query(`
       CREATE TABLE "hotel_images" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "hotel_id" uuid NOT NULL,
@@ -85,9 +94,7 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
         ON "hotel_images" ("hotel_id", "image_order") WHERE "deleted_at" IS NULL;
       CREATE INDEX "IDX_hotel_images_active_image"
         ON "hotel_images" ("image_id") WHERE "deleted_at" IS NULL;
-    `);
 
-    await queryRunner.query(`
       CREATE TABLE "room_images" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "room_id" uuid NOT NULL,
@@ -109,9 +116,7 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
         ON "room_images" ("room_id", "image_order") WHERE "deleted_at" IS NULL;
       CREATE INDEX "IDX_room_images_active_image"
         ON "room_images" ("image_id") WHERE "deleted_at" IS NULL;
-    `);
 
-    await queryRunner.query(`
       CREATE TABLE "place_images" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "place_id" uuid NOT NULL,
@@ -133,9 +138,7 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
         ON "place_images" ("place_id", "image_order") WHERE "deleted_at" IS NULL;
       CREATE INDEX "IDX_place_images_active_image"
         ON "place_images" ("image_id") WHERE "deleted_at" IS NULL;
-    `);
 
-    await queryRunner.query(`
       CREATE TABLE "user_images" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL,
@@ -156,47 +159,55 @@ export class NormalizeImages1794500002000 implements MigrationInterface {
       CREATE INDEX "IDX_user_images_active_image"
         ON "user_images" ("image_id") WHERE "deleted_at" IS NULL;
     `);
-  }
 
-  async down(queryRunner: QueryRunner): Promise<void> {
-    await this.assertEmpty(queryRunner);
-    await this.dropImageTables(queryRunner);
-    await queryRunner.query(`
-      CREATE TABLE "hotel_images" (
-        "id" uuid NOT NULL,
-        "hotel_id" uuid NOT NULL,
-        "object_key" varchar(200) NOT NULL UNIQUE,
-        "content_type" varchar(50) NOT NULL,
-        "byte_size" integer NOT NULL CHECK ("byte_size" > 0 AND "byte_size" <= 5242880),
-        "width" integer NOT NULL CHECK ("width" > 0),
-        "height" integer NOT NULL CHECK ("height" > 0),
-        "created_at" timestamptz NOT NULL DEFAULT now(),
-        CONSTRAINT "PK_hotel_images" PRIMARY KEY ("id"),
-        CONSTRAINT "FK_hotel_images_hotel"
-          FOREIGN KEY ("hotel_id") REFERENCES "hotels"("id") ON DELETE RESTRICT
-      );
-      CREATE INDEX "IDX_hotel_images_hotel_created"
-        ON "hotel_images" ("hotel_id", "created_at");
-    `);
-  }
+    if (await queryRunner.hasTable(LEGACY_HOTEL_IMAGES)) {
+      await queryRunner.query(`
+        INSERT INTO "images" (
+          "id", "storage_provider", "object_key", "content_type", "byte_size",
+          "width", "height", "created_at", "updated_at"
+        )
+        SELECT "id", 'MINIO', "object_key", "content_type", "byte_size",
+               "width", "height", "created_at", "created_at"
+        FROM "${LEGACY_HOTEL_IMAGES}"
+        ON CONFLICT ("id") DO NOTHING;
 
-  private async assertEmpty(queryRunner: QueryRunner): Promise<void> {
-    for (const table of IMAGE_TABLES) {
-      if (!(await queryRunner.hasTable(table))) continue;
-      const [{ count }] = (await queryRunner.query(
-        `SELECT COUNT(*)::integer AS "count" FROM "${table}"`,
-      )) as Array<{ count: number }>;
-      if (count > 0) {
-        throw new Error(
-          `NormalizeImages requires an empty ${table} table; migration stopped to prevent data loss`,
-        );
-      }
+        INSERT INTO "hotel_images" (
+          "hotel_id", "image_id", "image_order", "created_at", "updated_at"
+        )
+        SELECT "hotel_id", "id",
+               row_number() OVER (PARTITION BY "hotel_id" ORDER BY "created_at", "id")::integer,
+               "created_at", "created_at"
+        FROM "${LEGACY_HOTEL_IMAGES}"
+        ON CONFLICT DO NOTHING;
+      `);
     }
   }
 
-  private async dropImageTables(queryRunner: QueryRunner): Promise<void> {
-    for (const table of IMAGE_TABLES) {
-      await queryRunner.query(`DROP TABLE IF EXISTS "${table}"`);
+  async down(queryRunner: QueryRunner): Promise<void> {
+    const [{ count }] = (await queryRunner.query(`
+      SELECT (
+        (SELECT count(*) FROM "images") +
+        (SELECT count(*) FROM "hotel_images") +
+        (SELECT count(*) FROM "room_images") +
+        (SELECT count(*) FROM "place_images") +
+        (SELECT count(*) FROM "user_images")
+      )::integer AS "count"
+    `)) as Array<{ count: number }>;
+    if (Number(count) > 0) {
+      throw new Error('Cannot revert NormalizeImages while image records exist');
+    }
+
+    await queryRunner.query(`
+      DROP TABLE "user_images";
+      DROP TABLE "place_images";
+      DROP TABLE "room_images";
+      DROP TABLE "hotel_images";
+      DROP TABLE "images";
+    `);
+    if (await queryRunner.hasTable(LEGACY_HOTEL_IMAGES)) {
+      await queryRunner.query(
+        `ALTER TABLE "${LEGACY_HOTEL_IMAGES}" RENAME TO "hotel_images"`,
+      );
     }
   }
 }

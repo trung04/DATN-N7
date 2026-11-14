@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, CalendarDays, Clock3, MapPin, PencilLine, Sparkles, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, ErrorState, Feedback, FormField, LoadingState } from '@/components/common'
-import { useCatalog, useTourist } from '@/hooks/data'
+import { useCatalog, useMyPreference } from '@/hooks/data'
 import { travelImage } from '@/lib/travel-images'
 import { addDay, currency, day, errorMessage, nights, todayPlus } from '@/lib/utils'
 import { repo, isMock } from '@/services'
@@ -18,7 +18,7 @@ const defaultInput: PlannerInput = { city: 'Đà Nẵng', startDate: todayPlus(7
 export function PlannerPage() {
   const [params] = useSearchParams()
   const { data: catalog, isLoading: catalogLoading, error: catalogError } = useCatalog()
-  const { data: tourist } = useTourist()
+  const { data: preferences } = useMyPreference()
   const user = useSession(s => s.user)
   const draft = useSession(s => s.draft)
   const setDraft = useSession(s => s.setDraft)
@@ -63,7 +63,7 @@ export function PlannerPage() {
     try {
       const trip = await repo.savePlannedTrip(user.id, draft)
       setDraft(null)
-      await queryClient.invalidateQueries({ queryKey: ['tourist'] })
+      await queryClient.invalidateQueries({ queryKey: ['my-itineraries', user.id] })
       navigate('/trips/' + trip.id)
     } catch (error) { tell(errorMessage(error)) } finally { setBusy(false) }
   }
@@ -96,7 +96,7 @@ export function PlannerPage() {
             <FormField label="Phong cách"><select value={form.style} onChange={e => set('style', e.target.value)}><option>Tiết kiệm</option><option>Cân bằng</option><option>Thoải mái</option><option>Nghỉ dưỡng</option></select></FormField>
           </div>
           <fieldset className="mt-6"><legend className="text-sm font-semibold text-slate-700">Bạn thích trải nghiệm nào?</legend><div className="mt-3 flex flex-wrap gap-2">{interests.map(value => <label key={value} className={'cursor-pointer rounded-full border px-3 py-2 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[#1E3A5F] ' + (form.interests.includes(value) ? 'border-[#1E3A5F] bg-[#EAF0F6] font-semibold text-[#1E3A5F]' : 'border-slate-200 bg-white text-slate-600 hover:border-[#8AA6BB]')}><input className="sr-only" type="checkbox" checked={form.interests.includes(value)} onChange={() => set('interests', form.interests.includes(value) ? form.interests.filter(x => x !== value) : [...form.interests, value])} />{value}</label>)}</div></fieldset>
-          {tourist?.preference && <Button type="button" size="sm" variant="ghost" className="mt-3" onClick={() => setForm(prev => ({ ...prev, interests: tourist.preference!.interests, budget: tourist.preference!.budget, style: tourist.preference!.style }))}>Dùng sở thích đã lưu</Button>}
+          {preferences?.preference && <Button type="button" size="sm" variant="ghost" className="mt-3" onClick={() => setForm(prev => ({ ...prev, interests: preferences.preference!.interests, budget: preferences.preference!.budget, style: preferences.preference!.style }))}>Dùng sở thích đã lưu</Button>}
           <div className="mt-5"><FormField label="Mong muốn thêm" hint="Ví dụ: lịch thư giãn, ít hoạt động mỗi ngày."><textarea value={form.note} onChange={e => set('note', e.target.value)} placeholder="Bạn muốn chuyến đi có điều gì đặc biệt?" /></FormField></div>
           <Button className="mt-6 w-full" size="lg" disabled={busy} onClick={() => generate()}><Sparkles size={18} />{busy ? 'Đang sắp xếp lịch demo...' : 'Tạo lịch trình demo'}</Button>
           <p className="mt-3 text-xs leading-5 text-slate-500">Dữ liệu và chi phí chỉ để minh họa. Không gọi AI thật hoặc đặt dịch vụ khi tạo lịch.</p>

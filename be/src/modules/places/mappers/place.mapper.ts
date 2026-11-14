@@ -86,6 +86,8 @@ export class PlaceMapper {
       minPrice: price.minPrice,
       maxPrice: price.maxPrice,
       currency: price.currency,
+      pricingUnit: price.pricingUnit,
+      description: price.description,
     };
   }
 }

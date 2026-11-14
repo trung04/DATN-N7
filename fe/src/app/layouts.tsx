@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
-import { BarChart3, BedDouble, CalendarDays, Compass, CreditCard, Heart, Hotel, LayoutDashboard, LogOut, Map, Menu, MessageSquareText, ScrollText, ShieldCheck, Tags, UserRound, UsersRound, X } from 'lucide-react'
+import { BarChart3, BedDouble, Bell, CalendarDays, Compass, CreditCard, Heart, Hotel, LayoutDashboard, LogOut, Map, MapPin, Menu, MessageSquareText, ReceiptText, ScrollText, ShieldCheck, Tags, UserRound, UsersRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/stores/session'
+import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { errorMessage } from '@/lib/utils'
 
 const publicNav = [
   { to: '/', label: 'Trang chủ' }, { to: '/explore', label: 'Khám phá' }, { to: '/hotels', label: 'Khách sạn' },
-  { to: '/restaurants', label: 'Nhà hàng' }, { to: '/trips', label: 'Chuyến đi' }, { to: '/ai/recommendations', label: 'Gợi ý AI' },
+  { to: '/trips', label: 'Chuyến đi' }, { to: '/ai/recommendations', label: 'Gợi ý AI' },
 ]
 const partnerNav = [{ to: '/partner', label: 'Tổng quan', icon: LayoutDashboard }, { to: '/partner/hotels', label: 'Khách sạn', icon: Hotel }, { to: '/partner/rooms', label: 'Phòng', icon: BedDouble }, { to: '/partner/amenities', label: 'Tiện nghi', icon: Tags }, { to: '/partner/cancellation-policies', label: 'Chính sách hủy', icon: ScrollText }, { to: '/partner/profile', label: 'Thanh toán', icon: CreditCard }]
 partnerNav.splice(-1, 0, { to: '/partner/bookings', label: 'Đặt phòng', icon: CalendarDays })
@@ -16,6 +18,7 @@ partnerNav.splice(-1, 0, { to: '/partner/reviews', label: 'Đánh giá', icon: M
 partnerNav.splice(-1, 0, { to: '/partner/reports', label: 'Báo cáo', icon: BarChart3 })
 const adminNav = [
   { to: '/admin/bookings', label: 'Đặt phòng', icon: CalendarDays },
+  { to: '/admin/settlements', label: 'Đối soát', icon: ReceiptText },
   { to: '/admin/reviews', label: 'Đánh giá', icon: MessageSquareText },
   { to: '/admin/reports', label: 'Báo cáo', icon: BarChart3 },
   { to: '/admin/cancellation-policies', label: 'Chính sách hủy', icon: ScrollText },
@@ -23,9 +26,26 @@ const adminNav = [
   { to: '/admin/users', label: 'Người dùng', icon: UserRound },
   { to: '/admin/hotels', label: 'Duyệt khách sạn', icon: Hotel },
   { to: '/admin/amenities', label: 'Tiện nghi', icon: Tags },
+  { to: '/admin/places', label: 'Điểm đến', icon: MapPin },
 ]
 
 function Brand() { return <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-[#1E3A5F]"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1E3A5F] text-white"><Compass size={21} /></span>Hành Trình Việt</Link> }
+function NotificationBell() {
+  const user = useSession(s => s.user)
+  const query = useQuery({
+    queryKey: ['notifications', user?.id],
+    queryFn: () => api.notifications(1, 1),
+    enabled: user?.role === 'tourist' && !isMock,
+    refetchInterval: 30_000,
+  })
+  if (user?.role !== 'tourist' || isMock) return null
+  const unreadCount = query.data?.meta.unreadCount ?? 0
+  return <Link to="/notifications" aria-label={unreadCount ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'} className="relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-[#1E3A5F]">
+    <Bell size={19} />
+    {unreadCount > 0 && <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+  </Link>
+}
+
 export function TouristLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const user = useSession(s => s.user)
@@ -40,12 +60,12 @@ export function TouristLayout() {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur"><div className="container-travel flex h-16 items-center justify-between gap-5">
       <Brand />
       <nav aria-label="Điều hướng chính" className="hidden items-center gap-5 xl:flex">{publicNav.map(n => <NavLink key={n.to} end={n.to === '/'} className={({ isActive }) => 'link-nav' + (isActive ? ' active' : '')} to={n.to}>{n.label}</NavLink>)}</nav>
-      <div className="hidden items-center gap-2 sm:flex"><Link className="link-nav inline-flex items-center gap-1" to="/favorites"><Heart size={16} />Yêu thích</Link>{user ? <><Link className="link-nav inline-flex items-center gap-1" to={user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile'}><UserRound size={16} />{user.name}</Link><Button size="icon" variant="ghost" aria-label="Đăng xuất" onClick={() => { void signOut() }}><LogOut size={17} /></Button></> : <Button asChild size="sm"><Link to="/auth/login">Đăng nhập</Link></Button>}</div>
+      <div className="hidden items-center gap-2 sm:flex"><Link className="link-nav inline-flex items-center gap-1" to="/favorites"><Heart size={16} />Yêu thích</Link>{user?.role === 'tourist' && <><Link className="link-nav inline-flex items-center gap-1" to="/bookings"><CalendarDays size={16} />Booking của tôi</Link><NotificationBell /></>}{user ? <><Link className="link-nav inline-flex items-center gap-1" to={user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile'}><UserRound size={16} />{user.name}</Link><Button size="icon" variant="ghost" aria-label="Đăng xuất" onClick={() => { void signOut() }}><LogOut size={17} /></Button></> : <Button asChild size="sm"><Link to="/auth/login">Đăng nhập</Link></Button>}</div>
       <Button className="xl:hidden" variant="ghost" size="icon" aria-label={menuOpen ? 'Đóng menu' : 'Mở menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</Button>
-    </div>{menuOpen && <nav aria-label="Điều hướng trên điện thoại" className="container-travel grid gap-1 border-t border-slate-100 py-3 xl:hidden">{[...publicNav, { to: '/favorites', label: 'Yêu thích' }, { to: user ? user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile' : '/auth/login', label: user ? 'Tài khoản' : 'Đăng nhập' }].map(n => <Link className="rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" key={n.to} onClick={() => setMenuOpen(false)} to={n.to}>{n.label}</Link>)}</nav>}</header>
+    </div>{menuOpen && <nav aria-label="Điều hướng trên điện thoại" className="container-travel grid gap-1 border-t border-slate-100 py-3 xl:hidden">{[...publicNav, { to: '/favorites', label: 'Yêu thích' }, ...(user?.role === 'tourist' ? [{ to: '/bookings', label: 'Booking của tôi' }, { to: '/notifications', label: 'Thông báo' }] : []), { to: user ? user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile' : '/auth/login', label: user ? 'Tài khoản' : 'Đăng nhập' }].map(n => <Link className="rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" key={n.to} onClick={() => setMenuOpen(false)} to={n.to}>{n.label}</Link>)}</nav>}</header>
     {isMock && <div className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-900">Chế độ demo: AI, OTP và thanh toán chỉ là mô phỏng. <button className="font-semibold underline" onClick={async () => { try { await repo.reset(); setNotice('Đã đặt lại dữ liệu demo.'); logout(); navigate('/') } catch (e) { setNotice(errorMessage(e)) } }}>Đặt lại dữ liệu</button>{notice && <span className="ml-2">{notice}</span>}</div>}
     <main id="main" className="flex-1"><Outlet /></main>
-    <footer className="border-t border-slate-200 bg-[#F8FAFC]"><div className="container-travel grid gap-8 py-10 md:grid-cols-3"><div><Brand /><p className="mt-3 max-w-xs text-sm text-slate-500">Lên kế hoạch chuyến đi rõ ràng, phù hợp với sở thích của bạn.</p></div><div><h2 className="font-semibold">Khám phá</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/explore">Điểm đến</Link><Link to="/hotels">Khách sạn</Link><Link to="/restaurants">Nhà hàng</Link></div></div><div><h2 className="font-semibold">Lên kế hoạch</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/ai/trip-planner">Lập lịch trình demo</Link><Link to="/trips">Chuyến đi của tôi</Link></div></div></div><div className="border-t border-slate-200 py-4 text-center text-xs text-slate-500">© Hành Trình Việt · Dự án frontend demo</div></footer>
+    <footer className="border-t border-slate-200 bg-[#F8FAFC]"><div className="container-travel grid gap-8 py-10 md:grid-cols-3"><div><Brand /><p className="mt-3 max-w-xs text-sm text-slate-500">Lên kế hoạch chuyến đi rõ ràng, phù hợp với sở thích của bạn.</p></div><div><h2 className="font-semibold">Khám phá</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/explore">Điểm đến</Link><Link to="/hotels">Khách sạn</Link></div></div><div><h2 className="font-semibold">Lên kế hoạch</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/ai/trip-planner">Lập lịch trình demo</Link><Link to="/trips">Chuyến đi của tôi</Link></div></div></div><div className="border-t border-slate-200 py-4 text-center text-xs text-slate-500">© Hành Trình Việt · Dự án frontend demo</div></footer>
   </div>
 }
 

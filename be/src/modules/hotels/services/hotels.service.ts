@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { HotelOwnersService } from '../../hotel-owners/services/hotel-owners.service';
 import { PlacesService } from '../../places/services/places.service';
 import { UsersService } from '../../users/services/users.service';
@@ -112,6 +112,31 @@ export class HotelsService {
     const hotel = await this.repository.findById(id);
     if (!hotel) throw new HotelNotFoundException(id);
     return hotel;
+  }
+
+  async getSettlementDestination(hotelId: string): Promise<{
+    hotelId: string;
+    hotelName: string;
+    ownerUserId: string;
+    bankName: string;
+    bankAccountNumber: string;
+    bankAccountHolder: string;
+  }> {
+    const hotel = await this.findById(hotelId);
+    const owner = await this.hotelOwnersService.findByUserId(hotel.ownerUserId);
+    if (!owner.bankName || !owner.bankAccountNumber || !owner.bankAccountHolder) {
+      throw new BadRequestException(
+        'Complete the hotel owner bank details before creating a payout batch.',
+      );
+    }
+    return {
+      hotelId: hotel.id,
+      hotelName: hotel.name,
+      ownerUserId: hotel.ownerUserId,
+      bankName: owner.bankName,
+      bankAccountNumber: owner.bankAccountNumber,
+      bankAccountHolder: owner.bankAccountHolder,
+    };
   }
 
   async findPublicById(id: string): Promise<HotelEntity> {

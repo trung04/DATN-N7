@@ -27,8 +27,9 @@ export class ActivitiesService {
   async create(
     stopoverId: string,
     input: CreateActivityRequest,
+    touristUserId: string,
   ): Promise<ActivityEntity> {
-    await this.stopoversService.findById(stopoverId);
+    await this.stopoversService.findByIdForTourist(stopoverId, touristUserId);
     this.assertTimeRange(input.startTime, input.endTime);
     if (
       await this.repository.findByStopoverAndOrder(
@@ -53,8 +54,9 @@ export class ActivitiesService {
   async findPage(
     stopoverId: string,
     input: ListActivitiesRequest,
+    touristUserId: string,
   ): Promise<ActivityPage> {
-    await this.stopoversService.findById(stopoverId);
+    await this.stopoversService.findByIdForTourist(stopoverId, touristUserId);
     return this.repository.findPage({
       stopoverId,
       page: input.page,
@@ -64,8 +66,12 @@ export class ActivitiesService {
     });
   }
 
-  async findById(stopoverId: string, id: string): Promise<ActivityEntity> {
-    await this.stopoversService.findById(stopoverId);
+  async findById(
+    stopoverId: string,
+    id: string,
+    touristUserId: string,
+  ): Promise<ActivityEntity> {
+    await this.stopoversService.findByIdForTourist(stopoverId, touristUserId);
     const activity = await this.repository.findByIdAndStopoverId(
       id,
       stopoverId,
@@ -78,11 +84,12 @@ export class ActivitiesService {
     stopoverId: string,
     id: string,
     input: UpdateActivityRequest,
+    touristUserId: string,
   ): Promise<ActivityEntity> {
     if (Object.values(input).every((value) => value === undefined)) {
       throw new EmptyActivityUpdateException();
     }
-    const activity = await this.findById(stopoverId, id);
+    const activity = await this.findById(stopoverId, id, touristUserId);
     const activityOrder = input.activityOrder ?? activity.activityOrder;
     const startTime = input.startTime ?? activity.startTime.toISOString();
     const endTime = input.endTime ?? activity.endTime.toISOString();
@@ -113,8 +120,8 @@ export class ActivitiesService {
     return this.repository.save(activity);
   }
 
-  async delete(stopoverId: string, id: string): Promise<void> {
-    await this.repository.delete(await this.findById(stopoverId, id));
+  async delete(stopoverId: string, id: string, touristUserId: string): Promise<void> {
+    await this.repository.delete(await this.findById(stopoverId, id, touristUserId));
   }
 
   private assertTimeRange(startTime: string, endTime: string): void {

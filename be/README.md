@@ -225,39 +225,35 @@ restarts.
 
 Financial workflows use explicit endpoints:
 
-- `PUT /api/v1/bookings/:bookingId/payment/vnpay`
-- `GET /api/v1/payments/vnpay/ipn`
-- `GET /api/v1/payments/vnpay/return`
-- `PUT /api/v1/bookings/:bookingId/settlement`
-- `PUT /api/v1/bookings/:bookingId/refund`
+- PUT /api/v1/bookings/:bookingId/payment/sepay
+- POST /api/v1/payments/sepay/webhook
+- PUT /api/v1/bookings/:bookingId/settlement
+- PUT /api/v1/bookings/:bookingId/refund
+- PUT /api/v1/bookings/:bookingId/refund/sync
 
-The payment endpoint creates one signed VNPAY Sandbox payment URL and lets the
-customer choose a supported payment method on the VNPAY page.
-Only a checksum-valid VNPAY IPN with matching terminal, booking, and amount can
-change the booking to `PAID` and `CONFIRMED`; there is no public manual payment
-completion endpoint. The return endpoint verifies and displays status but does
-not mutate payment state. Refund requests call the VNPAY Sandbox refund API and
-each booking permits only one refund request.
+The payment endpoint creates a SePay API v2 Sandbox VA order and returns its
+QR, VA number, exact amount, and transfer code. SePay's authenticated bank
+webhook confirms the booking only after its code and amount match. Cancelling a
+paid booking submits the policy-calculated refund automatically. The sync
+endpoint refreshes the status from SePay; retries reuse the persisted
+idempotency key so a network timeout cannot cause a duplicate payout.
 
-Add the credentials issued by the VNPAY Sandbox developer portal to `be/.env`:
+Configure the Test mode API token, bank account UUID, and webhook authentication
+in be/.env:
 
-```dotenv
-VNPAY_TMN_CODE=your_sandbox_terminal_code
-VNPAY_HASH_SECRET=your_sandbox_hash_secret
-VNPAY_RETURN_URL=http://localhost:3000/api/v1/payments/vnpay/return
-VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-VNPAY_REFUND_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
-VNPAY_REFUND_CREATE_BY=system
-BOOKING_COMMISSION_RATE=15
-BOOKING_HOLD_MINUTES=15
-IDEMPOTENCY_KEY_TTL_HOURS=24
-```
+SEPAY_V2_BASE_URL=https://userapi-sandbox.sepay.vn/v2
+SEPAY_V2_API_TOKEN=your_test_mode_api_token
+SEPAY_V2_BANK_ACCOUNT_XID=your_test_bank_account_uuid
+SEPAY_V2_TERMINAL_ID=your_test_vcb_terminal_id
+SEPAY_WEBHOOK_AUTH_TYPE=HMAC_SHA256
+SEPAY_WEBHOOK_SECRET=your_webhook_hmac_secret
 
-Register the public HTTPS IPN URL
-`https://your-api-domain/api/v1/payments/vnpay/ipn` with VNPAY. A localhost or
-tailnet-only IPN address cannot be called by VNPAY; use a public test domain or
-HTTPS tunnel for end-to-end Sandbox testing. Secrets must never be committed.
-
+Set the webhook URL to https://your-public-host/api/v1/payments/sepay/webhook
+in SePay Test mode. The existing /api/v1/payments/sepay/ipn path is also kept
+as an alias for an already configured webhook. Select HMAC-SHA256 and use that webhook's secret in
+SEPAY_WEBHOOK_SECRET. The API v2 token and webhook secret are separate. The
+API base URL is restricted to Sandbox; Production is not enabled here. Never
+commit secrets.
 Settlement commission and partner receivable amounts are calculated by the
 service from the persisted commission rate. Bookings are not hard-deleted;
 cancellation is represented by the `CANCELLED` status. Cancellation-policy and

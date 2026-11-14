@@ -116,6 +116,8 @@ services:
       target: production
     image: datn-n7-backend:local
     restart: unless-stopped
+    env_file:
+      - ./be/.env
     ports:
       - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     environment:

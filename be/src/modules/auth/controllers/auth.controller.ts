@@ -21,6 +21,8 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { GoogleStartRequest } from '../dtos/requests/google-auth.request';
 import { LoginRequest } from '../dtos/requests/login.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
+import { EmailOtpRequest } from '../dtos/requests/email-otp.request';
+import { RequestPasswordResetRequest, ResetPasswordRequest } from '../dtos/requests/request-password-reset.request';
 import {
   AccountUnavailableException,
   GoogleAccountLinkRequiredException,
@@ -46,10 +48,40 @@ export class AuthController {
   async register(
     @Body() input: RegisterRequest,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<UserResponse> {
-    const user = await this.authService.register(input);
-    response.setHeader('Location', `/api/v1/users/${user.id}`);
-    return UserMapper.toResponse(user);
+  ): Promise<{ accepted: true }> {
+    await this.authService.register(input);
+    response.status(HttpStatus.ACCEPTED);
+    return { accepted: true };
+  }
+
+  @Post('verify-otp')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async verifyOtp(@Body() input: EmailOtpRequest): Promise<void> {
+    await this.authService.verifyEmail(input);
+  }
+
+  @Post('resend-otp')
+  @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  async resendOtp(@Body() input: RequestPasswordResetRequest): Promise<{ accepted: true }> {
+    await this.authService.resendVerification(input);
+    return { accepted: true };
+  }
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  async forgotPassword(@Body() input: RequestPasswordResetRequest): Promise<{ accepted: true }> {
+    await this.authService.requestPasswordReset(input);
+    return { accepted: true };
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resetPassword(@Body() input: ResetPasswordRequest): Promise<void> {
+    await this.authService.resetPassword(input);
   }
 
   @Post('login')
