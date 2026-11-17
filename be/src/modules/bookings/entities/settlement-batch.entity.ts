@@ -21,6 +21,11 @@ export enum SettlementBatchStatus {
   FAILED = 'FAILED',
 }
 
+export enum SettlementTransferMode {
+  MANUAL = 'MANUAL',
+  SEPAY_BANKHUB_SANDBOX = 'SEPAY_BANKHUB_SANDBOX',
+}
+
 @Entity({ name: 'settlement_batches' })
 @Index('UQ_settlement_batches_hotel_period', ['hotelId', 'periodStart', 'periodEnd'], { unique: true })
 @Index('IDX_settlement_batches_status_created', ['status', 'createdAt'])
@@ -93,6 +98,12 @@ export class SettlementBatchEntity {
 
   @Column({ name: 'transfer_reference', type: 'varchar', length: 255, nullable: true, unique: true })
   transferReference: string | null;
+
+  @Column({ name: 'transfer_mode', type: 'varchar', length: 40, default: SettlementTransferMode.MANUAL })
+  transferMode: SettlementTransferMode;
+
+  @Column({ name: 'provider_transfer_id', type: 'varchar', length: 255, nullable: true })
+  providerTransferId: string | null;
 
   @Column({ type: 'integer', default: 1 })
   revision: number;

@@ -165,6 +165,7 @@ services:
       args:
         VITE_DATA_MODE: ${VITE_DATA_MODE:-api}
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-8080}:80"

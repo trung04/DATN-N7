@@ -1,7 +1,11 @@
 export class StopoverResponse {
   id: string;
   itineraryId: string;
-  placeId: string;
+  placeId: string | null;
+  customName: string | null;
+  customAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
   stopOrder: number;
   arrivalTime: string;
   departureTime: string;

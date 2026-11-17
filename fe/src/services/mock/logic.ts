@@ -362,7 +362,14 @@ export const mock = {
     const rooms = selectedIds.map(id => data.rooms.find(room => room.id === id && room.hotelId === values.hotelId)).filter((room): room is RoomType => Boolean(room))
     const hotel = data.hotels.find(h => h.id === values.hotelId)
     assert(rooms.length === selectedIds.length && hotel, 'NOT_FOUND', 'Không tìm thấy phòng.', 404)
-    assert(values.adults + values.children <= rooms.reduce((sum, room) => sum + room.capacity, 0), 'CAPACITY', 'Số khách vượt sức chứa phòng.')
+    if (values.roomGuests) {
+      const allocations = values.roomGuests
+      assert(allocations.length === rooms.length && allocations.every((allocation, index) => allocation.roomId === selectedIds[index]), 'GUESTS', 'Cần phân bổ khách cho từng phòng.')
+      assert(allocations.reduce((sum, allocation) => sum + allocation.adultCount, 0) === values.adults && allocations.reduce((sum, allocation) => sum + allocation.childAges.length, 0) === values.children, 'GUESTS', 'Tổng khách chưa khớp với phân bổ theo phòng.')
+      assert(rooms.every((room, index) => { const allocation = allocations[index]; return Boolean(allocation) && allocation!.adultCount + allocation!.childAges.length <= room.capacity && allocation!.childAges.every(age => age < 12) }), 'CAPACITY', 'Sức chứa hoặc tuổi trẻ em không hợp lệ.')
+    } else {
+      assert(values.adults + values.children <= rooms.reduce((sum, room) => sum + room.capacity, 0), 'CAPACITY', 'Số khách vượt sức chứa phòng.')
+    }
     const existing = data.bookings.find(b => b.userId === userId && activeHold(b) && b.checkIn === values.checkIn && b.checkOut === values.checkOut && [...(b.roomIds ?? [b.roomId])].sort().join('|') === [...selectedIds].sort().join('|'))
     if (existing) return existing
     const dates = stayDays(values.checkIn, values.checkOut)

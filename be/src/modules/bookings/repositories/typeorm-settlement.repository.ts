@@ -117,6 +117,7 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
   async findPage(filters: {
     hotelId?: string;
     status?: string;
+    ownerUserId?: string;
   }): Promise<SettlementBatchWithItems[]> {
     const query = this.batches.createQueryBuilder('batch');
     if (filters.hotelId) {
@@ -124,6 +125,11 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
     }
     if (filters.status) {
       query.andWhere('batch.status = :status', { status: filters.status });
+    }
+    if (filters.ownerUserId) {
+      query.andWhere('batch.ownerUserId = :ownerUserId', {
+        ownerUserId: filters.ownerUserId,
+      });
     }
     const batches = await query
       .orderBy('batch.createdAt', 'DESC')
@@ -169,7 +175,10 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
     nextStatus: string;
     approvedBy?: string;
     transferReference?: string;
+    transferMode?: string;
+    providerTransferId?: string;
     failureReason?: string;
+    eventNote?: string;
     actorUserId: string;
   }): Promise<SettlementBatchWithItems | null> {
     return this.dataSource.transaction(async (manager) => {
@@ -223,6 +232,7 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
         batch.processingAt = new Date();
         batch.failedAt = null;
         batch.failureReason = null;
+        batch.transferMode = (input.transferMode ?? batch.transferMode) as SettlementBatchEntity['transferMode'];
       }
 
       if (input.nextStatus === 'PAID') {
@@ -256,6 +266,8 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
         }
         await manager.getRepository(BookingEntity).save(bookings);
         batch.transferReference = input.transferReference;
+        batch.transferMode = (input.transferMode ?? batch.transferMode) as SettlementBatchEntity['transferMode'];
+        batch.providerTransferId = input.providerTransferId ?? null;
         batch.paidAt = new Date();
       }
 
@@ -284,7 +296,7 @@ export class TypeOrmSettlementRepository implements SettlementRepository {
           fromStatus,
           toStatus: input.nextStatus,
           actorUserId: input.actorUserId,
-          note,
+          note: input.eventNote ?? note,
           transferReference: input.transferReference ?? null,
         }),
       );

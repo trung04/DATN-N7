@@ -58,7 +58,7 @@ export function PlannerPage() {
 
   const save = async () => {
     if (!draft) return
-    if (!user || user.role !== 'tourist') { navigate('/auth/login?returnTo=' + encodeURIComponent('/ai/trip-planner')); return }
+    if (!user || user.role !== 'tourist') { navigate('/dang-nhap?returnTo=' + encodeURIComponent('/ai/trip-planner')); return }
     setBusy(true)
     try {
       const trip = await repo.savePlannedTrip(user.id, draft)

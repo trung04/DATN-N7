@@ -190,6 +190,32 @@ export function validateEnvironment(input: Record<string, unknown>) {
   if (config.SEPAY_V2_BANK_ACCOUNT_XID && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.SEPAY_V2_BANK_ACCOUNT_XID as string)) {
     throw new Error('SEPAY_V2_BANK_ACCOUNT_XID must be a UUID');
   }
+  for (const key of [
+    'SEPAY_BANKHUB_CLIENT_ID',
+    'SEPAY_BANKHUB_CLIENT_SECRET',
+    'SEPAY_BANKHUB_BANK_ACCOUNT_XID',
+  ]) {
+    config[key] ??= '';
+    if (typeof config[key] !== 'string') {
+      throw new Error(`${key} must be a string`);
+    }
+  }
+  if (
+    Boolean(config.SEPAY_BANKHUB_CLIENT_ID) !==
+    Boolean(config.SEPAY_BANKHUB_CLIENT_SECRET)
+  ) {
+    throw new Error(
+      'SEPAY_BANKHUB_CLIENT_ID and SEPAY_BANKHUB_CLIENT_SECRET must be configured together',
+    );
+  }
+  if (
+    config.SEPAY_BANKHUB_BANK_ACCOUNT_XID &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      config.SEPAY_BANKHUB_BANK_ACCOUNT_XID as string,
+    )
+  ) {
+    throw new Error('SEPAY_BANKHUB_BANK_ACCOUNT_XID must be a UUID');
+  }
   config.SEPAY_WEBHOOK_AUTH_TYPE ??= 'HMAC_SHA256';
   if (!['HMAC_SHA256', 'API_KEY'].includes(config.SEPAY_WEBHOOK_AUTH_TYPE as string)) {
     throw new Error('SEPAY_WEBHOOK_AUTH_TYPE must be HMAC_SHA256 or API_KEY');

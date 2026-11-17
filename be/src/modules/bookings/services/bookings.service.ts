@@ -8,9 +8,11 @@ import type { AuthorizationActor } from '../../authorization/interfaces/authoriz
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
-import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
+import { RoomOperationalStatus, RoomEntity } from '../../rooms/entities/room.entity';
+import { RoomGuestPolicyEntity } from '../../rooms/entities/room-guest-policy.entity';
 import { RoomsService } from '../../rooms/services/rooms.service';
 import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
+import { RoomGuestAllocationRequest } from '../dtos/requests/room-guest-allocation.request';
 import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
 import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
@@ -33,6 +35,7 @@ import {
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
   BookingCapacityExceededException,
+  BookingGuestAllocationException,
   BookingRoomNotOperationalException,
   BookingReservationExpiredException,
   BookingRoomsCurrencyMismatchException,
@@ -142,24 +145,44 @@ export class BookingsService {
     if (unavailableRoom) {
       throw new BookingRoomNotOperationalException(unavailableRoom.id);
     }
-    const guestCount = input.adultCount + input.childCount;
-    const totalCapacity = rooms.reduce(
-      (total, room) => total + room.maxOccupancy,
-      0,
+    const guestAllocations = await this.resolveGuestAllocations(
+      hotelId,
+      rooms,
+      input,
     );
-    if (guestCount > totalCapacity) {
-      throw new BookingCapacityExceededException();
-    }
 
     const numberOfNights = this.resolveNumberOfNights(
       input.checkInDate,
       input.checkOutDate,
     );
-    const totalAmount = this.roundMoney(
-      rooms.reduce(
-        (total, room) => total + room.pricePerNight * numberOfNights,
+    const roomItems = rooms.map((room) => {
+      const allocation = guestAllocations.get(room.id)!;
+      const childSurchargePerNight = allocation.childGuests.reduce(
+        (total, child) => total + child.surchargePerNightSnapshot,
         0,
-      ),
+      );
+      return {
+        roomId: room.id,
+        roomNumberSnapshot: room.roomNumber,
+        roomTypeSnapshot: room.roomType,
+        maxOccupancySnapshot: room.maxOccupancy,
+        adultCount: allocation.adultCount,
+        maxAdultsSnapshot: allocation.maxAdults,
+        maxChildrenSnapshot: allocation.maxChildren,
+        adultAgeFromSnapshot: allocation.adultAgeFrom,
+        freeChildMaxAgeSnapshot: allocation.freeChildMaxAge,
+        childSurchargePerNightSnapshot: allocation.childSurchargePerNight,
+        childGuests: allocation.childGuests,
+        pricePerNight: room.pricePerNight,
+        currency: room.currency,
+        numberOfNights,
+        subtotal: this.roundMoney(
+          (room.pricePerNight + childSurchargePerNight) * numberOfNights,
+        ),
+      };
+    });
+    const totalAmount = this.roundMoney(
+      roomItems.reduce((total, room) => total + room.subtotal, 0),
     );
     const appliedCommissionRate = this.configService.getOrThrow<number>(
       'BOOKING_COMMISSION_RATE',
@@ -171,7 +194,7 @@ export class BookingsService {
       'IDEMPOTENCY_KEY_TTL_HOURS',
     );
 
-    return this.repository.create(
+    const created = await this.repository.create(
       {
         hotelId,
         touristId,
@@ -223,22 +246,25 @@ export class BookingsService {
         refundFailedAt: null,
         refundHandledBy: null,
       },
-      rooms.map((room) => ({
-        roomId: room.id,
-        roomNumberSnapshot: room.roomNumber,
-        roomTypeSnapshot: room.roomType,
-        maxOccupancySnapshot: room.maxOccupancy,
-        pricePerNight: room.pricePerNight,
-        currency: room.currency,
-        numberOfNights,
-        subtotal: this.roundMoney(room.pricePerNight * numberOfNights),
-      })),
+      roomItems,
       {
         key: idempotencyKey,
         requestHash,
         expiresAt: new Date(Date.now() + idempotencyTtlHours * 3_600_000),
       },
     );
+    if (!created.replayed) {
+      await this.notify(
+        created.booking,
+        NotificationType.BOOKING_CREATED,
+        'booking:' + created.booking.id + ':created',
+        'Đã nhận yêu cầu đặt phòng',
+        'Booking ' +
+          created.booking.bookingCode +
+          ' đã được tạo và đang chờ thanh toán.',
+      );
+    }
+    return created;
   }
 
   private fingerprintCreateRequest(
@@ -252,6 +278,13 @@ export class BookingsService {
       checkOutDate: input.checkOutDate,
       adultCount: input.adultCount,
       childCount: input.childCount,
+      roomGuests: input.roomGuests
+        ?.map((allocation) => ({
+          roomId: allocation.roomId,
+          adultCount: allocation.adultCount,
+          childAges: [...(allocation.childAges ?? [])].sort((left, right) => left - right),
+        }))
+        .sort((left, right) => left.roomId.localeCompare(right.roomId)),
       guestName: input.guestName.trim(),
       guestEmail: input.guestEmail.trim().toLowerCase(),
       guestPhone: input.guestPhone.trim(),
@@ -261,6 +294,129 @@ export class BookingsService {
     return createHash('sha256')
       .update(JSON.stringify(canonicalRequest))
       .digest('hex');
+  }
+
+  private async resolveGuestAllocations(
+    hotelId: string,
+    rooms: RoomEntity[],
+    input: CreateBookingRequest,
+  ): Promise<Map<string, {
+    adultCount: number;
+    maxAdults: number;
+    maxChildren: number;
+    adultAgeFrom: number;
+    freeChildMaxAge: number;
+    childSurchargePerNight: number;
+    childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
+  }>> {
+    const listPolicies = (this.roomsService as RoomsService & {
+      listGuestPolicies?: (id: string) => Promise<RoomGuestPolicyEntity[]>;
+    }).listGuestPolicies;
+    const policies = listPolicies
+      ? await listPolicies.call(this.roomsService, hotelId)
+      : [];
+    const policyByRoomType = new Map(
+      policies.map((policy) => [this.normalizeRoomType(policy.roomType), policy]),
+    );
+    const policyFor = (room: RoomEntity) => {
+      const configured = policyByRoomType.get(this.normalizeRoomType(room.roomType));
+      return {
+        maxAdults: Math.min(configured?.maxAdults ?? room.maxOccupancy, room.maxOccupancy),
+        maxChildren: configured?.maxChildren ?? room.maxOccupancy,
+        adultAgeFrom: configured?.adultAgeFrom ?? 12,
+        freeChildMaxAge: configured?.freeChildMaxAge ?? 11,
+        childSurchargePerNight: configured?.childSurchargePerNight ?? 0,
+      };
+    };
+
+    let requested: RoomGuestAllocationRequest[] | undefined = input.roomGuests;
+    if (!requested) {
+      const totalCapacity = rooms.reduce((total, room) => total + room.maxOccupancy, 0);
+      if (input.adultCount + input.childCount > totalCapacity) {
+        throw new BookingCapacityExceededException();
+      }
+      if (input.childCount > 0) {
+        throw new BookingGuestAllocationException(
+          'Provide each child age and assign guests to each selected room.',
+        );
+      }
+      let remainingAdults = input.adultCount;
+      requested = rooms.map((room) => {
+        const adultCount = Math.min(remainingAdults, policyFor(room).maxAdults);
+        remainingAdults -= adultCount;
+        return { roomId: room.id, adultCount, childAges: [] };
+      });
+      if (remainingAdults > 0) throw new BookingCapacityExceededException();
+    }
+
+    const roomById = new Map(rooms.map((room) => [room.id, room]));
+    const requestByRoom = new Map(requested.map((allocation) => [allocation.roomId, allocation]));
+    if (
+      requestByRoom.size !== rooms.length ||
+      rooms.some((room) => !requestByRoom.has(room.id)) ||
+      [...requestByRoom.keys()].some((roomId) => !roomById.has(roomId))
+    ) {
+      throw new BookingGuestAllocationException(
+        'Guest allocation must include every selected room exactly once.',
+      );
+    }
+
+    const adultTotal = requested.reduce((sum, allocation) => sum + allocation.adultCount, 0);
+    const childTotal = requested.reduce((sum, allocation) => sum + (allocation.childAges?.length ?? 0), 0);
+    if (adultTotal !== input.adultCount || childTotal !== input.childCount) {
+      throw new BookingGuestAllocationException(
+        'Per-room guest counts must match adultCount and childCount.',
+      );
+    }
+
+    const result = new Map<string, {
+      adultCount: number;
+      maxAdults: number;
+      maxChildren: number;
+      adultAgeFrom: number;
+      freeChildMaxAge: number;
+      childSurchargePerNight: number;
+      childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
+    }>();
+    for (const allocation of requested) {
+      const room = roomById.get(allocation.roomId)!;
+      const policy = policyFor(room);
+      const childAges = allocation.childAges ?? [];
+      if (allocation.adultCount > policy.maxAdults) {
+        throw new BookingGuestAllocationException(
+          `Room ${room.roomNumber} allows at most ${policy.maxAdults} adults. Add another room or distribute the guests differently.`,
+        );
+      }
+      if (childAges.length > policy.maxChildren) {
+        throw new BookingGuestAllocationException(
+          `Room ${room.roomNumber} allows at most ${policy.maxChildren} children.`,
+        );
+      }
+      if (allocation.adultCount + childAges.length > room.maxOccupancy) {
+        throw new BookingCapacityExceededException();
+      }
+      if (childAges.some((age) => age >= policy.adultAgeFrom)) {
+        throw new BookingGuestAllocationException(
+          `Guests aged ${policy.adultAgeFrom} or older must be counted as adults.`,
+        );
+      }
+      result.set(room.id, {
+        adultCount: allocation.adultCount,
+        ...policy,
+        childGuests: childAges.map((ageAtCheckIn) => ({
+          ageAtCheckIn,
+          surchargePerNightSnapshot:
+            ageAtCheckIn > policy.freeChildMaxAge
+              ? policy.childSurchargePerNight
+              : 0,
+        })),
+      });
+    }
+    return result;
+  }
+
+  private normalizeRoomType(value: string): string {
+    return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN');
   }
 
   findPage(input: ListBookingsRequest): Promise<BookingPage> {
@@ -821,7 +977,7 @@ export class BookingsService {
         message,
         link: `/bookings/${booking.id}`,
         eventKey,
-      });
+      }, booking.guestEmail);
     } catch {
       this.logger.error(
         `Failed to persist booking notification (${type}).`,

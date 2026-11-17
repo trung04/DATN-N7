@@ -7,12 +7,20 @@ import {
 } from 'typeorm';
 
 export enum NotificationType {
+  BOOKING_CREATED = 'BOOKING_CREATED',
   PAYMENT_SUCCEEDED = 'PAYMENT_SUCCEEDED',
   BOOKING_CONFIRMED = 'BOOKING_CONFIRMED',
   BOOKING_CANCELLED = 'BOOKING_CANCELLED',
   REFUND_PROCESSING = 'REFUND_PROCESSING',
   REFUND_SUCCEEDED = 'REFUND_SUCCEEDED',
   REFUND_FAILED = 'REFUND_FAILED',
+}
+
+export enum NotificationEmailDeliveryStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
 }
 
 @Entity({ name: 'notifications' })

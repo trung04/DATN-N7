@@ -82,17 +82,23 @@ export interface CreateBookingData {
   refundHandledBy: string | null;
 }
 
-export type CreateBookingRoomData = Pick<
-  BookingRoomEntity,
-  | 'roomId'
-  | 'roomNumberSnapshot'
-  | 'roomTypeSnapshot'
-  | 'maxOccupancySnapshot'
-  | 'pricePerNight'
-  | 'currency'
-  | 'numberOfNights'
-  | 'subtotal'
->;
+export interface CreateBookingRoomData {
+  roomId: string;
+  roomNumberSnapshot: string;
+  roomTypeSnapshot: string;
+  maxOccupancySnapshot: number;
+  adultCount: number;
+  maxAdultsSnapshot: number;
+  maxChildrenSnapshot: number;
+  adultAgeFromSnapshot: number;
+  freeChildMaxAgeSnapshot: number;
+  childSurchargePerNightSnapshot: number;
+  pricePerNight: number;
+  currency: string;
+  numberOfNights: number;
+  subtotal: number;
+  childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
+}
 
 export interface BookingRepository {
   findUnavailableRoomIds(

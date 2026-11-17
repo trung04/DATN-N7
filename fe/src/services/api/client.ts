@@ -1,11 +1,11 @@
 import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { DomainError } from '@/lib/errors'
-import type { AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
 interface BackendHotel {
-  id: string; name: string; description: string | null; address: string
+  id: string; placeId?: string | null; name: string; description: string | null; address: string
   starRating: number | null; checkInTime: string
   images: PartnerHotel['images']
 }
@@ -34,7 +34,8 @@ interface BackendItinerary {
   isAiGenerated: boolean
 }
 interface BackendStopover {
-  id: string; itineraryId: string; placeId: string; stopOrder: number
+  id: string; itineraryId: string; placeId: string | null; customName: string | null
+  customAddress: string | null; latitude: number | null; longitude: number | null; stopOrder: number
   arrivalTime: string; departureTime: string; description: string | null
 }
 interface BackendActivity {
@@ -61,7 +62,7 @@ interface BackendBooking {
   refundRequestedAt: string | null; refundProcessingAt: string | null; refundAttempt: number
   refundFailureReason: string | null; refundFailedAt: string | null
   refundedAt: string | null; refundTransactionId: string | null
-  roomItems: Array<{ roomId: string; roomNumberSnapshot: string; roomTypeSnapshot: string; maxOccupancySnapshot: number; pricePerNight: number; numberOfNights: number }>
+  roomItems: Array<{ roomId: string; roomNumberSnapshot: string; roomTypeSnapshot: string; maxOccupancySnapshot: number; adultCount?: number | null; maxAdultsSnapshot?: number | null; maxChildrenSnapshot?: number | null; adultAgeFromSnapshot?: number | null; freeChildMaxAgeSnapshot?: number | null; childSurchargePerNightSnapshot?: number | null; childGuests?: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>; pricePerNight: number; subtotal?: number; numberOfNights: number }>
 }
 type BackendBookingPage = Page<BackendBooking>
 interface BackendUser {
@@ -99,7 +100,7 @@ const mapBookingStatus = (booking: BackendBooking): Booking['status'] => {
 export function mapBackendBooking(booking: BackendBooking): Booking {
   const firstRoom = booking.roomItems[0]
   const nights = Math.max(1, firstRoom?.numberOfNights ?? 1)
-  const nightlyTotal = booking.roomItems.reduce((total, room) => total + room.pricePerNight, 0)
+  const nightlyTotal = booking.totalAmount / nights
   return {
     id: booking.id,
     bookingCode: booking.bookingCode,
@@ -107,6 +108,7 @@ export function mapBackendBooking(booking: BackendBooking): Booking {
     hotelId: booking.hotelId,
     roomId: firstRoom?.roomId ?? '',
     roomIds: booking.roomItems.map(room => room.roomId),
+    roomGuests: booking.roomItems.flatMap(room => room.adultCount === null || room.adultCount === undefined ? [] : [{ roomId: room.roomId, adultCount: room.adultCount, childAges: (room.childGuests ?? []).map(child => child.ageAtCheckIn) }]),
     checkIn: booking.checkInDate,
     checkOut: booking.checkOutDate,
     rooms: booking.roomItems.length,
@@ -260,8 +262,12 @@ async function publicCatalog() {
   const hotels: Hotel[] = hotelPage.data.map(hotel => {
     const address = hotel.address.split(',').map(part => part.trim()).filter(Boolean)
     const hotelRooms = rooms.filter(room => room.hotelId === hotel.id)
+    const linkedPlace = hotel.placeId ? placePage.data.find(place => place.id === hotel.placeId) : undefined
     return {
       id: hotel.id,
+      ...(hotel.placeId ? { placeId: hotel.placeId } : {}),
+      ...(linkedPlace?.latitude != null ? { lat: linkedPlace.latitude } : {}),
+      ...(linkedPlace?.longitude != null ? { lng: linkedPlace.longitude } : {}),
       name: hotel.name,
       city: address.at(-1) ?? hotel.address,
       area: address.length >= 2 ? address.at(-2) ?? '' : '',
@@ -309,6 +315,8 @@ type AdminHotelsApi = {
 
 type PartnerRoomsApi = {
   amenities: () => Promise<Page<AmenityOption>>
+  roomGuestPolicies: (hotelId: string | string[]) => Promise<RoomGuestPolicy[]>
+  saveRoomGuestPolicy: (input: RoomGuestPolicyInput) => Promise<RoomGuestPolicy>
   managedRooms: (hotelId: string) => Promise<ManagedRoomPage>
   managedRoom: (roomId: string) => Promise<ManagedRoom>
   createManagedRoom: (input: ManagedRoomInput) => Promise<ManagedRoom>
@@ -358,6 +366,7 @@ type BookingsManagementApi = {
 
 type SettlementsApi = {
   settlementBatches: (filters?: { hotelId?: string; status?: SettlementStatus }) => Promise<SettlementBatch[]>
+  partnerSettlementBatches: () => Promise<SettlementBatch[]>
   settlementBatch: (id: string) => Promise<SettlementBatch>
   createSettlementBatch: (input: { hotelId: string; periodStart: string; periodEnd: string }) => Promise<SettlementBatch>
   approveSettlementBatch: (id: string) => Promise<SettlementBatch>
@@ -399,7 +408,7 @@ async function loadMyItineraries(userId: string) {
     params: { page: 1, limit: 100, sortBy: 'stopOrder', sortOrder: 'ASC' },
   })))
   const backendStops = stopPages.flatMap(response => response.data)
-  const placeIds = [...new Set(backendStops.map(stop => stop.placeId))]
+  const placeIds = [...new Set(backendStops.flatMap(stop => stop.placeId ? [stop.placeId] : []))]
   const places = await Promise.all(placeIds.map(id => request<BackendPlace>({ method: 'GET', url: '/places/' + id })))
   const placeById = new Map(places.map(place => [place.id, place]))
   const activityPages = await Promise.all(backendStops.map(stop => request<Page<BackendActivity>>({
@@ -421,13 +430,15 @@ async function loadMyItineraries(userId: string) {
     status: itinerary.status,
   }))
   const stops: Stopover[] = backendStops.map(stop => {
-    const place = placeById.get(stop.placeId)
+    const place = placeById.get(stop.placeId ?? '')
     return {
       id: stop.id,
       tripId: stop.itineraryId,
-      placeId: stop.placeId,
-      name: place?.name ?? 'Địa điểm đã lưu',
-      address: place?.address ?? place?.city ?? '',
+      placeId: stop.placeId ?? undefined,
+      name: stop.customName ?? place?.name ?? 'Địa điểm đã lưu',
+      address: stop.customAddress ?? place?.address ?? place?.city ?? '',
+      lat: stop.latitude ?? undefined,
+      lng: stop.longitude ?? undefined,
       start: toDateTimeInput(stop.arrivalTime),
       end: toDateTimeInput(stop.departureTime),
       order: stop.stopOrder,
@@ -496,6 +507,8 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   adminHotelReviewHistory: (hotelId: string) => request<AdminHotelReviewHistory[]>({ method: 'GET', url: '/admin/hotels/' + hotelId + '/review-history' }),
   reviewHotel: (hotelId: string, action: AdminHotelReviewCommand, reason?: string) => request<PartnerHotel>({ method: 'PATCH', url: '/admin/hotels/' + hotelId + '/status', data: { action, ...(reason ? { reason } : {}) } }),
   amenities: () => request<Page<AmenityOption>>({ method: 'GET', url: '/amenities', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' } }),
+  roomGuestPolicies: hotelId => request<RoomGuestPolicy[]>({ method: 'GET', url: '/rooms/guest-policies', params: Array.isArray(hotelId) ? { hotelIds: hotelId.join(',') } : { hotelId } }),
+  saveRoomGuestPolicy: input => request<RoomGuestPolicy>({ method: 'PUT', url: '/rooms/guest-policies', data: input }),
   managedRooms: hotelId => request<ManagedRoomPage>({ method: 'GET', url: '/rooms', params: { page: 1, limit: 100, hotelId, sortBy: 'roomNumber', sortOrder: 'ASC' } }),
   managedRoom: roomId => request<ManagedRoom>({ method: 'GET', url: '/rooms/' + roomId }),
   createManagedRoom: input => request<ManagedRoom>({ method: 'POST', url: '/rooms', data: input }),
@@ -595,8 +608,8 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   },
   deleteTrip: (_userId, tripId) => request<void>({ method: 'DELETE', url: '/itineraries/' + tripId }),
   saveStop: async (_userId, stop) => {
-    if (!stop.placeId) throw new DomainError('PLACE_REQUIRED', 'Vui lòng chọn địa điểm từ danh mục.')
-    const payload = { placeId: stop.placeId, stopOrder: stop.order, arrivalTime: toBackendTime(stop.start), departureTime: toBackendTime(stop.end), description: stop.note || null }
+    if (!stop.placeId && (!stop.name.trim() || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lng))) throw new DomainError('STOP_LOCATION_REQUIRED', 'Điểm dừng tùy chỉnh cần tên và vị trí trên bản đồ.')
+    const payload = { ...(stop.placeId ? { placeId: stop.placeId } : { customName: stop.name.trim(), customAddress: stop.address.trim() || null, latitude: stop.lat, longitude: stop.lng }), stopOrder: stop.order, arrivalTime: toBackendTime(stop.start), departureTime: toBackendTime(stop.end), description: stop.note || null }
     if (stop.id) await request<BackendStopover>({ method: 'PATCH', url: '/itineraries/' + stop.tripId + '/stopovers/' + stop.id, data: payload })
     else await request<BackendStopover>({ method: 'POST', url: '/itineraries/' + stop.tripId + '/stopovers', data: payload })
   },
@@ -637,6 +650,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
       checkOutDate: values.checkOut,
       adultCount: values.adults,
       childCount: values.children,
+      ...(values.roomGuests ? { roomGuests: values.roomGuests } : {}),
       guestName: values.guestName,
       guestEmail: values.guestEmail,
       guestPhone: values.guestPhone,
@@ -660,6 +674,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   toggleService: id => request({ method: 'POST', url: '/admin/services/' + id + '/toggle' }),
   moderateReview: (id, status, reason) => request({ method: 'POST', url: '/admin/reviews/' + id + '/moderation', data: { status, reason } }),
   settlementBatches: filters => request<SettlementBatch[]>({ method: 'GET', url: '/settlements', params: filters }),
+  partnerSettlementBatches: () => request<SettlementBatch[]>({ method: 'GET', url: '/settlements/mine' }),
   settlementBatch: id => request<SettlementBatch>({ method: 'GET', url: '/settlements/' + id }),
   createSettlementBatch: input => request<SettlementBatch>({ method: 'POST', url: '/settlements', data: input }),
   approveSettlementBatch: id => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/approve' }),

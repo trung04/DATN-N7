@@ -13,6 +13,13 @@ export class BookingRoomResponse {
   roomNumberSnapshot: string;
   roomTypeSnapshot: string;
   maxOccupancySnapshot: number;
+  adultCount: number | null;
+  maxAdultsSnapshot: number | null;
+  maxChildrenSnapshot: number | null;
+  adultAgeFromSnapshot: number | null;
+  freeChildMaxAgeSnapshot: number | null;
+  childSurchargePerNightSnapshot: number | null;
+  childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
   pricePerNight: number;
   currency: string;
   numberOfNights: number;

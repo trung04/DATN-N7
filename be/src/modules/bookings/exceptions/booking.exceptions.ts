@@ -106,6 +106,12 @@ export class BookingCapacityExceededException extends DomainException {
   }
 }
 
+export class BookingGuestAllocationException extends DomainException {
+  constructor(message: string) {
+    super(message, 'BOOKING_GUEST_ALLOCATION_INVALID', 'validation');
+  }
+}
+
 export class BookingRoomUnavailableException extends DomainException {
   constructor(roomId: string) {
     super(

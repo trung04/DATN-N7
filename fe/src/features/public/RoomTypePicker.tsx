@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Card, Picture } from '@/components/common'
 import { currency, nights } from '@/lib/utils'
 import { seededRoomPhoto } from '@/lib/hotel-media'
-import type { Hotel, RoomInventory, RoomType } from '@/types/domain'
+import type { Hotel, RoomGuestPolicy, RoomInventory, RoomType } from '@/types/domain'
+import { allocateGuestsToRooms } from '@/lib/room-occupancy'
 
 type Props = {
   hotel: Hotel
@@ -16,12 +17,14 @@ type Props = {
   checkOut: string
   adults: number
   children: number
+  childAges: number[]
+  guestPolicies: RoomGuestPolicy[]
   isMock: boolean
 }
 
 type RoomGroup = { key: string; room: RoomType; physicalRooms: RoomType[] }
 
-export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, checkOut, adults, children, isMock }: Props) {
+export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, checkOut, adults, children, childAges, guestPolicies, isMock }: Props) {
   const navigate = useNavigate()
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const stayNights = nights(checkIn, checkOut)
@@ -65,8 +68,10 @@ export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, 
     return roomIds.map(roomId => ({ group, roomId }))
   })
   const selectedCount = selected.length
-  const totalCapacity = selected.reduce((sum, item) => sum + item.group.room.capacity, 0)
-  const enoughCapacity = selectedCount > 0 && adults + children <= totalCapacity
+  const guestAllocation = selectedCount > 0
+    ? allocateGuestsToRooms(selected.map(item => item.group.room), adults, childAges, guestPolicies)
+    : null
+  const enoughCapacity = selectedCount > 0 && Boolean(guestAllocation)
   const nightlyTotal = selected.reduce((sum, item) => sum + item.group.room.basePrice, 0)
   const stayTotal = nightlyTotal * stayNights
   const roomLimit = 10
@@ -91,6 +96,7 @@ export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, 
       rooms: String(selectedCount),
       adults: String(adults),
       children: String(children),
+      childAges: childAges.join(','),
     })
     navigate('/bookings/new?' + query.toString())
   }
@@ -125,7 +131,7 @@ export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, 
       <div>
         <p className="font-semibold">{selectedCount} phòng · {stayNights} đêm</p>
         <p className="mt-1 text-sm text-slate-500">Tạm tính {currency(stayTotal)}</p>
-        {selectedCount > 0 && !enoughCapacity && <p className="mt-1 text-sm text-red-700">Chưa đủ sức chứa cho {adults + children} khách.</p>}
+        {selectedCount > 0 && !enoughCapacity && <p className="mt-1 text-sm text-red-700">Cấu hình phòng chưa đáp ứng {adults} người lớn{children ? ` và trẻ ${childAges.map(age => `${age} tuổi`).join(', ')}` : ''}. Hãy chọn thêm phòng hoặc loại phòng khác.</p>}
       </div>
       <Button disabled={!enoughCapacity || !dates.length} onClick={proceed}>Tiếp tục đặt phòng</Button>
     </Card>
