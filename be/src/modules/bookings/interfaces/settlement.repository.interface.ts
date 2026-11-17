@@ -54,6 +54,7 @@ export interface SettlementRepository {
   findPage(filters: {
     hotelId?: string;
     status?: string;
+    ownerUserId?: string;
   }): Promise<SettlementBatchWithItems[]>;
   findById(id: string): Promise<SettlementBatchWithItems | null>;
   transition(input: {
@@ -62,7 +63,10 @@ export interface SettlementRepository {
     nextStatus: string;
     approvedBy?: string;
     transferReference?: string;
+    transferMode?: string;
+    providerTransferId?: string;
     failureReason?: string;
+    eventNote?: string;
     actorUserId: string;
   }): Promise<SettlementBatchWithItems | null>;
 }

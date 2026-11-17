@@ -86,7 +86,7 @@ export class ReportsService {
       const key = `${row.hotelId}:${row.currency}`;
       hotelMap.set(key, {
         hotelId: row.hotelId,
-        hotelName: row.hotelName,
+        hotelName: row.hotelName ?? 'Khách sạn không còn trong hệ thống',
         currency: row.currency,
         bookingCount: Number(row.count ?? 0),
         paidBookingCount: 0,
@@ -112,7 +112,10 @@ export class ReportsService {
       bookingCount: statusRows.reduce((sum, row) => sum + Number(row.count), 0),
       bookingStatusCounts,
       financialByCurrency,
-      hotels: [...hotelMap.values()].sort((a, b) => a.hotelName.localeCompare(b.hotelName, 'vi') || a.currency.localeCompare(b.currency)),
+      hotels: [...hotelMap.values()].sort((a, b) =>
+        a.hotelName.localeCompare(b.hotelName, 'vi') ||
+        a.currency.localeCompare(b.currency),
+      ),
     };
   }
 

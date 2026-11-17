@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -26,6 +27,11 @@ import {
   ApiUpdateOperation,
 } from '../../../common/openapi/api-crud.decorator';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
+import {
+  ListRoomGuestPoliciesRequest,
+  RoomGuestPolicyResponse,
+  UpsertRoomGuestPolicyRequest,
+} from '../dtos/requests/upsert-room-guest-policy.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
 import {
@@ -59,6 +65,49 @@ export class RoomsController {
   async findPage(@Query() query: ListRoomsRequest): Promise<RoomListResponse> {
     const page = await this.roomsService.findPage(query);
     return RoomMapper.toListResponse(page, query.page, query.limit);
+  }
+
+  @Get('guest-policies')
+  @Public()
+  async listGuestPolicies(
+    @Query() query: ListRoomGuestPoliciesRequest,
+  ): Promise<RoomGuestPolicyResponse[]> {
+    const policies = await this.roomsService.listGuestPolicies(
+      query.hotelId,
+      query.hotelIds,
+    );
+    return policies.map((policy) => ({
+      id: policy.id,
+      hotelId: policy.hotelId,
+      roomType: policy.roomType,
+      maxAdults: policy.maxAdults,
+      maxChildren: policy.maxChildren,
+      adultAgeFrom: policy.adultAgeFrom,
+      freeChildMaxAge: policy.freeChildMaxAge,
+      childSurchargePerNight: policy.childSurchargePerNight,
+      createdAt: policy.createdAt.toISOString(),
+      updatedAt: policy.updatedAt.toISOString(),
+    }));
+  }
+
+  @Put('guest-policies')
+  async saveGuestPolicy(
+    @CurrentUser() user: UserEntity,
+    @Body() input: UpsertRoomGuestPolicyRequest,
+  ): Promise<RoomGuestPolicyResponse> {
+    const policy = await this.roomsService.saveGuestPolicy(input, user);
+    return {
+      id: policy.id,
+      hotelId: policy.hotelId,
+      roomType: policy.roomType,
+      maxAdults: policy.maxAdults,
+      maxChildren: policy.maxChildren,
+      adultAgeFrom: policy.adultAgeFrom,
+      freeChildMaxAge: policy.freeChildMaxAge,
+      childSurchargePerNight: policy.childSurchargePerNight,
+      createdAt: policy.createdAt.toISOString(),
+      updatedAt: policy.updatedAt.toISOString(),
+    };
   }
 
   @Get(':roomId')

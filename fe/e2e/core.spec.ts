@@ -30,7 +30,14 @@ test('lọc khách sạn theo sao và giá, hiển thị trạng thái rỗng', 
 
 test('router chặn sai vai trò và có trang 404', async ({ page }) => {
   await page.goto('/admin')
-  await expect(page).toHaveURL(/\/auth\/login\?returnTo=/)
+  await expect(page).toHaveURL(/\/admin\/dang-nhap\?returnTo=/)
+  await page.getByLabel('Tên đăng nhập hoặc email').fill('khach@demo.vn')
+  await page.getByLabel('Mật khẩu').fill('Demo@123')
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
+  await expect(page.getByText(/Tài khoản này thuộc nhóm du khách/)).toBeVisible()
+  await expect(page).toHaveURL(/\/admin\/dang-nhap\?returnTo=/)
+
+  await page.goto('/auth/login')
   await page.getByRole('button', { name: /Du khách: khach@demo.vn/ }).click()
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
   await page.goto('/partner')

@@ -10,6 +10,7 @@ import { SePayCallbacksController } from './controllers/sepay-callbacks.controll
 import { BookingEntity } from './entities/booking.entity';
 import { BookingIdempotencyKeyEntity } from './entities/booking-idempotency-key.entity';
 import { BookingRoomEntity } from './entities/booking-room.entity';
+import { BookingRoomChildEntity } from './entities/booking-room-child.entity';
 import { SettlementBatchEntity } from './entities/settlement-batch.entity';
 import { SettlementItemEntity } from './entities/settlement-item.entity';
 import { SettlementBatchEventEntity } from './entities/settlement-batch-event.entity';
@@ -23,12 +24,15 @@ import { TypeOrmSettlementRepository } from './repositories/typeorm-settlement.r
 import { BookingsService } from './services/bookings.service';
 import { SettlementsService } from './services/settlements.service';
 import { SETTLEMENT_REPOSITORY } from './interfaces/settlement.repository.interface';
+import { SEPAY_BANKHUB_PAYOUT } from './interfaces/sepay-bankhub-payout.interface';
+import { SePayBankHubPayoutClientImpl } from './integrations/sepay/sepay-bankhub-payout.client';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       BookingEntity,
       BookingRoomEntity,
+      BookingRoomChildEntity,
       BookingIdempotencyKeyEntity,
       SettlementBatchEntity,
       SettlementItemEntity,
@@ -44,6 +48,10 @@ import { SETTLEMENT_REPOSITORY } from './interfaces/settlement.repository.interf
     BookingsService,
     SettlementsService,
     { provide: SETTLEMENT_REPOSITORY, useClass: TypeOrmSettlementRepository },
+    {
+      provide: SEPAY_BANKHUB_PAYOUT,
+      useClass: SePayBankHubPayoutClientImpl,
+    },
     {
       provide: BOOKING_REPOSITORY,
       useClass: TypeOrmBookingRepository,

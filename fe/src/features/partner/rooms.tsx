@@ -7,7 +7,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { api } from '@/services/api/client'
 import { errorMessage } from '@/lib/utils'
-import type { ManagedRoom, ManagedRoomInput, PartnerHotel, RoomOperationalStatus } from '@/types/domain'
+import type { ManagedRoom, ManagedRoomInput, PartnerHotel, RoomOperationalStatus, RoomGuestPolicyInput } from '@/types/domain'
 
 const statusLabels: Record<RoomOperationalStatus, string> = {
   AVAILABLE: 'Đang kinh doanh', MAINTENANCE: 'Đang bảo trì', OUT_OF_SERVICE: 'Ngừng khai thác',
@@ -88,16 +88,34 @@ export function PartnerRoomFormPage() {
   const [error, setError] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [guestPolicyDraft, setGuestPolicyDraft] = useState<RoomGuestPolicyInput | null>(null)
   const form = draft ?? initialRoom(room.data, hotels.data?.data)
   const hotelAmenities = useQuery({ queryKey: ['partner-hotel-amenities', form.hotelId], queryFn: () => api.hotelAmenities(form.hotelId), enabled: Boolean(form.hotelId) })
+  const guestPolicies = useQuery({ queryKey: ['room-guest-policies', form.hotelId], queryFn: () => api.roomGuestPolicies(form.hotelId), enabled: Boolean(form.hotelId) })
   const availableHotels = hotels.data?.data ?? []
   const selectableHotels = id ? availableHotels : availableHotels.filter(hotel => hotel.status === 'ACTIVE')
-  const update = <K extends keyof ManagedRoomInput>(key: K, value: ManagedRoomInput[K]) => setDraft(current => ({ ...(current ?? form), [key]: value }))
+  const normalizeRoomType = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN')
+  const persistedPolicy = guestPolicies.data?.find(policy => policy.roomType && normalizeRoomType(policy.roomType) === normalizeRoomType(form.roomType))
+  const guestPolicy: RoomGuestPolicyInput = guestPolicyDraft ?? {
+    hotelId: form.hotelId,
+    roomType: form.roomType,
+    maxAdults: Math.min(form.maxOccupancy, 2),
+    maxChildren: form.maxOccupancy,
+    freeChildMaxAge: 11,
+    childSurchargePerNight: 0,
+    ...(persistedPolicy ? { maxAdults: persistedPolicy.maxAdults, maxChildren: persistedPolicy.maxChildren, freeChildMaxAge: persistedPolicy.freeChildMaxAge, childSurchargePerNight: persistedPolicy.childSurchargePerNight } : {}),
+  }
+  const update = <K extends keyof ManagedRoomInput>(key: K, value: ManagedRoomInput[K]) => {
+    if (key === 'hotelId' || key === 'roomType') setGuestPolicyDraft(null)
+    setDraft(current => ({ ...(current ?? form), [key]: value }))
+  }
+  const updateGuestPolicy = <K extends keyof RoomGuestPolicyInput>(key: K, value: RoomGuestPolicyInput[K]) => setGuestPolicyDraft(current => ({ ...(current ?? guestPolicy), [key]: value, hotelId: form.hotelId, roomType: form.roomType }))
 
-  if (hotels.isPending || amenities.isPending || hotelAmenities.isPending || (id && room.isPending)) return <LoadingState />
+  if (hotels.isPending || amenities.isPending || hotelAmenities.isPending || guestPolicies.isPending || (id && room.isPending)) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
   if (amenities.isError) return <ErrorState message={errorMessage(amenities.error)} retry={() => { void amenities.refetch() }} />
   if (hotelAmenities.isError) return <ErrorState message={errorMessage(hotelAmenities.error)} retry={() => { void hotelAmenities.refetch() }} />
+  if (guestPolicies.isError) return <ErrorState message={errorMessage(guestPolicies.error)} retry={() => { void guestPolicies.refetch() }} />
   if (id && room.isError) return <ErrorState message={errorMessage(room.error)} retry={() => { void room.refetch() }} />
   if (id && !room.data) return <EmptyState title="Không tìm thấy phòng" />
   if (!selectableHotels.length) return <EmptyState title="Chưa có khách sạn hoạt động" description="Khách sạn cần được duyệt và kích hoạt trước khi thêm phòng." action={<Button asChild variant="secondary"><Link to="/partner/hotels">Đến quản lý khách sạn</Link></Button>} />
@@ -108,8 +126,10 @@ export function PartnerRoomFormPage() {
       const payload = { ...form, description: form.description?.trim() || null }
       if (id) await api.updateManagedRoom(id, payload)
       else await api.createManagedRoom(payload)
+      await api.saveRoomGuestPolicy({ ...guestPolicy, hotelId: form.hotelId, roomType: form.roomType })
       await queryClient.invalidateQueries({ queryKey: ['partner-managed-rooms'] })
       await queryClient.invalidateQueries({ queryKey: ['partner-managed-room', id] })
+      await queryClient.invalidateQueries({ queryKey: ['room-guest-policies', form.hotelId] })
       await queryClient.invalidateQueries({ queryKey: ['catalog'] })
       navigate('/partner/rooms')
     } catch (cause) { setError(errorMessage(cause)) }
@@ -139,6 +159,16 @@ export function PartnerRoomFormPage() {
         <FormField label="Tiền tệ"><select value={form.currency} onChange={event => update('currency', event.target.value)}><option value="VND">VND</option><option value="USD">USD</option></select></FormField>
         <FormField label="Trạng thái khai thác"><select value={form.operationalStatus} onChange={event => update('operationalStatus', event.target.value as RoomOperationalStatus)}>{statuses.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></FormField>
       </div>
+      <fieldset className="rounded-xl border border-slate-200 p-4"><legend className="px-1 text-sm font-semibold">Quy định khách cho loại phòng này</legend>
+        <p className="mb-4 text-sm text-slate-600">Dùng chung cho các phòng cùng tên loại phòng. Người lớn từ 12 tuổi; không phụ thu người lớn, nếu vượt giới hạn thì khách cần đặt thêm phòng.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Số người lớn tối đa"><input required type="number" min="1" max="100" value={guestPolicy.maxAdults} onChange={event => updateGuestPolicy('maxAdults', Number(event.target.value))} /></FormField>
+          <FormField label="Số trẻ em tối đa"><input required type="number" min="0" max="100" value={guestPolicy.maxChildren} onChange={event => updateGuestPolicy('maxChildren', Number(event.target.value))} /></FormField>
+          <FormField label="Miễn phụ thu đến tuổi"><input required type="number" min="0" max="11" value={guestPolicy.freeChildMaxAge} onChange={event => updateGuestPolicy('freeChildMaxAge', Number(event.target.value))} /></FormField>
+          <FormField label="Phụ thu mỗi trẻ / đêm"><input required type="number" min="0" step="1000" value={guestPolicy.childSurchargePerNight} onChange={event => updateGuestPolicy('childSurchargePerNight', Number(event.target.value))} /></FormField>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">Tổng người lớn và trẻ em trong từng phòng vẫn không được vượt sức chứa tối đa của phòng.</p>
+      </fieldset>
       <FormField label="Mô tả"><textarea maxLength={5000} value={form.description ?? ''} onChange={event => update('description', event.target.value)} /></FormField>
       <fieldset className="rounded-lg border border-slate-200 p-4"><legend className="px-1 text-sm font-medium">Tiện nghi</legend><div className="grid gap-2 sm:grid-cols-2">{[...(amenities.data?.data ?? []), ...(hotelAmenities.data?.data ?? [])].map(item => <label key={item.id} className="flex items-center gap-2 text-sm"><input className="!m-0 !h-4 !w-4 !min-h-0" type="checkbox" checked={form.amenityIds.includes(item.id)} onChange={event => update('amenityIds', event.target.checked ? [...form.amenityIds, item.id] : form.amenityIds.filter(value => value !== item.id))} />{item.name}{hotelAmenities.data?.data.some(custom => custom.id === item.id) && <span className="text-xs text-slate-500">(riêng khách sạn)</span>}</label>)}</div>{!(amenities.data?.data.length || hotelAmenities.data?.data.length) && <p className="text-sm text-slate-500">Chưa có tiện nghi trong danh mục.</p>}<Link className="mt-3 inline-block text-sm font-semibold text-[#1E3A5F] hover:underline" to="/partner/amenities">Quản lý tiện nghi khách sạn</Link></fieldset>
       <Feedback message={error} kind="error" />

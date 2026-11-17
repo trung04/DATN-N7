@@ -4,6 +4,7 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { BookingEntity } from '../entities/booking.entity';
 import { BookingIdempotencyKeyEntity } from '../entities/booking-idempotency-key.entity';
 import { BookingRoomEntity } from '../entities/booking-room.entity';
+import { BookingRoomChildEntity } from '../entities/booking-room-child.entity';
 import {
   BookingCancellationPolicyReferenceException,
   BookingCodeConflictException,
@@ -60,7 +61,7 @@ export class TypeOrmBookingRepository implements BookingRepository {
   async findById(id: string): Promise<BookingEntity | null> {
     const booking = await this.repository.findOne({
       where: { id },
-      relations: { roomItems: true },
+      relations: { roomItems: { childGuests: true } },
     });
     if (booking) this.sortRoomItems(booking);
     return booking;
@@ -91,7 +92,8 @@ export class TypeOrmBookingRepository implements BookingRepository {
   async findPage(options: FindBookingsOptions): Promise<BookingPage> {
     const query = this.repository
       .createQueryBuilder('booking')
-      .leftJoinAndSelect('booking.roomItems', 'roomItem');
+      .leftJoinAndSelect('booking.roomItems', 'roomItem')
+      .leftJoinAndSelect('roomItem.childGuests', 'childGuest');
 
     if (options.search) {
       const escapedSearch = options.search.replace(/[\\%_]/g, '\\$&');
@@ -184,7 +186,7 @@ export class TypeOrmBookingRepository implements BookingRepository {
             .getRepository(BookingEntity)
             .findOne({
               where: { id: existing.bookingId },
-              relations: { roomItems: true },
+              relations: { roomItems: { childGuests: true } },
             });
           if (!replayedBooking) throw new BookingTransactionConflictException();
           this.sortRoomItems(replayedBooking);
@@ -229,9 +231,30 @@ export class TypeOrmBookingRepository implements BookingRepository {
         const itemRepository = manager.getRepository(BookingRoomEntity);
         saved.roomItems = await itemRepository.save(
           roomItems.map((item) =>
-            itemRepository.create({ ...item, bookingId: saved.id }),
+            itemRepository.create({
+              ...item,
+              childGuests: undefined,
+              bookingId: saved.id,
+            }),
           ),
         );
+        const childRepository = manager.getRepository(BookingRoomChildEntity);
+        const childDataByRoomId = new Map(
+          roomItems.map((item) => [item.roomId, item.childGuests]),
+        );
+        for (const roomItem of saved.roomItems) {
+          const childData = childDataByRoomId.get(roomItem.roomId) ?? [];
+          roomItem.childGuests = childData.length
+            ? await childRepository.save(
+                childData.map((child) =>
+                  childRepository.create({
+                    ...child,
+                    bookingRoomId: roomItem.id,
+                  }),
+                ),
+              )
+            : [];
+        }
         await idempotencyRepository.save(
           idempotencyRepository.create({
             idempotencyKey: idempotency.key,
@@ -273,6 +296,7 @@ export class TypeOrmBookingRepository implements BookingRepository {
           .getRepository(BookingRoomEntity)
           .find({
             where: { bookingId: id },
+            relations: { childGuests: true },
             order: { roomId: 'ASC' },
           });
         const result = await operation(booking);

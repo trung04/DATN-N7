@@ -29,19 +29,19 @@ export function HomePage() {
     navigate('/hotels?' + new URLSearchParams({ city: city.trim(), checkIn, checkOut, adults: String(adults), rooms: '1' }))
   }
 
-  return <div className="bg-white">
-    <section className="container-travel pt-6 md:pt-8">
-      <div className="relative overflow-hidden rounded-[28px] bg-[#1E3A5F] text-white">
+  return <div className="home-page bg-white">
+    <section className="home-hero-container container-travel pt-6 md:pt-8">
+      <div className="home-hero relative overflow-hidden rounded-[28px] bg-[#1E3A5F] text-white">
         <img src={heroImage} alt="Ảnh minh họa bờ biển Đà Nẵng" className="absolute inset-0 h-full w-full object-cover object-center opacity-65" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#102947]/95 via-[#173858]/80 to-[#173858]/10" />
-        <div className="relative max-w-[820px] px-6 py-14 sm:px-10 md:py-20 lg:px-16 lg:py-20">
+        <div className="home-hero-content relative max-w-[820px] px-6 py-14 sm:px-10 md:py-20 lg:px-16 lg:py-20">
           <span className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-white/15 px-3 py-1.5 text-xs font-semibold backdrop-blur"><Sparkles size={15} />Khám phá Việt Nam theo cách của bạn</span>
           <h1 className="mt-6 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">Khám phá hành trình phù hợp với bạn</h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-white/90 sm:text-lg">Tìm nơi ở, chọn trải nghiệm yêu thích và sắp xếp từng ngày thành một chuyến đi thật dễ hình dung.</p>
           <div className="mt-7 flex flex-wrap gap-3"><Button asChild size="lg" className="bg-white text-[#1E3A5F] hover:bg-slate-100"><Link to="/ai/trip-planner"><Sparkles size={18} />Lập lịch trình với AI demo</Link></Button><Button asChild size="lg" variant="secondary" className="border-white/40 bg-white/10 text-white hover:bg-white/20"><Link to="/explore">Khám phá điểm đến<ArrowRight size={17} /></Link></Button></div>
         </div>
       </div>
-      <form onSubmit={searchHotels} className="relative mx-4 -mt-5 grid sm:mx-8 lg:mx-12 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-22px_rgba(30,58,95,.35)] sm:p-5 lg:grid-cols-[1.4fr_1fr_1fr_.7fr_auto] lg:items-end">
+      <form onSubmit={searchHotels} className="home-search relative mx-4 -mt-5 grid sm:mx-8 lg:mx-12 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_50px_-22px_rgba(30,58,95,.35)] sm:p-5 lg:grid-cols-[1.4fr_1fr_1fr_.7fr_auto] lg:items-end">
         <label className="text-sm font-semibold text-[#1E3A5F]"><span className="inline-flex items-center gap-1.5"><MapPin size={15} />Điểm đến</span><input value={city} onChange={e => setCity(e.target.value)} placeholder="Bạn muốn đi đâu?" list="home-cities" /><datalist id="home-cities">{popularCities.map(x => <option key={x} value={x} />)}</datalist></label>
         <label className="text-sm font-semibold text-[#1E3A5F]"><span className="inline-flex items-center gap-1.5"><CalendarDays size={15} />Nhận phòng</span><input type="date" value={checkIn} min={todayPlus(0)} onChange={e => setCheckIn(e.target.value)} /></label>
         <label className="text-sm font-semibold text-[#1E3A5F]"><span className="inline-flex items-center gap-1.5"><CalendarDays size={15} />Trả phòng</span><input type="date" value={checkOut} min={checkIn} onChange={e => setCheckOut(e.target.value)} /></label>
@@ -49,7 +49,7 @@ export function HomePage() {
         <Button size="lg" className="h-11 w-full lg:w-auto"><Search size={18} />Tìm khách sạn</Button>
         {searchError && <p role="alert" className="text-sm text-red-700 lg:col-span-5">{searchError}</p>}
       </form>
-      <div className="mt-5 flex flex-wrap items-center gap-2 text-sm"><span className="mr-1 text-slate-500">Điểm đến được yêu thích:</span>{popularCities.map(x => <Link key={x} to={'/explore?city=' + encodeURIComponent(x)} className="rounded-full border border-slate-200 px-3 py-1.5 text-[#1E3A5F] hover:border-[#1E3A5F] hover:bg-[#EAF0F6]">{x}</Link>)}</div>
+      <div className="home-popular container-travel mt-5 flex flex-wrap items-center gap-2 text-sm"><span className="mr-1 text-slate-500">Điểm đến được yêu thích:</span>{popularCities.map(x => <Link key={x} to={'/explore?city=' + encodeURIComponent(x)} className="rounded-full border border-slate-200 px-3 py-1.5 text-[#1E3A5F] hover:border-[#1E3A5F] hover:bg-[#EAF0F6]">{x}</Link>)}</div>
     </section>
 
     {isLoading ? <LoadingState /> : error ? <div className="container-travel section-pad"><ErrorState message={errorMessage(error)} /></div> : data && <>

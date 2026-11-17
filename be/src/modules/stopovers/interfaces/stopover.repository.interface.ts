@@ -20,7 +20,11 @@ export interface StopoverPage {
 
 export interface CreateStopoverData {
   itineraryId: string;
-  placeId: string;
+  placeId: string | null;
+  customName: string | null;
+  customAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
   stopOrder: number;
   arrivalTime: Date;
   departureTime: Date;

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ItinerariesService } from '../../itineraries/services/itineraries.service';
 import { CreateStopoverRequest } from '../dtos/requests/create-stopover.request';
 import { ListStopoversRequest } from '../dtos/requests/list-stopovers.request';
@@ -41,7 +41,11 @@ export class StopoversService {
     }
     return this.repository.create({
       itineraryId,
-      placeId: input.placeId,
+      placeId: input.placeId ?? null,
+      customName: input.placeId ? null : input.customName!.trim(),
+      customAddress: input.placeId ? null : this.normalizeNullable(input.customAddress),
+      latitude: input.placeId ? null : input.latitude!,
+      longitude: input.placeId ? null : input.longitude!,
       stopOrder: input.stopOrder,
       arrivalTime: new Date(input.arrivalTime),
       departureTime: new Date(input.departureTime),
@@ -125,7 +129,27 @@ export class StopoversService {
     stopover.stopOrder = stopOrder;
     stopover.arrivalTime = new Date(arrivalTime);
     stopover.departureTime = new Date(departureTime);
-    if (input.placeId !== undefined) stopover.placeId = input.placeId;
+    if (input.placeId !== undefined) {
+      stopover.placeId = input.placeId;
+      if (input.placeId) {
+        stopover.customName = null;
+        stopover.customAddress = null;
+        stopover.latitude = null;
+        stopover.longitude = null;
+      }
+    }
+    if (input.customName !== undefined) {
+      stopover.placeId = null;
+      stopover.customName = input.customName?.trim() || null;
+    }
+    if (input.customAddress !== undefined) {
+      stopover.customAddress = this.normalizeNullable(input.customAddress);
+    }
+    if (input.latitude !== undefined) stopover.latitude = input.latitude;
+    if (input.longitude !== undefined) stopover.longitude = input.longitude;
+    if (!stopover.placeId && (!stopover.customName || stopover.latitude === null || stopover.longitude === null)) {
+      throw new BadRequestException('Điểm dừng tùy chỉnh cần tên và tọa độ hợp lệ.');
+    }
     if (input.description !== undefined) {
       stopover.description = this.normalizeNullable(input.description);
     }

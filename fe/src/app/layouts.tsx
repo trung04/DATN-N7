@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { BarChart3, BedDouble, Bell, CalendarDays, Compass, CreditCard, Heart, Hotel, LayoutDashboard, LogOut, Map, MapPin, Menu, MessageSquareText, ReceiptText, ScrollText, ShieldCheck, Tags, UserRound, UsersRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useSession } from '@/stores/session'
 import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { errorMessage } from '@/lib/utils'
+import { heroImage } from '@/lib/travel-images'
 
 const publicNav = [
   { to: '/', label: 'Trang chủ' }, { to: '/explore', label: 'Khám phá' }, { to: '/hotels', label: 'Khách sạn' },
@@ -16,6 +17,7 @@ const partnerNav = [{ to: '/partner', label: 'Tổng quan', icon: LayoutDashboar
 partnerNav.splice(-1, 0, { to: '/partner/bookings', label: 'Đặt phòng', icon: CalendarDays })
 partnerNav.splice(-1, 0, { to: '/partner/reviews', label: 'Đánh giá', icon: MessageSquareText })
 partnerNav.splice(-1, 0, { to: '/partner/reports', label: 'Báo cáo', icon: BarChart3 })
+partnerNav.splice(-1, 0, { to: '/partner/settlements', label: 'Đối soát', icon: ReceiptText })
 const adminNav = [
   { to: '/admin/bookings', label: 'Đặt phòng', icon: CalendarDays },
   { to: '/admin/settlements', label: 'Đối soát', icon: ReceiptText },
@@ -48,24 +50,33 @@ function NotificationBell() {
 
 export function TouristLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const location = useLocation()
   const user = useSession(s => s.user)
   const logout = useSession(s => s.logout)
   const navigate = useNavigate()
   const [notice, setNotice] = useState('')
   const signOut = async () => {
     try { await repo.logout() }
-    finally { logout(); navigate('/auth/login', { replace: true }) }
+    finally { logout(); navigate('/dang-nhap', { replace: true }) }
   }
-  return <div className="flex min-h-screen flex-col">
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur"><div className="container-travel flex h-16 items-center justify-between gap-5">
+  const isHome = location.pathname === '/'
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [location.pathname])
+  return <div className={'tourist-shell flex min-h-screen flex-col' + (isHome && !scrolled ? ' home-at-top' : '')}>
+    <header className={'tourist-header z-40 border-b border-slate-200 bg-white/95 backdrop-blur' + (isHome ? scrolled ? ' home-header-scrolled' : ' home-header-overlay' : ' sticky top-0')}><div className="container-travel flex h-16 items-center justify-between gap-5">
       <Brand />
       <nav aria-label="Điều hướng chính" className="hidden items-center gap-5 xl:flex">{publicNav.map(n => <NavLink key={n.to} end={n.to === '/'} className={({ isActive }) => 'link-nav' + (isActive ? ' active' : '')} to={n.to}>{n.label}</NavLink>)}</nav>
-      <div className="hidden items-center gap-2 sm:flex"><Link className="link-nav inline-flex items-center gap-1" to="/favorites"><Heart size={16} />Yêu thích</Link>{user?.role === 'tourist' && <><Link className="link-nav inline-flex items-center gap-1" to="/bookings"><CalendarDays size={16} />Booking của tôi</Link><NotificationBell /></>}{user ? <><Link className="link-nav inline-flex items-center gap-1" to={user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile'}><UserRound size={16} />{user.name}</Link><Button size="icon" variant="ghost" aria-label="Đăng xuất" onClick={() => { void signOut() }}><LogOut size={17} /></Button></> : <Button asChild size="sm"><Link to="/auth/login">Đăng nhập</Link></Button>}</div>
+      <div className="hidden items-center gap-2 sm:flex"><Link className="link-nav inline-flex items-center gap-1" to="/favorites"><Heart size={16} />Yêu thích</Link>{user?.role === 'tourist' && <><Link className="link-nav inline-flex items-center gap-1" to="/bookings"><CalendarDays size={16} />Booking của tôi</Link><NotificationBell /></>}{user ? <><Link className="link-nav inline-flex items-center gap-1" to={user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile'}><UserRound size={16} />{user.name}</Link><Button size="icon" variant="ghost" aria-label="Đăng xuất" onClick={() => { void signOut() }}><LogOut size={17} /></Button></> : <Button className="home-login-button" asChild size="sm"><Link to="/dang-nhap">Đăng nhập</Link></Button>}</div>
       <Button className="xl:hidden" variant="ghost" size="icon" aria-label={menuOpen ? 'Đóng menu' : 'Mở menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</Button>
-    </div>{menuOpen && <nav aria-label="Điều hướng trên điện thoại" className="container-travel grid gap-1 border-t border-slate-100 py-3 xl:hidden">{[...publicNav, { to: '/favorites', label: 'Yêu thích' }, ...(user?.role === 'tourist' ? [{ to: '/bookings', label: 'Booking của tôi' }, { to: '/notifications', label: 'Thông báo' }] : []), { to: user ? user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile' : '/auth/login', label: user ? 'Tài khoản' : 'Đăng nhập' }].map(n => <Link className="rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" key={n.to} onClick={() => setMenuOpen(false)} to={n.to}>{n.label}</Link>)}</nav>}</header>
-    {isMock && <div className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-900">Chế độ demo: AI, OTP và thanh toán chỉ là mô phỏng. <button className="font-semibold underline" onClick={async () => { try { await repo.reset(); setNotice('Đã đặt lại dữ liệu demo.'); logout(); navigate('/') } catch (e) { setNotice(errorMessage(e)) } }}>Đặt lại dữ liệu</button>{notice && <span className="ml-2">{notice}</span>}</div>}
+    </div>{menuOpen && <nav aria-label="Điều hướng trên điện thoại" className="container-travel grid gap-1 border-t border-slate-100 py-3 xl:hidden">{[...publicNav, { to: '/favorites', label: 'Yêu thích' }, ...(user?.role === 'tourist' ? [{ to: '/bookings', label: 'Booking của tôi' }, { to: '/notifications', label: 'Thông báo' }] : []), { to: user ? user.role === 'admin' ? '/admin' : user.role === 'partner' ? '/partner' : '/profile' : '/dang-nhap', label: user ? 'Tài khoản' : 'Đăng nhập' }].map(n => <Link className="rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" key={n.to} onClick={() => setMenuOpen(false)} to={n.to}>{n.label}</Link>)}</nav>}</header>
+    {isMock && <div className="border-b border-slate-100 bg-white px-4 py-1.5"><div className="container-travel flex items-center justify-end gap-3 text-xs text-slate-500"><button className="font-medium hover:text-[#1E3A5F]" onClick={async () => { try { await repo.reset(); setNotice('Đã đặt lại dữ liệu.'); logout(); navigate('/') } catch (e) { setNotice(errorMessage(e)) } }}>Đặt lại dữ liệu</button>{notice && <span>{notice}</span>}</div></div>}
     <main id="main" className="flex-1"><Outlet /></main>
-    <footer className="border-t border-slate-200 bg-[#F8FAFC]"><div className="container-travel grid gap-8 py-10 md:grid-cols-3"><div><Brand /><p className="mt-3 max-w-xs text-sm text-slate-500">Lên kế hoạch chuyến đi rõ ràng, phù hợp với sở thích của bạn.</p></div><div><h2 className="font-semibold">Khám phá</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/explore">Điểm đến</Link><Link to="/hotels">Khách sạn</Link></div></div><div><h2 className="font-semibold">Lên kế hoạch</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/ai/trip-planner">Lập lịch trình demo</Link><Link to="/trips">Chuyến đi của tôi</Link></div></div></div><div className="border-t border-slate-200 py-4 text-center text-xs text-slate-500">© Hành Trình Việt · Dự án frontend demo</div></footer>
+    <footer className="tourist-footer border-t border-slate-200 bg-[#F8FAFC]"><div className="container-travel grid gap-8 py-10 md:grid-cols-3"><div><Brand /><p className="mt-3 max-w-xs text-sm text-slate-500">Lên kế hoạch chuyến đi rõ ràng, phù hợp với sở thích của bạn.</p></div><div><h2 className="font-semibold">Khám phá</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/explore">Điểm đến</Link><Link to="/hotels">Khách sạn</Link></div></div><div><h2 className="font-semibold">Lên kế hoạch</h2><div className="mt-3 grid gap-2 text-sm text-slate-600"><Link to="/ai/trip-planner">Lập lịch trình demo</Link><Link to="/trips">Chuyến đi của tôi</Link></div></div></div><div className="border-t border-slate-200 py-4 text-center text-xs text-slate-500">© Hành Trình Việt · Dự án frontend demo</div></footer>
   </div>
 }
 
@@ -77,7 +88,7 @@ export function DashboardLayout({ kind }: { kind: 'partner' | 'admin' }) {
   const container = kind === 'admin' ? 'container-dashboard' : 'container-app'
   const signOut = async () => {
     try { await repo.logout() }
-    finally { logout(); navigate('/auth/login', { replace: true }) }
+    finally { logout(); navigate(kind === 'admin' ? '/admin/dang-nhap' : '/chu-khach-san/dang-nhap', { replace: true }) }
   }
   return <div className="min-h-screen bg-[#F8FAFC]">
     <header className="border-b border-slate-200 bg-white"><div className={container + ' flex h-[72px] items-center justify-between gap-4'}><Brand /><div className="flex items-center gap-3 text-sm text-slate-600"><span className="hidden h-9 w-9 items-center justify-center rounded-full bg-[#EAF0F6] font-semibold text-[#1E3A5F] sm:flex">{user?.name?.charAt(0) ?? 'U'}</span><span className="hidden font-medium text-slate-700 sm:inline">{user?.name}</span><span className="hidden h-5 w-px bg-slate-200 sm:block" /><Button variant="ghost" size="sm" onClick={() => { void signOut() }}><LogOut size={16} />Đăng xuất</Button></div></div></header>
@@ -92,5 +103,5 @@ export function DashboardLayout({ kind }: { kind: 'partner' | 'admin' }) {
   </div>
 }
 
-export function AuthLayout() { return <div className="min-h-screen bg-[#F8FAFC]"><header className="border-b border-slate-200 bg-white"><div className="container-app flex h-16 items-center"><Brand /></div></header><main className="container-app flex justify-center py-12"><div className="w-full max-w-md"><Outlet /></div></main></div> }
+export function AuthLayout() { return <div className="auth-page min-h-screen"><header className="auth-topbar"><div className="container-app flex h-[72px] items-center justify-between"><Brand /><Link to="/explore" className="auth-explore-link">Khám phá điểm đến <MapPin size={16} /></Link></div></header><main className="auth-layout container-app"><section className="auth-story" aria-label="Khám phá Việt Nam"><img src={heroImage} alt="Bờ biển Việt Nam lúc hoàng hôn" /><div className="auth-story-shade" /><div className="auth-story-copy"><span className="auth-story-kicker"><Compass size={15} /> HÀNH TRÌNH VIỆT</span><h1>Mỗi chuyến đi<br />bắt đầu từ một<br /><em>điều bạn yêu.</em></h1><p>Khám phá điểm đến, tìm nơi dừng chân và lưu lại hành trình của riêng bạn.</p><div className="auth-story-note"><span className="auth-story-dot" /><span>Việt Nam luôn có một nơi chờ bạn khám phá</span></div></div><span className="auth-story-credit">Đà Nẵng · Việt Nam</span></section><div className="auth-form-column"><Outlet /></div></main><footer className="auth-footer">© Hành Trình Việt <span>·</span> Lên đường theo cách của bạn</footer></div> }
 export function NotFound({ forbidden = false }: { forbidden?: boolean }) { return <div className="container-app flex min-h-[60vh] flex-col items-center justify-center text-center"><div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-[#1E3A5F]">{forbidden ? <ShieldCheck size={30} /> : <LayoutDashboard size={30} />}</div><h1 className="text-3xl font-semibold">{forbidden ? 'Bạn không có quyền truy cập' : 'Không tìm thấy trang'}</h1><p className="mt-2 text-slate-500">{forbidden ? 'Tài khoản hiện tại không được phép mở khu vực này.' : 'Đường dẫn có thể đã thay đổi hoặc không tồn tại.'}</p><Button asChild className="mt-6"><Link to="/">Về trang chủ</Link></Button></div> }

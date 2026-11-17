@@ -27,6 +27,7 @@ import { ReferencePriceEntity } from '../modules/places/entities/reference-price
 import { CancellationPolicyEntity } from '../modules/cancellation-policies/entities/cancellation-policy.entity';
 import { BookingEntity } from '../modules/bookings/entities/booking.entity';
 import { BookingRoomEntity } from '../modules/bookings/entities/booking-room.entity';
+import { BookingRoomChildEntity } from '../modules/bookings/entities/booking-room-child.entity';
 import { BookingIdempotencyKeyEntity } from '../modules/bookings/entities/booking-idempotency-key.entity';
 import { HotelEntity } from '../modules/hotels/entities/hotel.entity';
 import { HotelDocumentEntity } from '../modules/hotels/entities/hotel-document.entity';
@@ -66,6 +67,7 @@ import { SimplifyCancellationPolicies1794400006000 } from './migrations/17944000
 import { CompleteManualBookingRefundWorkflow1794400007000 } from './migrations/1794400007000-CompleteManualBookingRefundWorkflow';
 import { UseSePayV2SandboxOrders1794400008000 } from './migrations/1794400008000-UseSePayV2SandboxOrders';
 import { NotificationEntity } from '../modules/notifications/entities/notification.entity';
+import { NotificationEmailDeliveryEntity } from '../modules/notifications/entities/notification-email-delivery.entity';
 import { CreateNotifications1794400009000 } from './migrations/1794400009000-CreateNotifications';
 import { CreateTravelPreferences1794500003000 } from './migrations/1794500003000-CreateTravelPreferences';
 import { AddItineraryDestinationCity1794500004000 } from './migrations/1794500004000-AddItineraryDestinationCity';
@@ -75,6 +77,11 @@ import { SettlementItemEntity } from '../modules/bookings/entities/settlement-it
 import { SettlementBatchEventEntity } from '../modules/bookings/entities/settlement-batch-event.entity';
 import { CreateSettlementBatchEvents1794500006000 } from './migrations/1794500006000-CreateSettlementBatchEvents';
 import { CreateUserFavorites1794500007000 } from './migrations/1794500007000-CreateUserFavorites';
+import { AddCustomItineraryStopovers1794500008000 } from './migrations/1794500008000-AddCustomItineraryStopovers';
+import { RoomGuestPolicyEntity } from '../modules/rooms/entities/room-guest-policy.entity';
+import { AddRoomGuestPolicies1794500009000 } from './migrations/1794500009000-AddRoomGuestPolicies';
+import { CreateNotificationEmailOutbox1794500010000 } from './migrations/1794500010000-CreateNotificationEmailOutbox';
+import { AddSePaySandboxSettlementPayout1794500011000 } from './migrations/1794500011000-AddSePaySandboxSettlementPayout';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -91,6 +98,7 @@ export default new DataSource({
     AmenityEntity,
     RoomEntity,
     RoomAmenityEntity,
+    RoomGuestPolicyEntity,
     UserEntity,
     AdminEntity,
     TouristEntity,
@@ -113,6 +121,7 @@ export default new DataSource({
     CancellationPolicyEntity,
     BookingEntity,
     BookingRoomEntity,
+    BookingRoomChildEntity,
     BookingIdempotencyKeyEntity,
     SettlementBatchEntity,
     SettlementItemEntity,
@@ -124,6 +133,7 @@ export default new DataSource({
     ReviewEntity,
     ReviewModerationHistoryEntity,
     NotificationEntity,
+    NotificationEmailDeliveryEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -163,6 +173,10 @@ export default new DataSource({
     CreateSettlementBatches1794500005000,
     CreateSettlementBatchEvents1794500006000,
     CreateUserFavorites1794500007000,
+    AddCustomItineraryStopovers1794500008000,
+    AddRoomGuestPolicies1794500009000,
+    CreateNotificationEmailOutbox1794500010000,
+    AddSePaySandboxSettlementPayout1794500011000,
   ],
   synchronize: false,
   logging: false,

@@ -16,7 +16,9 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { RoomGuestAllocationRequest } from './room-guest-allocation.request';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -57,6 +59,14 @@ export class CreateBookingRequest {
   @Min(0)
   @Max(100)
   childCount = 0;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ArrayUnique((allocation: RoomGuestAllocationRequest) => allocation.roomId)
+  @ValidateNested({ each: true })
+  @Type(() => RoomGuestAllocationRequest)
+  roomGuests?: RoomGuestAllocationRequest[];
 
   @Transform(trim)
   @IsString()

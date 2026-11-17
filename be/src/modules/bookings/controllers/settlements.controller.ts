@@ -24,6 +24,15 @@ export class SettlementsController {
     return batches.map(settlementBatchResponse);
   }
 
+  @Get('mine')
+  @Roles(UserRole.HOTEL_OWNER)
+  async findMine(@CurrentUser() user: UserEntity) {
+    const batches = await this.settlementsService.findPage({
+      ownerUserId: user.id,
+    });
+    return batches.map(settlementBatchResponse);
+  }
+
   @Get(':id')
   async findById(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return settlementBatchResponse(await this.settlementsService.findById(id));
