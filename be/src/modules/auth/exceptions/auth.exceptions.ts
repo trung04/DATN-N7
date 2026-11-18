@@ -82,6 +82,18 @@ export class AuthChallengeRateLimitException extends DomainException {
   }
 }
 
+export class AuthAccountNotFoundException extends DomainException {
+  constructor() {
+    super('No account is registered with this email address.', 'AUTH_ACCOUNT_NOT_FOUND', 'not_found');
+  }
+}
+
+export class AuthPasswordResetUnavailableException extends DomainException {
+  constructor() {
+    super('This account is not eligible for password reset.', 'AUTH_PASSWORD_RESET_UNAVAILABLE', 'forbidden');
+  }
+}
+
 export class AuthEmailUnavailableException extends DomainException {
   constructor() {
     super('Email delivery is not configured. Contact the administrator.', 'AUTH_EMAIL_UNAVAILABLE', 'service_unavailable');
