@@ -19,6 +19,8 @@ import {
   InvalidSessionException,
   AuthChallengeInvalidException,
   AuthChallengeRateLimitException,
+  AuthAccountNotFoundException,
+  AuthPasswordResetUnavailableException,
   AuthEmailDeliveryException,
   AuthEmailUnavailableException,
 } from '../exceptions/auth.exceptions';
@@ -103,16 +105,13 @@ export class AuthService {
   }
 
   async requestPasswordReset(input: RequestPasswordResetRequest): Promise<void> {
-    this.assertEmailConfigured();
     const email = input.email.trim().toLowerCase();
     const user = await this.usersService.findByEmail(email);
-    if (!user || !user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) return;
-    try {
-      await this.issueOtp(email, 'PASSWORD_RESET');
-    } catch (error) {
-      if (error instanceof AuthChallengeRateLimitException || error instanceof AuthEmailDeliveryException) return;
-      throw error;
+    if (!user) throw new AuthAccountNotFoundException();
+    if (!user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) {
+      throw new AuthPasswordResetUnavailableException();
     }
+    await this.issueOtp(email, 'PASSWORD_RESET');
   }
 
   async resetPassword(input: ResetPasswordRequest): Promise<void> {

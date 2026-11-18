@@ -181,7 +181,7 @@ export const mock = {
     return user
   },
   requestOtp: async (email: string) => {
-    assert(readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'USER', 'Không tìm thấy tài khoản với email này.', 404)
+    assert(readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'AUTH_ACCOUNT_NOT_FOUND', 'Không tìm thấy tài khoản với email này.', 404)
     sessionStorage.setItem('smarttravel.reset', JSON.stringify({ email, expiresAt: Date.now() + 5 * 60000 }))
     return { demoOtp: '123456' }
   },
