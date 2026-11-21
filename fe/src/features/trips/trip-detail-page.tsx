@@ -13,7 +13,7 @@ import { useSession } from '@/stores/session'
 import type { Destination, Stopover, TravelActivity } from '@/types/domain'
 import { ItineraryMap } from './itinerary-map-adapter'
 import { ItineraryTray, type DeleteTarget } from './itinerary-tray'
-import { defaultActivityTimes, defaultStopTimes, validateActivitySchedule, validateStopSchedule } from './trip-schedule'
+import { defaultActivityTimes, defaultStopTimes, stopOverlapsDay, validateActivitySchedule, validateStopSchedule } from './trip-schedule'
 
 export function TripDetailPage() {
   const { id } = useParams()
@@ -95,7 +95,7 @@ export function TripDetailPage() {
     try {
       await repo.saveStop(user?.id ?? '', stopForm)
       await refresh()
-      setActiveDay(stopForm.start.slice(0, 10))
+      setActiveDay(stopOverlapsDay(stopForm, activeDayKey) ? activeDayKey : stopForm.start.slice(0, 10))
       setStopForm(null)
       showToast(creating ? 'Đã thêm điểm dừng.' : 'Đã lưu thay đổi điểm dừng.', 'success')
     } catch (saveError) {
@@ -103,9 +103,9 @@ export function TripDetailPage() {
     }
   }
 
-  const addActivity = (stop: Stopover) => {
-    const times = defaultActivityTimes(stop, activities)
-    setActiveDay(stop.start.slice(0, 10))
+  const addActivity = (stop: Stopover, date: string) => {
+    const times = defaultActivityTimes(stop, activities, date)
+    setActiveDay(date)
     setStopForm(null)
     setActivityForm({ id: '', stopId: stop.id, name: '', ...times, order: activities.filter(item => item.stopId === stop.id).length + 1, note: '', cost: 0 })
   }
@@ -126,20 +126,20 @@ export function TripDetailPage() {
     }
   }
 
-  const selectStop = (stopId: string) => {
+  const selectStop = (stopId: string, preferredDay?: string) => {
     const stop = stops.find(item => item.id === stopId)
-    if (stop) setActiveDay(stop.start.slice(0, 10))
+    if (stop) setActiveDay(preferredDay && stopOverlapsDay(stop, preferredDay) ? preferredDay : stop.start.slice(0, 10))
     setMapCandidate(null)
     setActiveStopId(stopId)
   }
 
   return <div className="min-h-[calc(100vh-4rem)] bg-slate-100">
-    {toast && <Toast key={toast.id} message={toast.message} kind={toast.kind} onClose={closeToast} />}
+    {toast && <Toast key={toast.id} message={toast.message} kind={toast.kind} placement="bottom" onClose={closeToast} />}
     <div className="grid min-h-0 gap-3 bg-slate-100 p-3 lg:fixed lg:inset-x-0 lg:bottom-0 lg:top-16 lg:z-30 lg:grid-cols-[clamp(420px,36vw,520px)_minmax(0,1fr)]">
-      <ItineraryTray trip={trip} stops={stops} activities={activities} places={places} days={days} activeDay={activeDayKey} activeStopId={activeStopId} stopForm={stopForm} activityForm={activityForm} onChangeDay={setActiveDay} onAddStop={openStopForm} onEditStop={stop => { setActiveDay(stop.start.slice(0, 10)); setActivityForm(null); setStopForm(stop) }} onChangeStop={setStopForm} onSaveStop={saveStop} onCancelStop={() => setStopForm(null)} onAddActivity={addActivity} onEditActivity={setActivityForm} onChangeActivity={setActivityForm} onSaveActivity={saveActivity} onCancelActivity={() => setActivityForm(null)} onLocateStop={stop => selectStop(stop.id)} onDelete={setDeleteTarget} />
+      <ItineraryTray trip={trip} stops={stops} activities={activities} places={places} days={days} activeDay={activeDayKey} activeStopId={activeStopId} stopForm={stopForm} activityForm={activityForm} onChangeDay={setActiveDay} onAddStop={openStopForm} onEditStop={(stop, date) => { setActiveDay(date); setActivityForm(null); setStopForm(stop) }} onChangeStop={setStopForm} onSaveStop={saveStop} onCancelStop={() => setStopForm(null)} onAddActivity={addActivity} onEditActivity={setActivityForm} onChangeActivity={setActivityForm} onSaveActivity={saveActivity} onCancelActivity={() => setActivityForm(null)} onLocateStop={(stop, date) => selectStop(stop.id, date)} onDelete={setDeleteTarget} />
 
       <section className="relative min-h-[560px] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm lg:h-full lg:min-h-0">
-        <ItineraryMap city={trip.city} places={places} stops={stops} activeStopId={activeStopId} onMapClick={handleMapClick} onChoosePlace={selectPlace} onSelectStop={selectStop} />
+        <ItineraryMap city={trip.city} places={places} stops={stops} activeDay={activeDayKey} activeStopId={activeStopId} onMapClick={handleMapClick} onChoosePlace={selectPlace} onSelectStop={selectStop} />
         {mapCandidate && <section aria-label="Địa điểm đang chọn" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-[#1E3A5F]">{mapCandidate.place.name}</p><p className="mt-0.5 truncate text-xs text-slate-500">{mapCandidate.place.region || mapCandidate.place.city}{mapCandidate.distance > 0.05 ? ` · cách ${mapCandidate.distance.toFixed(1)} km` : ''}</p><Button size="sm" className="mt-2" onClick={() => openStopForm(activeDayKey, mapCandidate.place)}><Plus size={14} />Thêm vào lịch trình · Ngày {days.indexOf(activeDayKey) + 1}</Button></div><Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label="Đóng địa điểm đang chọn" onClick={() => setMapCandidate(null)}><X size={15} /></Button></div></section>}
       </section>
     </div>

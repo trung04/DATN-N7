@@ -3,11 +3,24 @@ import type { Itinerary, Stopover, TravelActivity } from '@/types/domain'
 const overlaps = (start: string, end: string, otherStart: string, otherEnd: string) => start < otherEnd && otherStart < end
 
 function addMinutes(value: string, minutes: number, limit: string) {
-  const [date = '', time = '00:00'] = value.split('T')
-  const [hour = 0, minute = 0] = time.split(':').map(Number)
-  const total = hour * 60 + minute + minutes
-  const next = `${date}T${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+  const date = new Date(value)
+  date.setMinutes(date.getMinutes() + minutes)
+  const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   return next < limit ? next : limit
+}
+
+function nextDate(date: string) {
+  const value = new Date(`${date}T00:00`)
+  value.setDate(value.getDate() + 1)
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+export function intervalOverlapsDay(start: string, end: string, date: string) {
+  return start < `${nextDate(date)}T00:00` && end > `${date}T00:00`
+}
+
+export function stopOverlapsDay(stop: Stopover, date: string) {
+  return intervalOverlapsDay(stop.start, stop.end, date)
 }
 
 export function defaultStopTimes(date: string, stops: Stopover[], activities: TravelActivity[]) {
@@ -17,15 +30,23 @@ export function defaultStopTimes(date: string, stops: Stopover[], activities: Tr
   return { start, end: addMinutes(start, 120, `${date}T23:59`) }
 }
 
-export function defaultActivityTimes(stop: Stopover, activities: TravelActivity[]) {
-  const start = activities.filter(activity => activity.stopId === stop.id).map(activity => activity.end).sort().at(-1) ?? stop.start
-  return { start, end: addMinutes(start, 60, stop.end) }
+export function defaultActivityTimes(stop: Stopover, activities: TravelActivity[], date = stop.start.slice(0, 10)) {
+  const dayStart = `${date}T00:00`
+  const dayEnd = `${date}T23:59`
+  const availableStart = stop.start > dayStart ? stop.start : dayStart
+  const availableEnd = stop.end < dayEnd ? stop.end : dayEnd
+  const latestEnd = activities
+    .filter(activity => activity.stopId === stop.id && intervalOverlapsDay(activity.start, activity.end, date))
+    .map(activity => activity.end)
+    .sort()
+    .at(-1)
+  const start = latestEnd && latestEnd > availableStart ? latestEnd : availableStart
+  return { start, end: addMinutes(start, 60, availableEnd) }
 }
 
 export function validateStopSchedule(trip: Itinerary, stop: Stopover, stops: Stopover[]) {
   if (!stop.placeId && (!stop.name.trim() || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lng))) return 'Vui lòng chọn một địa điểm trên bản đồ.'
   if (stop.start >= stop.end) return 'Thời gian kết thúc điểm dừng phải sau thời gian bắt đầu.'
-  if (stop.start.slice(0, 10) !== stop.end.slice(0, 10)) return 'Điểm dừng phải bắt đầu và kết thúc trong cùng một ngày.'
   if (stop.start.slice(0, 10) < trip.startDate || stop.end.slice(0, 10) > trip.endDate) return 'Thời gian điểm dừng nằm ngoài lịch trình chuyến đi.'
   if (stops.some(item => item.id !== stop.id && overlaps(stop.start, stop.end, item.start, item.end))) return 'Điểm dừng bị trùng thời gian với một điểm dừng khác.'
   return null

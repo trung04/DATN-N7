@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Itinerary, Stopover, TravelActivity } from '@/types/domain'
-import { defaultActivityTimes, defaultStopTimes, validateActivitySchedule, validateStopSchedule } from './trip-schedule'
+import { defaultActivityTimes, defaultStopTimes, intervalOverlapsDay, stopOverlapsDay, validateActivitySchedule, validateStopSchedule } from './trip-schedule'
 
 const trip = { id: 'trip', userId: 'user', name: 'Test', city: 'Hà Nội', startDate: '2026-11-20', endDate: '2026-11-22', adults: 2, children: 0, budget: 1, note: '', source: 'manual', status: 'SAVED' } satisfies Itinerary
 const stop = { id: 'stop-1', tripId: trip.id, placeId: 'place-1', name: 'Điểm 1', address: '', start: '2026-11-20T09:00', end: '2026-11-20T11:00', order: 1, note: '' } satisfies Stopover
@@ -19,5 +19,19 @@ describe('trip schedule', () => {
 
   it('accepts a custom Mapbox stop with a name and coordinates', () => {
     expect(validateStopSchedule(trip, { ...stop, id: '', placeId: undefined, name: 'Quán cà phê', lat: 16.06, lng: 108.22 }, [])).toBeNull()
+  })
+
+  it('accepts an unlimited stop duration within the trip', () => {
+    const longStop = { ...stop, start: '2026-11-20T20:00', end: '2026-11-22T08:00' }
+    expect(validateStopSchedule(trip, longStop, [])).toBeNull()
+    expect(stopOverlapsDay(longStop, '2026-11-20')).toBe(true)
+    expect(stopOverlapsDay(longStop, '2026-11-21')).toBe(true)
+    expect(stopOverlapsDay(longStop, '2026-11-22')).toBe(true)
+  })
+
+  it('uses the selected day when adding an activity to a cross-day stop', () => {
+    const crossDayStop = { ...stop, start: '2026-11-20T20:00', end: '2026-11-22T08:00' }
+    expect(defaultActivityTimes(crossDayStop, [], '2026-11-21')).toEqual({ start: '2026-11-21T00:00', end: '2026-11-21T01:00' })
+    expect(intervalOverlapsDay('2026-11-20T23:30', '2026-11-21T00:30', '2026-11-21')).toBe(true)
   })
 })
