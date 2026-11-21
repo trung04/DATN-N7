@@ -191,6 +191,7 @@ export function ItineraryMap({
     setMapReady(false)
     setMapError('')
     mapboxgl.accessToken = token
+    containerRef.current.replaceChildren()
     let map: MapboxMap
     try {
       map = new mapboxgl.Map({
@@ -217,6 +218,7 @@ export function ItineraryMap({
       setMapReady(true)
     })
     map.on('error', event => {
+      window.clearTimeout(loadTimer)
       console.error('Mapbox map error:', event.error)
       setMapError('Mapbox không tải được bản đồ. Kiểm tra quyền truy cập token, kết nối mạng và WebGL.')
     })
@@ -342,12 +344,16 @@ export function ItineraryMap({
           onKeyDown={event => { if (event.key === 'Escape') setSearchOpen(false); if (event.key === 'Enter' && searchResults[0]) { event.preventDefault(); chooseSearchResult(searchResults[0]) } }}
           placeholder="Tìm điểm đến hoặc địa chỉ trên bản đồ"
           aria-label="Tìm địa điểm trên bản đồ"
+          aria-autocomplete="list"
+          aria-controls="itinerary-map-search-results"
           aria-expanded={searchOpen && Boolean(searchQuery.trim())}
+          name="itinerary-map-search"
+          role="combobox"
           className="!mt-0 !h-11 !w-full !rounded-xl !border-slate-200 !bg-white/95 !pl-10 !pr-10 shadow-lg"
         />
         {searchQuery && <button type="button" aria-label="Xóa nội dung tìm kiếm" className="absolute right-3 top-3 rounded p-0.5 text-slate-500 hover:bg-slate-100" onClick={() => { setSearchQuery(''); setSearchOpen(true); setSelectedMapboxResult(null); searchMarkerRef.current?.remove(); searchMarkerRef.current = null }}><X size={17} /></button>}
       </div>
-      {searchOpen && searchQuery.trim() && <div role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+      {searchOpen && searchQuery.trim() && <div id="itinerary-map-search-results" role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
         {searchResults.length > 0 && <>
           <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Địa điểm trong danh mục</p>
           {searchResults.map(place => <button key={place.id} type="button" role="option" aria-selected="false" className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50" onMouseDown={event => event.preventDefault()} onClick={() => chooseSearchResult(place)}>
@@ -369,7 +375,7 @@ export function ItineraryMap({
         <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Kết quả Mapbox chỉ dùng để xem vị trí trên bản đồ; không tự thêm vào danh mục.</p>
       </div>}
     </div>    {!mapReady && !mapError && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-slate-100/70 text-sm text-slate-600">Đang tải bản đồ...</div>}
-    {mapError && <div role="alert" className="absolute inset-x-4 top-4 z-10 rounded-xl border border-red-200 bg-white/95 p-4 text-sm text-red-700 shadow">{mapError}</div>}
+    {mapError && <div role="alert" className="absolute left-4 right-16 top-[4.5rem] z-10 max-w-xl rounded-xl border border-red-200 bg-white/95 p-4 text-sm text-red-700 shadow">{mapError}</div>}
     {selectingCustomStop && <div role="status" className="absolute bottom-14 left-3 z-10 max-w-[min(90%,28rem)] rounded-lg bg-white/95 px-3 py-2 text-sm text-slate-700 shadow">Bấm vị trí muốn ghim, rồi nhập tên và địa chỉ điểm dừng.<button type="button" className="ml-2 font-semibold text-[#1E3A5F] hover:underline" onClick={() => { pendingCustomStopNameRef.current = null; setSelectingCustomStop(false) }}>Hủy</button></div>}
     {selectedMapboxResult && !selectingCustomStop && <div role="status" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-600 shadow"><p className="truncate font-semibold text-slate-800">{selectedMapboxResult.name}</p><p className="truncate">{selectedMapboxResult.address}</p><button type="button" disabled={resolvingPermanentSearch} className="mt-2 rounded-md bg-[#1E3A5F] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#294e7b] disabled:cursor-wait disabled:opacity-60" onClick={() => void addSelectedMapboxResultAsStop()}>{resolvingPermanentSearch ? 'Đang xác nhận địa điểm…' : 'Thêm làm điểm dừng'}</button>{permanentSearchError && <><p className="mt-2 text-amber-800">{permanentSearchError}</p><button type="button" className="mt-1 font-semibold text-[#1E3A5F] hover:underline" onClick={startCustomStopPin}>Ghim thủ công và nhập thông tin</button></>}</div>}
     <div className="absolute bottom-3 left-3 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600 shadow">Địa điểm có sẵn: chọn trên bản đồ · Địa điểm mới: tìm kiếm rồi ghim · © Mapbox</div>
