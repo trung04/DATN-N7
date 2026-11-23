@@ -21,8 +21,9 @@ Kết quả chạy thử ngày 23/11/2026, 36 query × 3 lần, Top K tối đa 
 | --- | --- | --- | --- | --- |
 | BM25 | 0.5141 | 0.9352 | 0.8822 | 234 ms |
 | BGE thuần | 0.5164 | 0.9676 | 0.9184 | 741 ms |
+| BGE + BM25 (RRF) | 0.5204 | 1.0000 | 0.9590 | 748 ms |
 
-Chi tiết CSV/JSON ở `evaluation/results/{bm25,bge}`. RSS peak toàn process lần lượt 998/2203 MiB; BGE nạp model khi truy vấn nên hai số này không phải bộ nhớ riêng từng thuật toán. Cần chạy process tách biệt nếu báo cáo so sánh footprint độc lập.
+Chi tiết CSV/JSON ở `evaluation/results/{bm25,bge,hybrid}`. RSS peak toàn process lần lượt 998/2203/2183 MiB; BGE nạp model khi truy vấn nên các số này không phải bộ nhớ riêng từng thuật toán. Cần chạy process tách biệt nếu báo cáo so sánh footprint độc lập. Hybrid được đo là pipeline hiện tại: RRF k=60 cộng ưu tiên tên khớp chính xác, BM25 tăng trọng số tên trong văn bản; không phải thí nghiệm chỉ thay riêng phép gộp trên hai ranking thuần. Kết quả tốt hơn trên nhãn silver chưa chứng minh hiệu quả trên nhãn người dùng thực.
 
 ## Luồng đang hoàn thiện: chatbot trong AI demo độc lập
 
