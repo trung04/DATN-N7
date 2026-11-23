@@ -1,15 +1,15 @@
-from .schemas import SearchFilters
-from .text_utils import folded, contains, negative_before, feature_key, place_features, FEATURES, TYPES, STOPWORDS
 """Vietnamese place search: conservative constraints + BM25 + exact BGE cosine + RRF.
 
 This is rule-based parsing, not an LLM. Unsupported requirements are surfaced rather
 than claimed satisfied. Search never reads user history or adds exploratory results.
 """
+from .text_schemas import SearchFilters
+from .bm25 import bm25
+from .text_utils import folded, contains, negative_before, feature_key, place_features, FEATURES, TYPES
+
 import json
-import math
 import re
 import uuid
-from collections import Counter
 
 import numpy as np
 
@@ -91,19 +91,6 @@ def interpret(body, catalog):
     return result, inferred, warnings, unsupported
 
 
-def bm25(query, documents):
-    terms = set(folded(query).split()) - STOPWORDS
-    counts = [Counter(folded(doc).split()) for doc in documents]
-    average = sum(sum(c.values()) for c in counts) / max(1, len(counts)) or 1
-    scores = [0.0] * len(documents)
-    for term in terms:
-        df = sum(term in c for c in counts)
-        idf = math.log(1 + (len(counts) - df + 0.5) / (df + 0.5))
-        for index, count in enumerate(counts):
-            tf = count[term]
-            if tf:
-                scores[index] += idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * sum(count.values()) / average))
-    return scores
 
 
 class PlaceSearchService:
@@ -115,7 +102,7 @@ class PlaceSearchService:
         catalog = [json.loads(row["data"]) for row in rows]
         filters, inferred, warnings, unsupported = interpret(body, catalog)
         query_vector = None
-        if rows:
+        if rows and body.method!='bm25':
             query_vector = normalize(self.catalog.embedding.embed_text(body.query))
             if query_vector is None:
                 warnings.append("Embedding truy vấn rỗng; chỉ tìm theo từ khóa")
@@ -149,16 +136,19 @@ class PlaceSearchService:
             if filters.radius_km is not None and (distance is None or distance > filters.radius_km):
                 continue
             vector = None
-            if row["vector"] and row["model"] == self.catalog.model and row["content_hash"]:
+            if body.method!='bm25' and row["vector"] and row["model"] == self.catalog.model and row["content_hash"]:
                 vector = np.asarray(json.loads(row["vector"]), dtype=np.float32)
                 if vector.shape != (self.catalog.embedding.dimensions,) or not np.all(np.isfinite(vector)):
                     vector = None
-            if vector is None:
+            if vector is None and body.method!='bm25':
                 stale += 1
             eligible.append({"p": p, "vector": vector, "distance": distance})
             documents.append(" ".join([p["name"]] * 3 + p["categories"] + p["tags"] + p["amenities"] +
                                       [(p["description"] or "")[:4000], p["city"]]))
-        lexical = bm25(body.query, documents)
+        if body.method=='bm25':
+            from app.modules.recommendation.place_document import place_document
+            documents=[place_document(c['p']) for c in eligible]
+        lexical = bm25(body.query, documents) if body.method!='bge' else [0.0]*len(eligible)
         valid = [(i,c["vector"]) for i,c in enumerate(eligible) if c["vector"] is not None]
         similarities = {}
         if query_vector is not None and valid:
@@ -176,6 +166,8 @@ class PlaceSearchService:
                 continue
             exact_name = folded(body.query) == folded(c["p"]["name"])
             score = sum(1 / (60 + ranks[i]) for ranks in (semantic_rank, lexical_rank) if i in ranks)
+            if body.method=='bm25':score=lexical[i]
+            elif body.method=='bge':score=similarity
             reasons = []
             if exact_name:
                 reasons.append("Tên địa điểm khớp chính xác")
@@ -187,15 +179,16 @@ class PlaceSearchService:
                 "place_type": c["p"]["place_type"], "city": c["p"]["city"], "score": score,
                 "semantic_score": similarity, "keyword_score": lexical[i], "exact_name_match": exact_name,
                 "distance_km": c["distance"], "image_url": c["p"]["image_url"], "reasons": reasons})
-        results.sort(key=lambda r: (-int(r["exact_name_match"]), -r["score"], r["place_id"]))
+        results.sort(key=lambda r: (-int(r["exact_name_match"]) if body.method=='hybrid' else 0, -r["score"], r["place_id"]))
         if stale:
-            warnings.append(f"{stale} địa điểm chưa có embedding đúng model/nội dung; chỉ tham gia nguồn từ khóa")
+            warnings.append(f"{stale} địa điểm chưa có embedding đúng model/nội dung; " + ('không tham gia BGE thuần' if body.method=='bge' else 'chỉ tham gia nguồn từ khóa'))
         if not results:
             warnings.append("Không có kết quả; không tự nới các điều kiện bắt buộc")
         return {"request_id": str(uuid.uuid4()), "query": body.query, "parser": "vietnamese_rules_v1",
             "inferred_filters": inferred, "applied_filters": filters.model_dump(mode="json", exclude_none=True),
             "unsupported_requirements": unsupported, "warnings": warnings,
-            "retrieval": "local_exact_bge_bm25_rrf", "model": self.catalog.model,
+            "retrieval": {'hybrid':'local_exact_bge_bm25_rrf','bge':'local_exact_bge','bm25':'bm25'}[body.method],
+            "model": 'BM25(k1=1.2,b=0.75)' if body.method=='bm25' else self.catalog.model,
             "total": len(results), "offset": body.offset, "limit": body.limit,
             "results": results[body.offset:body.offset+body.limit]}
 

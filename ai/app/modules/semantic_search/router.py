@@ -3,9 +3,8 @@ from fastapi import APIRouter, Depends, Request, Query, HTTPException, UploadFil
 from app.api.dependencies import service
 from app.core.auth import authorize
 from app.modules.recommendation.schemas import Identifier, PlaceData, PlaceBatch, ReviewBatch, PlaceEmbeddingResponse, PlaceEmbeddingBatchResponse
-from .schemas import (PlaceSearchRequest,PlaceSearchResponse,ImageEmbeddingRequest,
-    ImageEmbeddingResponse,ImageSearchRequest,TextEmbeddingRequest,TextEmbeddingResponse,
-    BatchEmbeddingRequest,BatchEmbeddingResponse)
+from .schemas import (ImageEmbeddingRequest,
+    ImageEmbeddingResponse,ImageSearchRequest)
 router=APIRouter(prefix="/api/v1",tags=["Semantic search"],dependencies=[Depends(authorize)])
 @router.post("/embeddings/place", response_model=PlaceEmbeddingResponse, tags=["Place embeddings"])
 def embed_place(body: PlaceData, svc=Depends(service)):
@@ -113,25 +112,5 @@ def image_collection(request: Request):
             "model": service.encoder.model_name, "dimensions": service.encoder.dimensions,
             "distance": "Cosine", "points_count": count}
 
-@router.post("/search/places",response_model=PlaceSearchResponse)
-def search_places(body: PlaceSearchRequest, request: Request):
-    from app.agents.place_search_agent import PlaceSearchAgent
-    return PlaceSearchAgent(request.app.state.recommendation).search(body)
-
-@router.post("/embeddings/text",response_model=TextEmbeddingResponse)
-def embed_text(body: TextEmbeddingRequest, request: Request):
-    model=request.app.state.embedding
-    try:
-        return {"model":model.model_name,"dimensions":model.dimensions,"embedding":model.embed_text(body.text)}
-    except ValueError as exc:
-        raise HTTPException(400,str(exc))
-
-@router.post("/embeddings/batch",response_model=BatchEmbeddingResponse)
-def embed_batch(body: BatchEmbeddingRequest, request: Request):
-    if len(body.text)>100:
-        raise HTTPException(400,"Danh sách vượt quá 100 chuỗi")
-    model=request.app.state.embedding
-    try:
-        return {"model":model.model_name,"dimensions":model.dimensions,"embeddings":model.embed_batch(body.text)}
-    except ValueError as exc:
-        raise HTTPException(400,str(exc))
+from .text_router import router as text_router
+router.include_router(text_router)
