@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { StopoverEntity } from '../../stopovers/entities/stopover.entity';
 import { StopoversService } from '../../stopovers/services/stopovers.service';
 import { CreateActivityRequest } from '../dtos/requests/create-activity.request';
 import { ListActivitiesRequest } from '../dtos/requests/list-activities.request';
@@ -7,6 +8,8 @@ import { ActivityEntity } from '../entities/activity.entity';
 import {
   ActivityNotFoundException,
   ActivityOrderConflictException,
+  ActivityOutsideStopoverException,
+  ActivityScheduleConflictException,
   EmptyActivityUpdateException,
   InvalidActivityTimeRangeException,
 } from '../exceptions/activity.exceptions';
@@ -29,12 +32,18 @@ export class ActivitiesService {
     input: CreateActivityRequest,
     touristUserId: string,
   ): Promise<ActivityEntity> {
-    await this.stopoversService.findByIdForTourist(stopoverId, touristUserId);
-    this.assertTimeRange(input.startTime, input.endTime);
+    const stopover = await this.stopoversService.findByIdForTourist(
+      stopoverId,
+      touristUserId,
+    );
+    const startTime = new Date(input.startTime);
+    const endTime = new Date(input.endTime);
+    this.assertTimeRange(startTime, endTime);
+    const existing = await this.repository.findByStopoverId(stopoverId);
+    this.assertScheduleAvailable(stopover, existing, startTime, endTime);
     if (
-      await this.repository.findByStopoverAndOrder(
-        stopoverId,
-        input.activityOrder,
+      existing.some(
+        (activity) => activity.activityOrder === input.activityOrder,
       )
     ) {
       throw new ActivityOrderConflictException(stopoverId, input.activityOrder);
@@ -44,8 +53,8 @@ export class ActivitiesService {
       activityOrder: input.activityOrder,
       name: input.name.trim(),
       description: this.normalizeNullable(input.description),
-      startTime: new Date(input.startTime),
-      endTime: new Date(input.endTime),
+      startTime,
+      endTime,
       estimatedCost: input.estimatedCost ?? null,
       currency: input.currency.trim().toUpperCase(),
     });
@@ -89,24 +98,37 @@ export class ActivitiesService {
     if (Object.values(input).every((value) => value === undefined)) {
       throw new EmptyActivityUpdateException();
     }
-    const activity = await this.findById(stopoverId, id, touristUserId);
+    const stopover = await this.stopoversService.findByIdForTourist(
+      stopoverId,
+      touristUserId,
+    );
+    const activity = await this.repository.findByIdAndStopoverId(
+      id,
+      stopoverId,
+    );
+    if (!activity) throw new ActivityNotFoundException(id);
     const activityOrder = input.activityOrder ?? activity.activityOrder;
-    const startTime = input.startTime ?? activity.startTime.toISOString();
-    const endTime = input.endTime ?? activity.endTime.toISOString();
+    const startTime = input.startTime
+      ? new Date(input.startTime)
+      : activity.startTime;
+    const endTime = input.endTime ? new Date(input.endTime) : activity.endTime;
     this.assertTimeRange(startTime, endTime);
+    const existing = (
+      await this.repository.findByStopoverId(stopoverId)
+    ).filter((item) => item.id !== id);
+    this.assertScheduleAvailable(stopover, existing, startTime, endTime);
 
     if (activityOrder !== activity.activityOrder) {
-      const duplicate = await this.repository.findByStopoverAndOrder(
-        stopoverId,
-        activityOrder,
+      const duplicate = existing.find(
+        (item) => item.activityOrder === activityOrder,
       );
       if (duplicate && duplicate.id !== id) {
         throw new ActivityOrderConflictException(stopoverId, activityOrder);
       }
     }
     activity.activityOrder = activityOrder;
-    activity.startTime = new Date(startTime);
-    activity.endTime = new Date(endTime);
+    activity.startTime = startTime;
+    activity.endTime = endTime;
     if (input.name !== undefined) activity.name = input.name.trim();
     if (input.description !== undefined) {
       activity.description = this.normalizeNullable(input.description);
@@ -120,14 +142,36 @@ export class ActivitiesService {
     return this.repository.save(activity);
   }
 
-  async delete(stopoverId: string, id: string, touristUserId: string): Promise<void> {
-    await this.repository.delete(await this.findById(stopoverId, id, touristUserId));
+  async delete(
+    stopoverId: string,
+    id: string,
+    touristUserId: string,
+  ): Promise<void> {
+    await this.repository.delete(
+      await this.findById(stopoverId, id, touristUserId),
+    );
   }
 
-  private assertTimeRange(startTime: string, endTime: string): void {
-    if (new Date(endTime) <= new Date(startTime)) {
+  private assertTimeRange(startTime: Date, endTime: Date): void {
+    if (endTime <= startTime) {
       throw new InvalidActivityTimeRangeException();
     }
+  }
+
+  private assertScheduleAvailable(
+    stopover: StopoverEntity,
+    existing: ActivityEntity[],
+    startTime: Date,
+    endTime: Date,
+  ): void {
+    if (startTime < stopover.arrivalTime || endTime > stopover.departureTime) {
+      throw new ActivityOutsideStopoverException();
+    }
+    const overlap = existing.find(
+      (activity) =>
+        startTime < activity.endTime && activity.startTime < endTime,
+    );
+    if (overlap) throw new ActivityScheduleConflictException(overlap.id);
   }
 
   private normalizeNullable(value?: string | null): string | null {
