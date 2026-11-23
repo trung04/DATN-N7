@@ -39,6 +39,7 @@ def main():
     parser.add_argument('--dataset',default='ai/evaluation/datasets/place-search-v1')
     parser.add_argument('--base-url',default='http://127.0.0.1:9002')
     parser.add_argument('--output',required=True)
+    parser.add_argument('--method',choices=['hybrid','bge','bm25'],default='hybrid')
     parser.add_argument('--ks',default='5,10,20')
     parser.add_argument('--repeats',type=int,default=3)
     parser.add_argument('--warmup',type=int,default=2)
@@ -79,6 +80,7 @@ def main():
     def call(path,body=None):
         headers={'Content-Type':'application/json'}
         if key:headers['X-API-Key']=key
+        if path=='/api/v1/search/places' and body is not None:body={**body,'method':args.method}
         request=Request(args.base_url.rstrip('/')+path,data=json.dumps(body).encode() if body is not None else None,headers=headers)
         with urlopen(request,timeout=180) as response:return json.load(response)
     health=call('/health');ready=call('/ready')
@@ -152,9 +154,9 @@ def main():
                                              for gpu in {s['gpu_index'] for s in gpu_samples}},
                'gpu_scope':'nvidia-smi global physical-device used memory; includes other projects/display, NOT AI-only VRAM',
                'note':'Sampled peak can miss short spikes; HWM is since process start, not this evaluation only. Qdrant RAM excluded.'}
-    summary={'created_at':datetime.now(timezone.utc).isoformat(),'provisional_labels':bool(draft_count),
+    summary={'created_at':datetime.now(timezone.utc).isoformat(),'method':args.method,'provisional_labels':bool(draft_count),
              'draft_judgments':draft_count,'query_count':len(queries),'repeats':args.repeats,'split':args.split,
-             'dataset_hashes':{name:hashlib.sha256((folder/name).read_bytes()).hexdigest() for name in ['queries.jsonl','judgments.csv','manifest.json']},
+             'dataset_hashes':{name:hashlib.sha256((folder/name).read_bytes()).hexdigest() for name in ['corpus.jsonl','queries.jsonl','judgments.csv','manifest.json']},
              'health':health,'ready':ready,'endpoint':'/api/v1/search/places','request_limit':max(ks),
              'retrieval_modes':dict(Counter(r['retrieval'] for r in runs)),
              'quality_metrics':rows,'failed_requests':len(errors),'successful_requests':len(successes),
@@ -165,7 +167,7 @@ def main():
              'caveats':['Silver labels require human validation; scores are not final thesis results.',
                         'Binary relevance grade >=2; nDCG gain=2^grade-1; unjudged IDs count as grade 0 and coverage is reported.',
                         'Queries without binary positives excluded from Recall/MRR; failures get empty ranks (zero quality where defined).',
-                        'This is the complete current hybrid place-search endpoint, not an isolated embedding benchmark.',
+                        'Method is recorded explicitly: BM25, exact BGE cosine, or hybrid RRF. No exact-name boost in pure methods.',
                         'Resource polling adds small measurement overhead. No model startup/cold-load latency included.']}
     (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
     (out/'runs.jsonl').write_text('\n'.join(json.dumps(r,ensure_ascii=False) for r in runs)+'\n',encoding='utf-8')

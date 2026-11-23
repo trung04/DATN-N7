@@ -27,7 +27,7 @@ function renderLabels(){
  el('scopeInfo').textContent=(session.filters.city||'Mọi thành phố')+' · '+(session.filters.place_type||'Mọi loại')+' · Top '+session.k+' · '+session.ranking.length+' kết quả thực tế';
  const grades=validLabels(),total=session.corpus.length,done=Object.keys(grades).length;
  el('labelProgress').style.width=(total?100*done/total:0)+'%';el('progressText').textContent=done+'/'+total+' địa điểm trong phạm vi đã được gán nhãn. Relevant (nhãn 2–3): '+Object.values(grades).filter(g=>g>=2).length;
- el('saveState').textContent='Phiên '+session.id.slice(0,8)+' · v'+session.version;
+ el('saveState').textContent=(session.method||'hybrid')+' · Phiên '+session.id.slice(0,8)+' · v'+session.version;
  const pending=Object.keys(changes).length;el('pendingInfo').textContent=pending?pending+' nhãn chưa lưu':'Đã lưu trên AI service';
  const rows=visibleRows(),pages=Math.max(1,Math.ceil(rows.length/pageSize));page=Math.min(page,pages);
  el('labelPage').textContent='Trang '+page+'/'+pages+' · '+rows.length+' địa điểm';
@@ -63,7 +63,7 @@ async function save(){
 async function loadList(){const d=await api('');el('savedEvaluations').replaceChildren(new Option('Chọn lượt đánh giá',''));for(const s of d.items)el('savedEvaluations').append(new Option(s.query+' · '+s.labeled+'/'+s.scope+' nhãn · '+s.id.slice(0,8),s.id));}
 el('evaluationForm').onsubmit=e=>{e.preventDefault();void work(async()=>{
  if(Object.keys(changes).length)await save();
- const body={query:el('evalQuery').value.trim(),k:Number(el('evalK').value)};if(el('evalCity').value.trim())body.city=el('evalCity').value.trim();if(el('evalType').value)body.place_type=el('evalType').value;
+ const body={method:el('evalMethod').value,query:el('evalQuery').value.trim(),k:Number(el('evalK').value)};if(el('evalCity').value.trim())body.city=el('evalCity').value.trim();if(el('evalType').value)body.place_type=el('evalType').value;
  const start=performance.now();const d=await api('',body,'POST');d.client_latency_ms=performance.now()-start;openSession(d);el('evalStatus').textContent='Đã lưu lượt tìm kiếm. Chấm 0–3 cho Top K, rồi duyệt thêm toàn bộ phạm vi để tính Recall đầy đủ.';await loadList();
 });};
 el('loadEvaluations').onclick=()=>work(async()=>{await loadList();el('evalStatus').textContent='Đã tải danh sách lượt đánh giá.';});
@@ -88,7 +88,7 @@ el('exportEvaluation').onclick=()=>download('evaluation-'+session.id+'.json',JSO
 el('exportLabels').onclick=()=>{const grades=validLabels();const cell=v=>{v=String(v??'');if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"';};const rows=[['evaluation_id','query','place_id','place_name','grade','review_status']];for(const p of session.corpus)rows.push([session.id,session.query,p.place_id,p.name,grades[p.place_id]??'',grades[p.place_id]!=null?'reviewed':'unjudged']);download('labels-'+session.id+'.csv','\ufeff'+rows.map(r=>r.map(cell).join(',')).join('\r\n'),'text/csv;charset=utf-8');};
 el('printEvaluation').onclick=()=>window.print();
 el('aggregateMetrics').onclick=()=>work(async()=>{
- const d=await api('/reports/aggregate');const out=el('aggregateResult');out.replaceChildren(make('p',d.complete_queries+' truy vấn đầy đủ · '+d.incomplete_queries_excluded+' truy vấn chưa đủ nhãn được loại khỏi thống kê.'));
+ const d=await api('/reports/aggregate?method='+encodeURIComponent(el('evalMethod').value));const out=el('aggregateResult');out.replaceChildren(make('p',el('evalMethod').value+' · '+d.complete_queries+' truy vấn đầy đủ · '+d.incomplete_queries_excluded+' truy vấn chưa đủ nhãn được loại khỏi thống kê.'));
  if(!d.complete_queries){out.append(make('p','Bạn cần duyệt toàn bộ phạm vi của ít nhất một lượt trước khi tính cả bộ.','notice'));el('evalStatus').textContent='Chưa có bộ nhãn hoàn chỉnh.';return;}
  const wrap=make('div',null,'table-wrap'),table=make('table'),head=make('tr');
  for(const t of ['K','Số query','Recall@K','MRR@K','nDCG@K'])head.append(make('th',t));table.append(head);

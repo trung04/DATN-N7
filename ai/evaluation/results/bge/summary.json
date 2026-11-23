@@ -1,0 +1,225 @@
+{
+  "created_at": "2026-11-23T12:00:58.429463+00:00",
+  "method": "bge",
+  "provisional_labels": true,
+  "draft_judgments": 19948,
+  "query_count": 36,
+  "repeats": 3,
+  "split": "all",
+  "dataset_hashes": {
+    "corpus.jsonl": "cc39568ad13c3d8388acd80b60182d6101ee85b41ea63d8b9bc92d1ba6a9e621",
+    "queries.jsonl": "c66ea7d756279cd43aec87d3d159048802cc31ce0e6f843bf6ff21fa3449c29c",
+    "judgments.csv": "36ab3cbd00d7804b964d9e922bcd559324b2d08d76960502060673785943c11e",
+    "manifest.json": "7216cfc9b46de43b5da3ab713fee6439a6376c45545d29131e19b2d348934ce2"
+  },
+  "health": {
+    "status": "healthy",
+    "model": "BAAI/bge-m3",
+    "device": "cpu",
+    "dimensions": 1024
+  },
+  "ready": {
+    "status": "ready",
+    "pending_index": 3
+  },
+  "endpoint": "/api/v1/search/places",
+  "request_limit": 20,
+  "retrieval_modes": {
+    "local_exact_bge": 108
+  },
+  "quality_metrics": [
+    {
+      "category": "all",
+      "k": 5,
+      "queries": 36,
+      "recall": 0.45910227431009093,
+      "recall_query_count": 36,
+      "mrr": 0.9675925925925926,
+      "mrr_query_count": 36,
+      "ndcg": 0.9238731939178784,
+      "ndcg_query_count": 36,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 36
+    },
+    {
+      "category": "all",
+      "k": 10,
+      "queries": 36,
+      "recall": 0.5163516594475356,
+      "recall_query_count": 36,
+      "mrr": 0.9675925925925926,
+      "mrr_query_count": 36,
+      "ndcg": 0.91835953826271,
+      "ndcg_query_count": 36,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 36
+    },
+    {
+      "category": "all",
+      "k": 20,
+      "queries": 36,
+      "recall": 0.5977074614032709,
+      "recall_query_count": 36,
+      "mrr": 0.9675925925925926,
+      "mrr_query_count": 36,
+      "ndcg": 0.9094826259564117,
+      "ndcg_query_count": 36,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 36
+    },
+    {
+      "category": "entity",
+      "k": 5,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 1.0,
+      "mrr_query_count": 6,
+      "ndcg": 1.0,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    },
+    {
+      "category": "entity",
+      "k": 10,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 1.0,
+      "mrr_query_count": 6,
+      "ndcg": 1.0,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    },
+    {
+      "category": "entity",
+      "k": 20,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 1.0,
+      "mrr_query_count": 6,
+      "ndcg": 1.0,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    },
+    {
+      "category": "semantic",
+      "k": 5,
+      "queries": 24,
+      "recall": 0.1886534114651364,
+      "recall_query_count": 24,
+      "mrr": 1.0,
+      "mrr_query_count": 24,
+      "ndcg": 0.9220210511446735,
+      "ndcg_query_count": 24,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 24
+    },
+    {
+      "category": "semantic",
+      "k": 10,
+      "queries": 24,
+      "recall": 0.2745274891713033,
+      "recall_query_count": 24,
+      "mrr": 1.0,
+      "mrr_query_count": 24,
+      "ndcg": 0.9137505676619209,
+      "ndcg_query_count": 24,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 24
+    },
+    {
+      "category": "semantic",
+      "k": 20,
+      "queries": 24,
+      "recall": 0.3965611921049063,
+      "recall_query_count": 24,
+      "mrr": 1.0,
+      "mrr_query_count": 24,
+      "ndcg": 0.9004351992024735,
+      "ndcg_query_count": 24,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 24
+    },
+    {
+      "category": "unaccented_entity",
+      "k": 5,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 0.8055555555555556,
+      "mrr_query_count": 6,
+      "ndcg": 0.8551549589285763,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    },
+    {
+      "category": "unaccented_entity",
+      "k": 10,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 0.8055555555555556,
+      "mrr_query_count": 6,
+      "ndcg": 0.8551549589285763,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    },
+    {
+      "category": "unaccented_entity",
+      "k": 20,
+      "queries": 6,
+      "recall": 1.0,
+      "recall_query_count": 6,
+      "mrr": 0.8055555555555556,
+      "mrr_query_count": 6,
+      "ndcg": 0.8551549589285763,
+      "ndcg_query_count": 6,
+      "judged_coverage": 1.0,
+      "judged_coverage_query_count": 6
+    }
+  ],
+  "failed_requests": 0,
+  "successful_requests": 108,
+  "latency_ms": {
+    "mean": 741.1868018523954,
+    "p50": 702.0856999733951,
+    "p95": 1111.4588650088988,
+    "max": 1587.8491000039503,
+    "scope": "Warm HTTP end-to-end for max(K); serial requests; warmup excluded; includes HTTP/serialization/network"
+  },
+  "warmup_ms": [
+    818.7492999713868,
+    1145.973899983801
+  ],
+  "resources": {
+    "scope": "AI API process PID 1 RSS; container cgroup memory includes other process/cache memory",
+    "sampling_interval_seconds": 1,
+    "samples": 52,
+    "errors": [],
+    "rss_baseline_mib": 958.09765625,
+    "rss_sampled_peak_mib": 2203.3984375,
+    "rss_lifetime_high_water_mib": 2203.3984375,
+    "container_sampled_peak_mib": 952.54296875,
+    "vram_mib": null,
+    "vram_status": "not_used_by_text_embedding_cpu",
+    "gpu_device_global_peak_mib": {
+      "0": 0.0
+    },
+    "gpu_scope": "nvidia-smi global physical-device used memory; includes other projects/display, NOT AI-only VRAM",
+    "note": "Sampled peak can miss short spikes; HWM is since process start, not this evaluation only. Qdrant RAM excluded."
+  },
+  "caveats": [
+    "Silver labels require human validation; scores are not final thesis results.",
+    "Binary relevance grade >=2; nDCG gain=2^grade-1; unjudged IDs count as grade 0 and coverage is reported.",
+    "Queries without binary positives excluded from Recall/MRR; failures get empty ranks (zero quality where defined).",
+    "Method is recorded explicitly: BM25, exact BGE cosine, or hybrid RRF. No exact-name boost in pure methods.",
+    "Resource polling adds small measurement overhead. No model startup/cold-load latency included."
+  ]
+}

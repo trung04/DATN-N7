@@ -91,12 +91,19 @@ class SearchFilters(Contract):
         return self
 
 class PlaceSearchRequest(Contract):
+    method: Literal['hybrid','bge','bm25'] = 'hybrid'
     query: str = Field(min_length=1, max_length=2000)
     filters: SearchFilters = Field(default_factory=SearchFilters)
     infer_filters: bool = True
     limit: int = Field(10, ge=1, le=100)
     offset: int = Field(0, ge=0, le=10000)
     min_similarity: float | None = Field(None, ge=-1, le=1)
+
+    @model_validator(mode='after')
+    def semantic_threshold(self):
+        if self.method=='bm25' and self.min_similarity is not None:
+            raise ValueError('min_similarity is not applicable to BM25')
+        return self
 
 class PlaceSearchItem(Contract):
     place_id: str

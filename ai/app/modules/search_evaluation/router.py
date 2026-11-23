@@ -20,6 +20,7 @@ router=APIRouter(prefix='/api/v1/search-evaluations',tags=['Search evaluation'],
 
 
 class EvaluationQuery(Contract):
+    method: Literal['hybrid','bge','bm25'] = 'hybrid'
     query: str = Field(min_length=1,max_length=2000)
     city: Text | None = None
     place_type: Literal['Hotel','Restaurant','Attraction'] | None = None
@@ -48,7 +49,7 @@ def run_evaluation(body: EvaluationQuery,svc=Depends(service)):
         corpus=[json.loads(r['data']) for r in svc.store.places()]
         corpus=[p for p in corpus if p['active'] and (not body.city or p['city'].casefold()==body.city.casefold())
                 and (not body.place_type or p['place_type']==body.place_type)]
-        request=PlaceSearchRequest(query=body.query,filters={'city':body.city,'place_type':body.place_type},infer_filters=False,limit=body.k)
+        request=PlaceSearchRequest(method=body.method,query=body.query,filters={'city':body.city,'place_type':body.place_type},infer_filters=False,limit=body.k)
         samples=[memory()];stop=threading.Event()
         def monitor():
             while not stop.wait(.05):samples.append(memory())
@@ -56,7 +57,7 @@ def run_evaluation(body: EvaluationQuery,svc=Depends(service)):
         start=time.perf_counter()
         try:result=PlaceSearchAgent(svc).search(request)
         finally:elapsed=(time.perf_counter()-start)*1000;stop.set();thread.join(timeout=1);samples.append(memory())
-        device=svc.embedding.device
+        device='cpu' if body.method=='bm25' else svc.embedding.device
         resources={'device':device,'rss_baseline_mib':samples[0].get('VmRSS'),
                    'rss_sampled_peak_mib':max((s['VmRSS'] for s in samples if 'VmRSS' in s),default=None),
                    'rss_lifetime_high_water_mib':samples[-1].get('VmHWM'),
@@ -67,7 +68,7 @@ def run_evaluation(body: EvaluationQuery,svc=Depends(service)):
             resources.update(vram_allocated_mib=torch.cuda.memory_allocated(device)/2**20,vram_status='current_allocation_not_peak')
         corpus.sort(key=lambda p:(p['name'].casefold(),p['place_id']))
         data={'id':str(uuid.uuid4()),'version':1,'created_at':datetime.now(timezone.utc).isoformat(),
-              'query':body.query,'filters':request.filters.model_dump(mode='json',exclude_none=True),'k':body.k,
+              'query':body.query,'method':body.method,'filters':request.filters.model_dump(mode='json',exclude_none=True),'k':body.k,
               'ranking':result['results'],'retrieval':result['retrieval'],'model':result['model'],
               'warnings':result['warnings'],'latency_ms':elapsed,'resources':resources,
               'corpus':[{k:p.get(k) for k in ['place_id','name','city','place_type','description','categories','tags','amenities','image_url','image_urls']} for p in corpus],
@@ -82,10 +83,11 @@ def list_evaluations(svc=Depends(service)):
 
 
 @router.get('/reports/aggregate')
-def aggregate_evaluations(svc=Depends(service)):
+def aggregate_evaluations(method:Literal['hybrid','bge','bm25']='hybrid',svc=Depends(service)):
     latest={}
     for d in svc.store.evaluations_for_report():
-        signature=json.dumps([d['query'],d['filters'],d['k']],sort_keys=True,ensure_ascii=False)
+        if d.get('method','hybrid')!=method:continue
+        signature=json.dumps([d['query'],d['filters'],d['k'],d.get('method','hybrid')],sort_keys=True,ensure_ascii=False)
         if signature not in latest:latest[signature]=d
     complete=[d for d in latest.values() if len(d['labels'])==len(d['corpus']) and d['corpus']]
     result={}

@@ -1,5 +1,29 @@
 # AI service in DATN-N7
 
+## So sánh tìm kiếm BM25 / BGE
+
+`POST /api/v1/search/places` thêm `method`: `bm25` (full-text thuần), `bge` (cosine BGE thuần), `hybrid` (mặc định cũ). BM25 không gọi embedding, dùng k1=1.2, b=0.75; tách token theo âm tiết, chuẩn hóa chữ thường/bỏ dấu và stopwords. Hai chế độ thuần không cộng điểm khớp tên. BM25 dùng cùng `place_document` với embedding BGE; cùng catalog và bộ lọc, không dùng rating/hành vi. IDF được tính trong tập địa điểm sau lọc. Bản hiện tại tính thống kê BM25 trong RAM mỗi truy vấn, chưa phải inverted index tối ưu cho corpus lớn.
+
+Trang `/evaluation` có lựa chọn phương pháp. Bộ test dùng lại nguyên `evaluation/datasets/place-search-v1`: corpus, 36 query, split và nhãn giống nhau; không sinh bộ nhãn riêng cho BM25. Nhãn hiện là silver/draft, cần duyệt thủ công trước khi kết luận báo cáo.
+
+Chạy từ thư mục gốc trên cùng catalog đang hoạt động (không cập nhật dữ liệu giữa hai lần):
+
+```powershell
+python ai/scripts/evaluate_place_search.py --method bm25 --output ai/evaluation/results/bm25 --allow-draft
+python ai/scripts/evaluate_place_search.py --method bge --output ai/evaluation/results/bge --allow-draft
+```
+
+Hai báo cáo ghi hash corpus/query/nhãn để kiểm tra cùng bộ test, xuất Recall@K, MRR@K, nDCG@K, latency và tài nguyên. RAM đo trên toàn process AI đang nạp cả BGE, không thể coi là RAM riêng BM25. BM25 chạy CPU, không sử dụng VRAM; VRAM thiết bị chung có thể gồm ứng dụng khác. Không so trực tiếp điểm BM25 với cosine; so các chỉ số xếp hạng trên cùng nhãn.
+
+Kết quả chạy thử ngày 23/11/2026, 36 query × 3 lần, Top K tối đa 20, không lỗi; hash bộ test hai lần chạy giống nhau. Đây là kết quả tạm trên nhãn silver, chưa phải kết luận chọn phương pháp:
+
+| Phương pháp | Recall@10 | MRR@10 | nDCG@10 | HTTP latency trung bình |
+| --- | --- | --- | --- | --- |
+| BM25 | 0.5141 | 0.9352 | 0.8822 | 234 ms |
+| BGE thuần | 0.5164 | 0.9676 | 0.9184 | 741 ms |
+
+Chi tiết CSV/JSON ở `evaluation/results/{bm25,bge}`. RSS peak toàn process lần lượt 998/2203 MiB; BGE nạp model khi truy vấn nên hai số này không phải bộ nhớ riêng từng thuật toán. Cần chạy process tách biệt nếu báo cáo so sánh footprint độc lập.
+
 ## Luồng đang hoàn thiện: chatbot trong AI demo độc lập
 
 Mở **http://localhost:9002/demo**, nhập service key trong **Cài đặt kết nối**, chọn tab **Chat & lịch trình**. Chỉ AI service được dùng cho luồng này; không cần đăng nhập frontend/backend.

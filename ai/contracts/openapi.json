@@ -2965,6 +2965,21 @@
         "operationId": "aggregate_evaluations_api_v1_search_evaluations_reports_aggregate_get",
         "parameters": [
           {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "hybrid",
+                "bge",
+                "bm25"
+              ],
+              "type": "string",
+              "default": "hybrid",
+              "title": "Method"
+            }
+          },
+          {
             "name": "x-api-key",
             "in": "header",
             "required": false,
@@ -3928,6 +3943,16 @@
       },
       "EvaluationQuery": {
         "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "bge",
+              "bm25"
+            ],
+            "title": "Method",
+            "default": "hybrid"
+          },
           "query": {
             "type": "string",
             "maxLength": 2000,
@@ -5360,6 +5385,16 @@
       },
       "PlaceSearchRequest": {
         "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "bge",
+              "bm25"
+            ],
+            "title": "Method",
+            "default": "hybrid"
+          },
           "query": {
             "type": "string",
             "maxLength": 2000,
