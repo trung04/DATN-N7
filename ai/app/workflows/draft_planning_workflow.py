@@ -35,6 +35,15 @@ class DraftPlanningWorkflow:
         context.pop('user_id',None)
         extracted=RequirementExtractor(self.rec.store).extract(body.message,context,body.use_llm)
         response={'conversation_id':conv['conversation_id'],'trip':None,'extraction':extracted,'preview_only':True}
+        if not old:
+            from app.modules.trip_planner.input_gate import check_inputs
+            clarification=check_inputs(body.message,extracted['draft'],conv)
+            if clarification:
+                response.update(status='needs_clarification',message=clarification)
+                conv['draft']=extracted['draft']
+                conv['messages'].extend([{'role':'user','text':body.message},{'role':'assistant','text':clarification}])
+                self.memory.save(body.user_id,conv)
+                return response
         regenerate=bool(old and getattr(body,'intent',None)=='trip_planning' and not any(extracted['fields'].get(k) for k in ('remove_text','replacement_query','add_text')))
         if old and extracted['fields'].get('add_text'):
             import json

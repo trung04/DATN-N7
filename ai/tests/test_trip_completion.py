@@ -109,12 +109,16 @@ class PreviewAPITests(unittest.TestCase):
             return {'source':'ors','estimated':False,'warnings':[], 'minutes':[[0 if i==j else 5 for j in range(n)] for i in range(n)],
                     'kilometers':[[0 if i==j else 1 for j in range(n)] for i in range(n)]}
         body={'user_id':'u','preview_only':True,'intent':'trip_planning','message':'Lập lịch Đà Nẵng 1 ngày',
-              'context':{'required_place_ids':['a','b'],'stops_per_day':2}}
+              'context':{'required_place_ids':['a','b'],'stops_per_day':2,'preferences':['biển'],
+                         'party_size':2,'transport':'driving','daily_window':{'start':'09:00','end':'18:00'}}}
         first=self.client.post('/api/v1/chat',json=body)
         self.assertEqual(first.status_code,200,first.text);self.assertEqual(first.json()['status'],'needs_clarification')
         with patch('app.modules.trip_planner.ors_matrix.OrsMatrix.build',side_effect=routing):
             second=self.client.post('/api/v1/chat',json={**body,'conversation_id':first.json()['conversation_id'],'message':'Ngày đi là 2026-12-10'})
-            self.assertEqual(second.status_code,200,second.text);trip=second.json()['trip']
+            self.assertEqual(second.status_code,200,second.text)
+            self.assertEqual(second.json()['status'],'needs_clarification');self.assertIsNone(second.json()['trip'])
+            confirmed=self.client.post('/api/v1/chat',json={**body,'conversation_id':first.json()['conversation_id'],'message':'xác nhận'})
+            self.assertEqual(confirmed.status_code,200,confirmed.text);trip=confirmed.json()['trip']
             edited=self.client.post('/api/v1/chat',json={'user_id':'u','preview_only':True,'intent':'replanning',
                 'conversation_id':first.json()['conversation_id'],'draft_id':trip['trip_id'],'expected_version':1,
                 'message':'Ngày 1 bỏ Bãi biển A, thay bằng Cà phê C'})

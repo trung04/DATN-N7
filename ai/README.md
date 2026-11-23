@@ -5,7 +5,7 @@
 Mở **http://localhost:9002/demo**, nhập service key trong **Cài đặt kết nối**, chọn tab **Chat & lịch trình**. Chỉ AI service được dùng cho luồng này; không cần đăng nhập frontend/backend.
 
 1. Nhắn “Lập lịch Đà Nẵng 3 ngày, thích biển và ẩm thực.”
-2. Trả lời ngày khởi hành khi trợ lý hỏi. Gemini chỉ hiểu yêu cầu và giải thích; địa điểm, thời gian và tuyến do công cụ/thuật toán tính từ dữ liệu có sẵn.
+2. Bổ sung ngày khởi hành, số người, phương tiện và khung giờ mỗi ngày; sở thích cũng bắt buộc. Có thể nhắn “dùng mặc định” để chọn 1 người, ô tô, 09:00–18:00. Chatbot hiển thị tóm tắt, chỉ sau tin nhắn “xác nhận” mới tạo lịch. Thay đổi đầu vào cần xác nhận lại. Ngày đã qua không được chấp nhận. Gemini chỉ hiểu yêu cầu và giải thích; địa điểm, thời gian và tuyến do công cụ/thuật toán tính từ dữ liệu có sẵn.
 3. Xem bản xem trước theo ngày, thời gian tham quan/di chuyển, cảnh báo dữ liệu thiếu và giới hạn 480 phút/ngày.
 4. Nhắn “Ngày 2 bỏ [tên], thay bằng quán cà phê”, hoặc “Ngày 1 thêm [tên địa điểm chính xác]”. Nếu không xác định duy nhất ngày/địa điểm, trợ lý hỏi lại.
 5. Có thể **Bỏ điểm này**, **Lên trước**, tìm địa điểm để thêm vào từng ngày, **Tối ưu lại**, hoặc **Xuất JSON**. Thêm điểm tăng mục tiêu số điểm riêng ngày đó; không tự tăng giới hạn thời gian.

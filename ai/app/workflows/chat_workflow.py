@@ -26,6 +26,8 @@ class ChatWorkflow:
         # A clarification reply (date/party/preferences) continues a planning draft; greetings remain general.
         if body.intent is None and conversation.get("draft") and not has_trip and intent=="general_chat":
             if re.search(r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})\b",body.message) or GeneralChatAgent().run(body.message)["status"]=="needs_llm":intent="trip_planning"
+        if body.intent is None and body.preview_only and conversation.get('draft') and not has_trip:
+            if GeneralChatAgent().run(body.message)['status']!='answered':intent='trip_planning'
         if intent in ("trip_planning","replanning"):
             if body.preview_only:
                 from app.workflows.draft_planning_workflow import DraftPlanningWorkflow

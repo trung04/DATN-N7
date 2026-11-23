@@ -6,7 +6,7 @@ function plannerMessage(role,text){
  body.append(node('small',role==='user'?'Bạn':'Trợ lý hành trình'),node('div',text,'planner-message-text'));row.append(avatar,body);$('chatHistory').append(row);$('chatHistory').scrollTop=$('chatHistory').scrollHeight;return body;
 }
 function plannerWelcome(){
- $('chatHistory').replaceChildren();plannerMessage('assistant','Chào bạn! Hãy cho mình biết điểm đến, số ngày và điều bạn thích. Mình sẽ hỏi thêm nếu thiếu thông tin và xây dựng lịch trình ngay bên cạnh.');
+ $('chatHistory').replaceChildren();plannerMessage('assistant','Chào bạn! Hãy cho mình biết điểm đến, ngày khởi hành, số ngày, sở thích, số người, phương tiện và khung giờ đi chơi mỗi ngày. Mình sẽ hỏi phần còn thiếu, tóm tắt ràng buộc để bạn xác nhận rồi mới tạo lịch.');
  const suggestions=node('div',undefined,'planner-suggestions');
  for(const text of ['Lập lịch Đà Nẵng 3 ngày, thích biển và ẩm thực','Tìm địa điểm thiên nhiên yên tĩnh ở Hội An']){
   const button=node('button',text);button.type='button';button.onclick=()=>{$('chatMessage').value=text;$('chatMessage').focus();};suggestions.append(button);
@@ -15,7 +15,7 @@ function plannerWelcome(){
 function plannerEmpty(){
  const out=$('itineraryContent');out.replaceChildren();const empty=node('div',undefined,'planner-empty');
  empty.append(node('div','✳','planner-empty-icon'),node('small','CHUYẾN ĐI CỦA BẠN'),node('h2','Một hành trình mới\nđang chờ bạn'),node('p','Trò chuyện với trợ lý để tạo lịch trình. Các ngày, điểm đến và thời gian di chuyển sẽ xuất hiện tại đây.'));
- const steps=node('div',undefined,'planner-empty-steps');for(const text of ['01 · Nói về chuyến đi','02 · Bổ sung ngày khởi hành','03 · Nhận và chỉnh lịch bằng chat'])steps.append(node('span',text));empty.append(steps);out.append(empty);
+ const steps=node('div',undefined,'planner-empty-steps');for(const text of ['01 · Cung cấp yêu cầu chuyến đi','02 · Kiểm tra và xác nhận ràng buộc','03 · Nhận và chỉnh lịch bằng chat'])steps.append(node('span',text));empty.append(steps);out.append(empty);
 }
 const plannerTime=value=>value?value.slice(11,16):'—';
 function plannerDate(value){try{return new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}).format(new Date(value.slice(0,10)+'T12:00:00Z'));}catch{return value;}}
