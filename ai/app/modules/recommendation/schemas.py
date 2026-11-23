@@ -130,7 +130,35 @@ class UserPreferences(Contract):
 
 
 
+class InteractionEvent(Contract):
+    event_id: Identifier
+    place_id: Identifier
+    action: Literal["view", "favorite", "save", "rating"]
+    occurred_at: datetime
+    active: bool | None = None
+    rating: float | None = Field(None, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def valid_signal(self):
+        if self.occurred_at.tzinfo is None or self.occurred_at > datetime.now(timezone.utc):
+            raise ValueError("occurred_at must have timezone and cannot be in the future")
+        self.occurred_at = self.occurred_at.astimezone(timezone.utc)
+        if (self.action == "rating") != (self.rating is not None):
+            raise ValueError("rating is required only for rating action")
+        if self.action in ("favorite", "save"):
+            if self.active is None:
+                raise ValueError("favorite/save require active true or false")
+        elif self.active is not None:
+            raise ValueError("active is only valid for favorite/save")
+        return self
+
+
 class RecommendationRequest(Contract):
+    mode: Literal['auto', 'content_rating', 'personalized_mmr'] = 'auto'
+    preference_alpha: float = Field(0.5, ge=0, le=1)
+    mmr_lambda: float = Field(0.7, ge=0, le=1)
+    mmr_pool_size: int = Field(100, ge=1, le=500)
+    refresh_variety: bool = True
     user_id: Identifier
     include_service_places: bool = False
     preferences: list[Text] | None = Field(None, max_length=30)
@@ -148,6 +176,8 @@ class RecommendationRequest(Contract):
 
     @model_validator(mode="after")
     def location(self):
+        if self.mode != 'content_rating' and self.mmr_pool_size < self.limit:
+            raise ValueError('mmr_pool_size must be >= limit for auto/personalized_mmr')
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude và longitude phải có cùng nhau")
         if self.radius_km is not None and self.latitude is None:
@@ -162,6 +192,9 @@ class RecommendationItem(Contract):
     city: str
     score: float
     content_score: float | None = None
+    mmr_score: float | None = None
+    redundancy_score: float | None = None
+    fresh_since_last: bool = False
     quality_score: float
     rating: float | None = None
     review_count: int | None = None

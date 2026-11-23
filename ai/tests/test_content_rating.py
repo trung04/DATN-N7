@@ -24,7 +24,7 @@ class ContentRatingTests(unittest.TestCase):
         svc = RecommendationService(self.app.state.recommendation.store, self.embedding, self.qdrant,
                                     config=RankingConfig())
         self.assertTrue(svc.version.startswith("content-rating-v1-"))
-        self.assertEqual(svc.status()["mode"], "content_rating")
+        self.assertEqual(svc.status()["mode"], "auto")
         self.assertAlmostEqual(svc.status()["ranking_config"]["content_weight"], .75)
         with patch.dict(os.environ, {"REC_QUALITY_WEIGHT": "0"}):
             with self.assertRaises(ValueError):

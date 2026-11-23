@@ -1,5 +1,7 @@
 # AI service in DATN-N7
 
+Tài liệu bàn giao **Recommendation tự động theo lịch sử**: [API, sự kiện hành vi và JSON trả về](app/modules/recommendation/README.md). Bỏ `mode` hoặc gửi `auto`: chưa có lịch sử dùng Content-Based + Bayesian Rating; có lịch sử dùng hồ sơ hành vi + Rating + MMR. [OpenAPI Recommendation](contracts/recommendation.openapi.json).
+
 Tài liệu bàn giao **tìm kiếm địa điểm bằng text**: [API request/response JSON, bộ lọc và lỗi](app/modules/semantic_search/README.md). Hợp đồng riêng: [text-search.openapi.json](contracts/text-search.openapi.json). Hybrid BGE + BM25 là mặc định; không cần giao diện demo để tích hợp.
 
 Mã AI nằm trong `ai/`, cùng một Git với `be/` và `fe/`. Chạy Docker từ thư mục gốc bằng `docker compose up -d --build`. Cấu hình Docker dùng `.env` ở gốc; không cần sao chép khóa vào mã nguồn hoặc frontend.

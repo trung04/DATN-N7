@@ -5,6 +5,13 @@ from app.core.exceptions import NotFound
 
 
 class RecommendationRepository:
+    def recent_personalized(self, user_id, now):
+        with self.connection() as db:
+            rows = db.execute("""SELECT data FROM impressions WHERE user_id=? AND occurred_at<=?
+                AND json_extract(data,'$.diagnostics.mode')='personalized_mmr'
+                ORDER BY rowid DESC LIMIT 3""", (user_id, now)).fetchall()
+        return [json.loads(r[0]) for r in rows]
+
     def save_recommendation(self, result, occurred_at):
         # Keep the existing table name so older databases and saved requests remain readable.
         with self.connection() as db:

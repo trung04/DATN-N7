@@ -14,7 +14,7 @@ from .place_document import DOCUMENT_VERSION, place_document
 from .schemas import PlaceData
 
 logger = logging.getLogger(__name__)
-RANKING_VERSION = "explicit-content-rating-name-dedup-v1"
+RANKING_VERSION = 'auto-content-rating-personalized-mmr-v1'
 
 
 class RecommendationService:
@@ -94,7 +94,8 @@ class RecommendationService:
         return {"collection": self.content.collection, "vector_name": self.content.vector_name,
                 "document_version": DOCUMENT_VERSION, "reviews_in_place_vector": False,
                 "places": len(rows), "pending_index": sum(not r["indexed"] or r["model"] != self.model or not r["content_hash"] for r in rows),
-                "embedding_model": self.model, "model_version": self.version, "mode": "content_rating",
+                "embedding_model": self.model, "model_version": self.version, "mode": "auto",
+                "supported_modes": ['auto', 'content_rating', 'personalized_mmr'],
                 "ranking_config": {"content_weight": self.config.content_weight / total,
                                    "quality_weight": self.config.quality_weight / total,
                                    "prior_strength": self.config.prior_strength,
