@@ -24,11 +24,11 @@ export class TypeOrmActivityRepository implements ActivityRepository {
     return this.repository.findOneBy({ id, stopoverId });
   }
 
-  findByStopoverAndOrder(
-    stopoverId: string,
-    activityOrder: number,
-  ): Promise<ActivityEntity | null> {
-    return this.repository.findOneBy({ stopoverId, activityOrder });
+  findByStopoverId(stopoverId: string): Promise<ActivityEntity[]> {
+    return this.repository.find({
+      where: { stopoverId },
+      order: { startTime: 'ASC', id: 'ASC' },
+    });
   }
 
   async findPage(options: FindActivitiesOptions): Promise<ActivityPage> {
