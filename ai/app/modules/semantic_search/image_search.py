@@ -1,3 +1,4 @@
+from app.core.timing import measure
 from app.core.config import env
 from .schemas import ImageEmbeddingResponse
 """CLIP image embeddings and a separate Qdrant image-search collection."""
@@ -40,9 +41,17 @@ def decode_image(value, max_bytes=8_000_000, max_pixels=16_000_000):
                     raise ValueError("Chỉ nhận ảnh JPEG, PNG hoặc WebP")
                 if original.width * original.height > max_pixels:
                     raise ValueError("Ảnh vượt giới hạn 16 triệu pixels")
+                if getattr(original, "n_frames", 1) > 1:
+                    raise ValueError("Không nhận ảnh động")
                 original.verify()
             with Image.open(io.BytesIO(raw)) as original:
-                image = ImageOps.exif_transpose(original).convert("RGB")
+                oriented = ImageOps.exif_transpose(original)
+                if "A" in oriented.getbands() or "transparency" in oriented.info:
+                    rgba = oriented.convert("RGBA")
+                    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                    image = Image.alpha_composite(background, rgba).convert("RGB")
+                else:
+                    image = oriented.convert("RGB")
                 image.load()
         return image
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
@@ -119,11 +128,13 @@ class ImageSearchService:
                 raise RuntimeError("Collection ảnh sai named vector, dimensions hoặc distance; cần collection mới")
             self._ready = True
 
-    def _embedding(self, image_base64=None, text=None):
-        image = decode_image(image_base64) if image_base64 is not None else None
+    def _embedding(self, image_base64=None, text=None, timings=None):
+        with measure(timings, "PREPROCESS"):
+            image = decode_image(image_base64) if image_base64 is not None else None
         try:
             try:
-                result = self.encoder.embed_image(image) if image is not None else self.encoder.embed_text(text)
+                with measure(timings, "EMBEDDING"):
+                    result = self.encoder.embed_image(image) if image is not None else self.encoder.embed_text(text)
             except ValueError:
                 raise
             except Exception as exc:
@@ -137,17 +148,18 @@ class ImageSearchService:
             raise HTTPException(503, "CLIP trả vector không hợp lệ")
         return (vector / np.linalg.norm(vector)).tolist()
 
-    def embed(self, body):
-        vector = self._embedding(image_base64=body.image_base64)
+    def embed(self, body, timings=None):
+        vector = self._embedding(image_base64=body.image_base64, timings=timings)
         point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"tourism-image:{body.image_id}")) if body.image_id else None
         if body.index:
             try:
                 self.ensure_collection()
-                self.qdrant.upsert(collection_name=self.collection, wait=True, points=[models.PointStruct(
+                with measure(timings, "QDRANT_WRITE"):
+                    self.qdrant.upsert(collection_name=self.collection, wait=True, points=[models.PointStruct(
                     id=point_id, vector={self.vector_name: vector}, payload={
                         "image_id": body.image_id, "place_id": body.place_id, "image_url": body.image_url,
                         "city": body.city.casefold() if body.city else None, "place_type": body.place_type,
-                        "model": self.model_key})])
+                        "model": self.model_key, "alt_text": body.alt_text, "is_primary": body.is_primary})])
             except Exception as exc:
                 logger.exception("Image index unavailable")
                 raise HTTPException(503, "Không lưu được Qdrant; gửi lại cùng image_id để retry") from exc

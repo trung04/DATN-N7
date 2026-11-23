@@ -10,6 +10,9 @@ from app.core.geo import distance_km
 
 class RouteMatrix:
     def build(self, locations, transport, allow_estimates=True):
+        if env('TRIP_ORS_MODE','auto')=='direct' or (env('TRIP_ORS_MODE','auto')=='auto' and env('ORS_API_KEY')):
+            from .standalone_ors import StandaloneOrs
+            return StandaloneOrs().build(locations,transport)
         base = env(f"TRIP_OSRM_{transport.upper()}_URL")
         if transport == "driving":
             base = base or env("TRIP_OSRM_URL")

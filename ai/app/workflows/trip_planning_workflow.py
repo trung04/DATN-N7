@@ -9,6 +9,7 @@ from app.memory.conversation_store import ConversationStore
 from app.memory.trip_context import merge_context
 from .replanning_workflow import ReplanningWorkflow
 
+
 class TripPlanningWorkflow:
     def __init__(self,rec):
         self.rec=rec

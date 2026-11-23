@@ -8,11 +8,17 @@ from app.modules.semantic_search.router import router as semantic_router
 from app.modules.recommendation.router import router as recommendation_router
 from app.modules.trip_planner.router import router as trip_router
 from app.workflows.chat_workflow import ChatWorkflow,UnifiedChatRequest
+from app.modules.search_evaluation.router import router as evaluation_router
 
 router=APIRouter()
+from app.api.integration import router as integration_router
+router.include_router(integration_router)
 router.include_router(semantic_router)
 router.include_router(recommendation_router)
 router.include_router(trip_router)
+from app.modules.trip_planner.demo_router import router as demo_trip_router
+router.include_router(demo_trip_router)
+router.include_router(evaluation_router)
 logger=logging.getLogger(__name__)
 
 @router.get("/",include_in_schema=False)
@@ -21,9 +27,15 @@ def demo_page():
     return FileResponse(Path(__file__).resolve().parents[1]/"static"/"demo.html",media_type="text/html",
         headers={"Cache-Control":"no-store"})
 
+
+@router.get('/evaluation',include_in_schema=False)
+def evaluation_page():
+    return FileResponse(Path(__file__).resolve().parents[1]/'static'/'evaluation.html',
+                        media_type='text/html',headers={'Cache-Control':'no-store'})
+
 @router.get("/demo-assets/{filename}", include_in_schema=False)
 def demo_asset(filename: str):
-    if filename not in {"explore.css", "explore.js"}:
+    if filename not in {"explore.css", "explore.js", "behavior-demo.js", "recommendation-ui.js", "evaluation.js", "evaluation.css", "chat-planner.js"}:
         raise HTTPException(404, "Không tìm thấy tài nguyên")
     return FileResponse(Path(__file__).resolve().parents[1]/"static"/filename,
                         headers={"Cache-Control":"no-store"})
@@ -52,3 +64,6 @@ def collection_info(request: Request):
 @router.post("/api/v1/chat",dependencies=[Depends(authorize)],tags=["Travel assistant"])
 def chat(body: UnifiedChatRequest,request: Request):
     return ChatWorkflow(request.app.state.recommendation).run(body)
+
+from app.modules.semantic_search.indexing import router as indexing_router
+router.include_router(indexing_router)

@@ -53,7 +53,7 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
     breaks = [(minutes(b.start),minutes(b.end)) for b in req.breaks]
     current,previous = begin,anchor
     activities = []
-    distance,total_travel = 0.0,0
+    distance,total_travel,total_seconds = 0.0,0,0.0
     for index in route:
         candidate = candidates[index]
         place = candidate["place"]
@@ -63,7 +63,8 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
             travel,km = matrix["minutes"][previous][index],matrix["kilometers"][previous][index]
             if travel is None or km is None:
                 return None
-            travel = math.ceil(travel)
+        seconds=travel*60
+        travel=math.ceil(travel)
         if req.max_leg_minutes is not None and travel > req.max_leg_minutes:
             return None
         departure = advance(current,travel,breaks) if travel else current
@@ -97,15 +98,20 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
             "end_time":stamp(day,visit+duration),"duration_minutes":duration,"departure_time":stamp(day,departure),
             "arrival_time":stamp(day,arrival),"travel_time_from_previous":travel,"distance_from_previous_km":round(km,3),
             "waiting_minutes":visit-arrival+departure-current,"recommendation_score":candidate["score"],
+            'travel_from_previous_seconds':seconds,'distance_from_previous_meters':round(km*1000,3),'order':len(activities)+1,
             "opening_hours_checked":source!="unknown","opening_hours_source":source,"notes":notes})
         distance += km
         total_travel += travel
+        total_seconds += seconds
         current,previous = visit+duration,index
     return_leg = None
-    if route and req.return_to_start:
-        travel,km = matrix["minutes"][previous][anchor],matrix["kilometers"][previous][anchor]
+    end_anchor=matrix.get('end_anchor')
+    finish=end_anchor if end_anchor is not None else anchor if req.return_to_start else None
+    if route and finish is not None:
+        travel,km = matrix["minutes"][previous][finish],matrix["kilometers"][previous][finish]
         if travel is None or km is None:
             return None
+        seconds=travel*60
         travel = math.ceil(travel)
         if req.max_leg_minutes is not None and travel > req.max_leg_minutes:
             return None
@@ -115,12 +121,18 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
             return None
         distance += km
         total_travel += travel
+        total_seconds += seconds
         return_leg = {"departure_time":stamp(day,departure),"arrival_time":stamp(day,current),
             "duration_minutes":travel,"distance_km":round(km,3)}
     if req.max_daily_distance_km is not None and distance > req.max_daily_distance_km+1e-8:
         return None
+    if current-begin>req.max_daily_activity_minutes:return None
+    total_visit=sum(a['duration_minutes'] for a in activities)
+    total_break=sum(max(0,min(current,right)-max(begin,left)) for left,right in breaks)
     return {"day":day_number,"date":day.isoformat(),"window":window.model_dump(),"activities":activities,
         "return_leg":return_leg,"total_distance_km":round(distance,3),"total_travel_minutes":total_travel,
+        'total_visit_minutes':total_visit,'total_activity_minutes':current-begin,'total_break_minutes':total_break,
+        'total_distance_meters':round(distance*1000,3),'total_travel_seconds':total_seconds,
         "routing":{"source":matrix["source"],"estimated":matrix["estimated"],"transport":req.transport},
         "end_time":stamp(day,current),"validation":{"no_overlaps":True,"within_day_window":True,
         "known_opening_hours_respected":True,"all_opening_hours_known":all(a["opening_hours_checked"] for a in activities)}}

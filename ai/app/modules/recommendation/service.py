@@ -1,3 +1,4 @@
+from app.core.timing import measure
 """Place indexing and the current content-based + Bayesian rating service."""
 import hashlib
 import json
@@ -14,7 +15,7 @@ from .place_document import DOCUMENT_VERSION, place_document
 from .schemas import PlaceData
 
 logger = logging.getLogger(__name__)
-RANKING_VERSION = "explicit-content-rating-name-dedup-v1"
+RANKING_VERSION = "explicit-content-rating-personalized-mmr-rotation-v3"
 
 
 class RecommendationService:
@@ -30,12 +31,13 @@ class RecommendationService:
     def _text(self, place):
         return place_document(place, getattr(self.embedding, "max_text_length", 8000))
 
-    def upsert_places(self, places, *, return_embeddings=False):
+    def upsert_places(self, places, *, return_embeddings=False, timings=None):
         results = []
         with self.lock:
             for item in places:
                 place = item.model_dump(mode="json")
-                text = self._text(place)
+                with measure(timings, "PREPROCESS"):
+                    text = self._text(place)
                 digest = hashlib.sha256((self.model + text).encode()).hexdigest()
                 with self.store.connection() as db:
                     old = db.execute("SELECT vector,content_hash,model FROM places WHERE id=?", (item.place_id,)).fetchone()
@@ -43,7 +45,8 @@ class RecommendationService:
                 if reused:
                     vector = json.loads(old[0])
                 else:
-                    value = normalize(self.embedding.embed_text(text))
+                    with measure(timings, "EMBEDDING"):
+                        value = normalize(self.embedding.embed_text(text))
                     if value is None or len(value) != self.embedding.dimensions:
                         raise ValueError("Model trả embedding rỗng hoặc sai số chiều")
                     vector = value.tolist()
@@ -53,7 +56,8 @@ class RecommendationService:
                         (item.place_id, json.dumps(place, ensure_ascii=False), json.dumps(vector), digest, self.model))
                 indexed = True
                 try:
-                    self.content.upsert(place, vector, self.model)
+                    with measure(timings, "QDRANT_WRITE"):
+                        self.content.upsert(place, vector, self.model)
                 except Exception:
                     logger.exception("Qdrant indexing pending for %s", item.place_id)
                     indexed = False
@@ -86,7 +90,8 @@ class RecommendationService:
         return vector if vector is not None and vector.shape == (self.embedding.dimensions,) else None
 
     def recommend(self, request, *, now=None, log=True):
-        return recommend_content_rating(self, request, now=now, log=log)
+        with self.lock:
+            return recommend_content_rating(self, request, now=now, log=log)
 
     def status(self):
         rows = self.store.places()
@@ -95,6 +100,7 @@ class RecommendationService:
                 "document_version": DOCUMENT_VERSION, "reviews_in_place_vector": False,
                 "places": len(rows), "pending_index": sum(not r["indexed"] or r["model"] != self.model or not r["content_hash"] for r in rows),
                 "embedding_model": self.model, "model_version": self.version, "mode": "content_rating",
+                "supported_modes": ["content_rating", "personalized_mmr"],
                 "ranking_config": {"content_weight": self.config.content_weight / total,
                                    "quality_weight": self.config.quality_weight / total,
                                    "prior_strength": self.config.prior_strength,

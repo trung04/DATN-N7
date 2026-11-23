@@ -17,12 +17,21 @@ class ChatWorkflow:
     def run(self,body):
         memory=ConversationStore(self.rec.store)
         conversation=memory.get(body.conversation_id,body.user_id)
-        has_trip=bool(body.trip_id or conversation.get("trip_id"))
+        has_trip=bool(body.trip_id or body.draft_id or conversation.get("trip_id") or conversation.get('draft_plan_id'))
         intent=body.intent or IntentRouter().classify(body.message,has_trip)
+        if body.preview_only and body.use_llm and body.intent is None:
+            from app.agents.llm_intent import understand_intent
+            if GeneralChatAgent().run(body.message)['status']!='answered':
+                intent=understand_intent(body.message,has_trip,bool(conversation.get('draft')))
         # A clarification reply (date/party/preferences) continues a planning draft; greetings remain general.
         if body.intent is None and conversation.get("draft") and not has_trip and intent=="general_chat":
             if re.search(r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{4})\b",body.message) or GeneralChatAgent().run(body.message)["status"]=="needs_llm":intent="trip_planning"
         if intent in ("trip_planning","replanning"):
+            if body.preview_only:
+                from app.workflows.draft_planning_workflow import DraftPlanningWorkflow
+                memory.save(body.user_id,conversation)
+                body=body.model_copy(update={'conversation_id':conversation['conversation_id'],'intent':intent})
+                return {'intent':intent,**DraftPlanningWorkflow(self.rec).chat(body)}
             fields=body.model_dump(exclude={"intent"})
             # Create the shared session before handing it to the planner workflow.
             memory.save(body.user_id,conversation)

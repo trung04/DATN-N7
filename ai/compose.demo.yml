@@ -1,0 +1,12 @@
+# Run from repository root; only the AI container is recreated.
+# docker compose -f compose.yml -f ai/compose.demo.yml up -d --no-deps ai
+services:
+  ai:
+    environment:
+      TRIP_ORS_MODE: direct
+      ORS_API_KEY: ${ORS_API_KEY:?Set ORS_API_KEY in root .env}
+      ORS_BASE_URL: ${ORS_BASE_URL:-https://api.heigit.org}
+      ORS_PROFILES: ${ORS_PROFILES:-driving-car}
+      ORS_MIN_INTERVAL_MS: ${ORS_MIN_INTERVAL_MS:-2100}
+      ORS_CACHE_TTL_SECONDS: ${ORS_CACHE_TTL_SECONDS:-21600}
+      TRIP_ORS_CACHE_PATH: /app/data/demo_route_cache.sqlite3

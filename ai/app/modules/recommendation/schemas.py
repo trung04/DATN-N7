@@ -22,7 +22,29 @@ class OpeningInterval(Contract):
         return self
 
 
+class PlacePrice(Contract):
+    is_free: bool
+    min_price: float = Field(ge=0,le=1e12)
+    max_price: float = Field(ge=0,le=1e12)
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if self.max_price < self.min_price or (self.is_free and (self.min_price or self.max_price)):
+            raise ValueError("Inconsistent place price")
+        return self
+
+class PlaceContact(Contract):
+    phone: str | None = Field(None,max_length=30)
+    website: str | None = Field(None,max_length=2000)
+
 class PlaceData(Contract):
+    best_visit_times: list[Text] = Field(default_factory=list,max_length=20)
+    suitable_for: list[Text] = Field(default_factory=list,max_length=30)
+    price: PlacePrice | None = None
+    contact: PlaceContact | None = None
+    source: str | None = Field(None,max_length=20)
+
     place_id: Identifier
     name: Text
     place_type: Literal["Hotel", "Restaurant", "Attraction"]
@@ -54,7 +76,7 @@ class PlaceData(Contract):
     source_embedding_status: Text | None = None
     active: bool = True
 
-    @field_validator('name','city','description','categories','amenities','tags','travel_styles')
+    @field_validator('name','city','description','categories','amenities','tags','travel_styles','best_visit_times','suitable_for')
     @classmethod
     def factual_encoding(cls,value):
         from .place_document import validate_encoding
@@ -130,7 +152,35 @@ class UserPreferences(Contract):
 
 
 
+class InteractionEvent(Contract):
+    event_id: Identifier
+    place_id: Identifier
+    action: Literal["view", "favorite", "save", "rating"]
+    occurred_at: datetime
+    active: bool | None = None
+    rating: float | None = Field(None, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def valid_signal(self):
+        if self.occurred_at.tzinfo is None or self.occurred_at > datetime.now(timezone.utc):
+            raise ValueError("occurred_at must have timezone and cannot be in the future")
+        self.occurred_at = self.occurred_at.astimezone(timezone.utc)
+        if (self.action == "rating") != (self.rating is not None):
+            raise ValueError("rating is required only for rating action")
+        if self.action in ("favorite", "save"):
+            if self.active is None:
+                raise ValueError("favorite/save require active true or false")
+        elif self.active is not None:
+            raise ValueError("active is only valid for favorite/save")
+        return self
+
+
 class RecommendationRequest(Contract):
+    mode: Literal["content_rating", "personalized_mmr"] = "content_rating"
+    preference_alpha: float = Field(0.5, ge=0, le=1)
+    mmr_lambda: float = Field(0.7, ge=0, le=1)
+    mmr_pool_size: int = Field(100, ge=1, le=500)
+    refresh_variety: bool = True
     user_id: Identifier
     include_service_places: bool = False
     preferences: list[Text] | None = Field(None, max_length=30)
@@ -148,6 +198,8 @@ class RecommendationRequest(Contract):
 
     @model_validator(mode="after")
     def location(self):
+        if self.mode == "personalized_mmr" and self.mmr_pool_size < self.limit:
+            raise ValueError("mmr_pool_size must be >= limit")
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude và longitude phải có cùng nhau")
         if self.radius_km is not None and self.latitude is None:
@@ -162,6 +214,9 @@ class RecommendationItem(Contract):
     city: str
     score: float
     content_score: float | None = None
+    mmr_score: float | None = None
+    redundancy_score: float | None = None
+    fresh_since_last: bool = False
     quality_score: float
     rating: float | None = None
     review_count: int | None = None

@@ -1,5 +1,204 @@
 # AI service in DATN-N7
 
+## Luồng đang hoàn thiện: chatbot trong AI demo độc lập
+
+Mở **http://localhost:9002/demo**, nhập service key trong **Cài đặt kết nối**, chọn tab **Chat & lịch trình**. Chỉ AI service được dùng cho luồng này; không cần đăng nhập frontend/backend.
+
+1. Nhắn “Lập lịch Đà Nẵng 3 ngày, thích biển và ẩm thực.”
+2. Trả lời ngày khởi hành khi trợ lý hỏi. Gemini chỉ hiểu yêu cầu và giải thích; địa điểm, thời gian và tuyến do công cụ/thuật toán tính từ dữ liệu có sẵn.
+3. Xem bản xem trước theo ngày, thời gian tham quan/di chuyển, cảnh báo dữ liệu thiếu và giới hạn 480 phút/ngày.
+4. Nhắn “Ngày 2 bỏ [tên], thay bằng quán cà phê”, hoặc “Ngày 1 thêm [tên địa điểm chính xác]”. Nếu không xác định duy nhất ngày/địa điểm, trợ lý hỏi lại.
+5. Có thể **Bỏ điểm này**, **Lên trước**, tìm địa điểm để thêm vào từng ngày, **Tối ưu lại**, hoặc **Xuất JSON**. Thêm điểm tăng mục tiêu số điểm riêng ngày đó; không tự tăng giới hạn thời gian.
+6. Bấm **Lưu lịch demo**. Chỉ lúc này lịch được lưu trong AI service. **Lịch demo đã lưu** mở lại lịch theo User ID thử nghiệm, hỗ trợ cập nhật tên/nội dung và xóa. Tải lại trang không mất các lịch đã lưu.
+
+ORS chạy trực tiếp trong AI khi `TRIP_ORS_MODE=direct`. Endpoint HeiGIT là `/openrouteservice/v2/matrix/{profile}`; profile mặc định `driving-car`. Ma trận có hướng, đơn vị gốc giây/mét, chia block 25×25, retry hữu hạn, không thay chặng không đi được bằng 0. Cache SQLite riêng trong volume AI là cấu hình demo; phương án PostgreSQL ở backend dành cho người tích hợp sau. Không tự giả lập kết quả thành công khi ORS/Gemini lỗi. Tọa độ lấy từ catalog AI có thật; nguồn dữ liệu/giờ mở cửa thiếu vẫn được cảnh báo.
+
+Từ thư mục gốc, sau khi đã có root `.env` chứa service key, Gemini và ORS:
+
+```powershell
+docker compose -f compose.yml -f ai/compose.demo.yml build ai
+docker compose -f compose.yml -f ai/compose.demo.yml up -d --no-deps ai
+```
+
+Nếu chưa chạy Qdrant thì khởi động riêng `docker compose up -d qdrant` trước. Hai lệnh trên không dựng lại backend/frontend. Cổng `9002` là cấu hình máy đang dùng; đổi bằng `AI_PORT` trong root `.env`.
+
+Chạy native: sao chép `ai/.env.example` sang `ai/.env`, điền khóa và URL Qdrant, chạy `uvicorn app.main:app --host 127.0.0.1 --port 9002` trong `ai/`. Không commit các file `.env`.
+
+API của demo vẫn yêu cầu `X-API-Key`:
+
+| API | Tác dụng |
+| --- | --- |
+| `POST /api/v1/chat` với `preview_only=true` | Hội thoại tạo/chỉnh bản xem trước |
+| `POST /api/v1/trips/preview` | Tạo preview từ yêu cầu có cấu trúc |
+| `PATCH /api/v1/trips/previews/:id/days/:day` | Thêm/bỏ/sắp thứ tự một ngày, yêu cầu `expected_version` |
+| `POST /api/v1/trips/previews/:id/reoptimize` | Tính lại preview, giữ các điểm đã loại trừ |
+| `POST /api/v1/demo/trips` | Lưu rõ ràng; gửi `user_id`, `draft_id`, `expected_draft_version`, `name` |
+| `GET /api/v1/demo/trips?user_id=...` | Liệt kê lịch đã lưu trong AI demo |
+| `GET/DELETE /api/v1/demo/trips/:id` | Đọc/xóa theo User ID; xóa cần `expected_version` |
+| `POST /api/v1/demo/trips/:id/preview` | Mở lịch demo thành preview để sửa, không thay lịch đã lưu |
+
+User ID trong demo là danh tính thử nghiệm dùng cùng service key, không phải hệ thống đăng nhập đa người dùng của sản phẩm. Lịch demo được lưu riêng trong `demo_saved_trips`, không ghi database backend. Preview hết hạn sau 24 giờ; lịch demo đã lưu không bị xóa theo TTL preview. Giữ `expected_version` để tránh ghi đè thay đổi từ tab khác.
+
+## Tham khảo cho người tích hợp backend/frontend sau
+
+Đã đồng bộ nền repository với `origin/dev` tại commit `a8a137e`. Sau khi được cho phép sửa riêng phần chatbot và đăng nhập liên quan, giao diện chính gọi backend `/api/v1/trip-planner/*` bằng phiên đăng nhập chung; backend gọi AI bằng service key. Bản stash dự phòng trước khi hợp nhất là `f9fef734c00b58c4ca0a0304c9ad0406172a4b75`.
+
+Các endpoint dưới đây nằm **trên AI service**, chưa phải endpoint được NestJS proxy. Chúng yêu cầu `X-API-Key` bằng `RECOMMENDATION_API_KEY`. Backend phải xác thực phiên và lấy `userId` từ phiên rồi mới gọi AI; không chuyển khóa AI xuống trình duyệt và không tin `userId` do trình duyệt tự gửi.
+
+| API AI | Chức năng |
+| --- | --- |
+| `POST /api/v1/ai/search` | Semantic search; cùng request/response với `/api/v1/search/places` |
+| `POST /api/v1/ai/recommendations` | Adapter trả mảng `id/type/name/city/price/tags/description/score/reason/image` gần với hợp đồng frontend hiện tại |
+| `POST /api/v1/ai/recommendations/detailed` | Kết quả đầy đủ, điểm thành phần, chiến lược và cảnh báo |
+| `POST /api/v1/ai/chat` | Adapter camelCase, chat lập lịch dạng preview, không tự lưu lịch nghiệp vụ |
+
+Ví dụ tìm kiếm:
+
+```json
+{"query":"biển yên tĩnh","filters":{"city":"Đà Nẵng","place_type":"Attraction"},"limit":10,"infer_filters":false}
+```
+
+Ví dụ Recommendation:
+
+```json
+{"userId":"USER_ID_FROM_BACKEND_SESSION","query":"thích biển và thiên nhiên","city":"Đà Nẵng","preferences":["biển","thiên nhiên"],"limit":10,"usePreference":true}
+```
+
+`userId` có mặt và `usePreference=true` dùng `personalized_mmr`; khách chưa đăng nhập hoặc tắt cá nhân hóa dùng `content_rating`. Backend có thể truyền `preferences` từ chức năng sở thích hiện có; AI không tự đọc bảng sở thích của backend. `price=null` nghĩa là thiếu dữ liệu giá, không phải miễn phí. ID địa điểm của catalog AI có thể khác UUID PostgreSQL; bên gọi cần ánh xạ ID trước khi dùng các API backend yêu cầu UUID.
+
+Ví dụ chat:
+
+```json
+{"userId":"USER_ID_FROM_BACKEND_SESSION","message":"Lập lịch Đà Nẵng 3 ngày, thích biển","useLlm":true}
+```
+
+Giữ `conversation_id` trả về và gửi lại trong trường `conversationId`; khi đã có preview, gửi thêm `draftId` và `expectedVersion`. Nếu thiếu ngày đi, AI trả `status=needs_clarification`. Có thể đặt `useLlm=false` để kiểm thử parser mà không gọi Gemini. Tên trường trong response giữ nguyên hợp đồng AI, không tự đổi toàn bộ response sang camelCase.
+
+Backend đã có các API nội bộ `/api/v1/internal/routing/matrix` và `/api/v1/internal/trip-planner/*`, bảo vệ bằng service key. Đã kiểm thử trên giao diện chính với đăng nhập thật, Gemini và ORS thật, chỉnh sửa, lưu PostgreSQL và mở lại lịch. Các adapter `/api/v1/ai/*` ở trên vẫn nằm tại AI service; chưa tự nối Recommendation/search của giao diện chính trong phạm vi chatbot này. Các endpoint cũ dùng routing cấu hình và demo cũ vẫn được giữ tương thích. Preview ORS không tự hạ sang khoảng cách ước tính khi thiếu dịch vụ.
+
+Kiểm thử adapter:
+
+```bash
+python -m unittest tests.test_backend_integration_contract -v
+python -m unittest discover -s tests -q
+```
+
+OpenAPI đầy đủ nằm ở `contracts/openapi.json` và `/docs` khi AI chạy.
+
+## Chat và lịch trình trong cùng một màn hình
+
+Gemini tự thử lại tối đa 3 lượt trong ngân sách request khoảng 30 giây khi gặp lỗi HTTP 429/5xx, lỗi kết nối hoặc structured output không hợp lệ. Không tự chuyển sang chế độ không LLM khi người dùng đã bật Gemini. Lỗi xác thực/quyền/model không khả dụng được trả thông báo riêng và không retry; lỗi quota hoặc quá tải vẫn có thể xảy ra sau khi hết số lượt thử. Không log key hay nội dung prompt/provider error body. Giao diện giữ lịch hiện tại và đưa lại tin nhắn vào ô soạn nếu yêu cầu thất bại.
+
+Trong `/demo`, tab **Chat & lịch trình** gồm khung trò chuyện và lịch trình theo từng ngày, không còn tab/form tạo lịch riêng. Nhắn yêu cầu lập lịch, trả lời thông tin còn thiếu ngay trong chat; lịch tạo hoặc sửa được hiển thị bên cạnh. Câu hỏi thông thường không xóa lịch trình đang xem. Nút **Yêu cầu thay điểm** điền sẵn ngày/tên địa điểm vào ô chat để bạn bổ sung lựa chọn thay thế và gửi.
+
+Client gửi conversation ID cùng trip ID/version hiện tại để giữ ngữ cảnh và kiểm tra phiên bản khi chỉnh sửa. Nút **+ Mới** bắt đầu hội thoại mới, xóa lịch đang hiển thị trên giao diện, không xóa lịch đã lưu trong database. Các API tạo/đọc/chỉnh lịch hiện có vẫn được giữ. Gemini mặc định bật trong tab; có thể bỏ chọn để thử luồng trích xuất theo luật mà không gọi LLM. Khóa vẫn chỉ nhập trong Cài đặt kết nối chung.
+
+## Đánh giá chức năng Tìm địa điểm
+
+### Giao diện truy vấn và gán nhãn trực tiếp
+
+Mở **http://localhost:9002/evaluation** hoặc bấm **Gán nhãn & đánh giá tìm kiếm** từ `/demo`. Mở Cài đặt kết nối và nhập service key; khóa chỉ giữ trong bộ nhớ trang.
+
+1. Nhập query, thành phố, loại địa điểm và Top K, rồi bấm **Tìm kiếm & tạo lượt đánh giá**. API tìm kiếm thật được gọi với bộ lọc tường minh, không infer qua LLM. Mỗi lượt đóng băng corpus trong phạm vi city/type, thứ hạng, model, latency và tài nguyên.
+2. Chấm **0/1/2/3** theo mức độ đáp ứng query. Có mô tả, danh mục, tags, tiện ích để kiểm tra bằng chứng; không tự gán nhãn dựa trên score model.
+3. Chuyển **Toàn bộ phạm vi** để duyệt các điểm không được model trả về. Có lọc tên/nội dung, chỉ xem chưa gán nhãn, phân trang 20 và nút gán 0 cho những mục chưa chấm trên trang đang xem. Nút này là thao tác chủ động của người gán nhãn, không phải kết luận tự động.
+4. **Lưu nhãn & tính chỉ số** yêu cầu đã chấm tất cả kết quả Top K. Nếu chưa duyệt toàn corpus trong phạm vi, UI đánh dấu Recall/nDCG là tạm tính trên tập đã gán nhãn. Nhãn bỏ trống không được coi là nhãn 0 đã xác nhận. Chỉ khi đã duyệt đầy đủ mới có đánh giá scope hoàn chỉnh.
+5. Có thể mở lại lượt đã lưu trong SQLite AI (`search_evaluations`), xuất CSV/JSON hoặc in/lưu PDF. Mỗi lần lưu kiểm tra version để tránh ghi đè thay đổi từ tab khác.
+6. **Tính chỉ số cả bộ** chỉ lấy query đã gán nhãn đầy đủ và scope không rỗng, loại query chưa hoàn chỉnh. Query trùng cả nội dung/bộ lọc/K dùng lượt mới nhất; quét tối đa 500 lượt gần nhất. Các K khác nhau có thể có số query được tính khác nhau. MRR ở đây là trung bình các query; bảng một lượt tương ứng RR của query đó.
+
+Latency trên màn hình là thời gian server của **một lượt**, chưa phải p95 hoặc benchmark nhiều lần sau warmup. RAM là RSS process API lấy mẫu 50ms, không bao gồm Qdrant; có thể bỏ lỡ peak ngắn. VRAM CPU hiển thị không áp dụng; CUDA nếu có báo allocation hiện tại, không phải peak. Thống kê latency cả bộ từ các lượt đã lưu cũng có thể gồm lượt cold/warm lẫn nhau; dùng script bên dưới để benchmark theo protocol cố định.
+
+Giao diện đánh giá dùng service key nội bộ; chưa có tài khoản/role cho từng người gán nhãn. Không dùng chung key này như API public cho người dùng cuối.
+
+Bộ nhãn tại `evaluation/datasets/place-search-v1/`: 36 truy vấn tiếng Việt trên địa điểm thật tại Đà Nẵng, Hội An và Huế, gồm truy vấn theo nhu cầu, tên cụ thể và tên không dấu. `queries.jsonl` có query, bộ lọc thành phố/loại, split validation/test và tiêu chí relevance; `judgments.csv` chứa query ID, place ID, grade 0–3, tên, lý do và trạng thái duyệt; `corpus.jsonl` lưu nội dung bằng chứng; `manifest.json` lưu nguồn/hash và quy ước.
+
+**Đây là silver labels sinh bằng luật trên metadata, chưa phải nhãn con người xác nhận.** Nhãn được tạo độc lập với kết quả model, nhưng có thể bỏ sót cách diễn đạt đồng nghĩa hoặc gán nhãn sai do dữ liệu nguồn thiếu/sai. Không dùng các chỉ số nháp làm kết luận chất lượng trong luận văn. Các query dễ theo tên cũng phải báo riêng, tránh làm lu mờ chất lượng semantic search.
+
+### Cách duyệt nhãn
+
+1. Đọc query và tiêu chí trong `queries.jsonl`; dùng `corpus.jsonl` để tra đúng địa điểm, không nhìn thứ hạng model khi gán nhãn.
+2. Trong `judgments.csv`, sửa `grade`: **3** đáp ứng rõ/đầy đủ, **2** phù hợp, **1** chỉ đáp ứng một phần, **0** không phù hợp. Đánh giá dựa trên thông tin được cung cấp, không tự bịa tiện ích. Nếu không đủ bằng chứng, cần kiểm tra bổ sung thay vì khẳng định không liên quan.
+3. Sau khi kiểm tra từng cặp, đặt `review_status=reviewed` và ghi lý do. Không chỉ duyệt các kết quả Top K: Recall cần xác định đầy đủ các địa điểm relevant trong phạm vi query.
+4. Nên có hai người gán nhãn độc lập, thống nhất bất đồng; dùng validation để chỉnh trọng số/ngưỡng, giữ test riêng. Hiện split chỉ là khởi tạo, cần rà soát tương đồng giữa query để tránh leakage.
+5. Snapshot đóng băng theo ID; nếu thay dữ liệu/index, lưu phiên bản mới hoặc kiểm tra lại nhãn. Không chạy sinh lại dataset đè lên file đã duyệt.
+
+### Chạy đánh giá
+
+Từ thư mục gốc, khi AI + Qdrant đã chạy:
+
+```powershell
+python ai/scripts/evaluate_place_search.py --dataset ai/evaluation/datasets/place-search-v1 --allow-draft --repeats 3 --warmup 2 --output ai/data/search-evaluation
+```
+
+Script dùng root `.env` hoặc biến `RECOMMENDATION_API_KEY`/`AI_SERVICE_API_KEY`, không in khóa. Default URL `http://127.0.0.1:9002`, K=5,10,20. Đổi bằng `--base-url`, `--ks 5,10,20,50`, `--split test`. Nếu muốn chỉ thử nhanh: thêm `--max-queries 3 --repeats 1`. Bỏ `--allow-draft` sau khi đã duyệt toàn bộ nhãn được chọn; script từ chối nhãn chưa duyệt nếu thiếu cờ này.
+
+Đo RAM qua Docker cần quyền truy cập Docker Desktop. `--container datn-n7-ai-1` xác định đúng AI API; có thể dùng `--skip-resources` để chỉ đo chất lượng/latency. Không tự dừng các dự án khác.
+
+Kết quả: `summary.json` tổng hợp + phiên bản/hash, `metrics.csv` macro trung bình và nhóm truy vấn, `per-query.csv` theo từng query, `runs.jsonl` ID xếp hạng/lỗi/retrieval, `resources.jsonl` mẫu RAM. Không ghi mật khẩu hoặc API key. Thư mục `ai/data/` được Git ignore.
+
+### Định nghĩa chỉ số
+
+- **Recall@K** = số địa điểm relevant trong Top K / tổng số địa điểm relevant của query. Relevant là grade >=2; mẫu số không phải K. Query có nhiều đáp án nên Recall@5 có thể thấp dù 5 kết quả đầu đều đúng.
+- **MRR@K** = trung bình `1/rank` của kết quả relevant đầu tiên trong Top K; không có thì 0.
+- **nDCG@K** = DCG/IDCG; gain `2^grade−1`, chiết khấu `log2(rank+1)`. Grade 1 vẫn có gain nhỏ dù không tính là binary relevant.
+- Query không có positive được loại khỏi Recall/MRR và báo số query tính; IDCG=0 thì nDCG không xác định. Request lỗi được coi là danh sách rỗng, không loại khỏi chất lượng để tránh làm đẹp số liệu. ID chưa được gán nhãn tạm tính grade 0, đồng thời báo `judged_coverage`; coverage thấp cần bổ sung nhãn.
+- Trung bình các lần lặp trong từng query, rồi macro-average các query. Không cộng dồn relevant của query có nhiều nhãn để chi phối toàn bộ bộ test.
+- **Latency**: mean/p50/p95/max của HTTP end-to-end sau warmup, gọi tuần tự. Một request lấy max(K), các metric K nhỏ cắt từ cùng thứ hạng; latency là cho max(K), không phải thời gian riêng cho mỗi K. Không gồm khởi động/tải model, không phải kernel inference thuần. Báo lỗi request riêng. Cần phép đo tải đồng thời riêng để kết luận throughput production.
+- **RAM**: RSS process AI API PID 1, baseline và peak quan sát lấy mẫu ~1 giây; HWM là từ lúc process khởi động, không chỉ lượt test. Cgroup memory là toàn container, cách hạch toán shared pages/cache khác RSS, không cộng hai số. Chưa tính RAM Qdrant. Lấy mẫu có thể bỏ lỡ peak ngắn và việc polling gây overhead nhỏ.
+- **VRAM**: model text hiện ép chạy CPU, nên `vram_mib=null`, trạng thái không dùng VRAM cho text embedding; không bịa số 0 như một phép đo GPU. `nvidia-smi` nếu có chỉ đo thêm peak bộ nhớ toàn thiết bị, có thể gồm màn hình/dự án khác, không quy cho riêng AI. Muốn benchmark GPU cần triển khai device CUDA và đo trong process model.
+
+Phép đo dùng toàn bộ `/api/v1/search/places` hiện tại (semantic + keyword + lọc), `infer_filters=false` để bộ lọc không phụ thuộc parser/LLM. Không dùng rotation Recommendation. Giữ dataset/index/hardware cố định khi so sánh baseline; các trường retrieval/warnings giúp phát hiện fallback khác đường chạy.
+
+## Phương án bổ sung: hành vi cá nhân + Bayesian Rating + MMR
+
+### Làm mới một phần danh sách giữa các lần gợi ý
+
+Chế độ `personalized_mmr` mặc định có `refresh_variety=true`. Sau xếp hạng theo hồ sơ + rating và MMR, giữ khoảng 70% đầu danh sách làm điểm neo; dành phần còn lại (làm tròn lên 30%) cho địa điểm không có trong danh sách trước. Ưu tiên ứng viên chưa xuất hiện trong cả 3 danh sách gần nhất, sau đó mới nới sang chỉ khác danh sách trước. Ứng viên thay thế vẫn phải vượt bộ lọc, có vector hợp lệ, nằm trong Top-N và có relevance không thấp hơn điểm tốt nhất quá 0.15. MMR tiếp tục chọn giữa các ứng viên mới dựa trên những điểm neo đã giữ.
+
+Lịch sử danh sách lấy từ các response đã lưu cho đúng user, không biến việc được đề xuất thành sở thích tích cực. Không đủ địa điểm mới phù hợp thì giữ lại kết quả và trả warning/diagnostics; không bảo đảm thay đúng 30% khi tập ứng viên cạn. `fresh_since_last` đánh dấu điểm mới so với danh sách ngay trước. Tắt checkbox **Thêm lựa chọn mới mỗi lần gợi ý** hoặc gửi `refresh_variety=false` để so sánh thuật toán cố định; riêng khi tắt rotation, lambda=1 giữ nguyên thứ tự relevance. Phương án `content_rating` không áp dụng rotation. Các tỷ lệ 30% và ngưỡng 0.15 là lựa chọn ban đầu để thực nghiệm, không phải thông số tối ưu.
+
+Trên tab Recommendation, khung **Người dùng thử nghiệm có lịch sử** tự tải các hồ sơ `demo-beach-*` đã được script tạo. Chọn hồ sơ để thấy từng hành vi và tên địa điểm; nút **Xem gợi ý cho người dùng này** đặt đúng User ID, chọn chế độ hành vi, lọc Attraction tại Đà Nẵng và để trống sở thích/query để quan sát tác động của lịch sử. **Tải lại lịch sử** cập nhật các hành vi vừa ghi nhận. API có bảo vệ service key: `GET /api/v1/recommendation/demo-users` và `GET /api/v1/users/{user_id}/interactions?limit=100&offset=0`. Backend tích hợp phải kiểm tra quyền xem lịch sử theo session; đây vẫn là công cụ demo nội bộ.
+
+Để tạo một hồ sơ thử riêng, mô phỏng tương tác với địa điểm thật trong catalog và xuất báo cáo trước/sau, chạy từ thư mục gốc:
+
+```powershell
+python ai/scripts/simulate_user.py --base-url http://localhost:9002 --output simulated-user-report.json
+```
+
+Script đọc service key từ môi trường hoặc root `.env`, không in khóa. Mỗi lần chạy tạo User ID mới dạng `demo-beach-*`, sở thích khai báo rỗng; mô phỏng xem, yêu thích và lưu các điểm biển/thiên nhiên tại Đà Nẵng. Không tạo/sửa địa điểm hoặc giả mạo review. Báo cáo chứa sự kiện mô phỏng, gợi ý trước lịch sử, sau lịch sử (`lambda=1`) và sau MMR (`lambda=0.7`). Đây là kiểm tra chức năng, không phải đánh giá chất lượng thực nghiệm. Dùng User ID được in ra trong demo để tiếp tục tương tác.
+
+`POST /api/v1/recommendations` hỗ trợ `mode: "personalized_mmr"`; mặc định vẫn là `content_rating` để so sánh. Phương án cũ không đọc lịch sử hành vi. Các đoạn mô tả không dùng lịch sử bên dưới nói về phương án mặc định.
+
+Luồng mới: ghi nhận hành vi → tổng hợp theo địa điểm → lấy vector BGE-M3 hiện có → trung bình vector có trọng số và chuẩn hóa → kết hợp sở thích khai báo bằng `preference_alpha` → kết hợp query hiện tại nếu có → lọc điều kiện bắt buộc → chấm nội dung + Bayesian Rating → lấy Top-N → chọn tuần tự bằng MMR.
+
+Trọng số khởi tạo: xem một lần 1, xem lặp tối đa 2 cho mỗi địa điểm; yêu thích 3; lưu 4; rating tích cực `5 × max(0, (rating − 3)/2)`. Hành vi cùng địa điểm được cộng; yêu thích/lưu dùng trạng thái mới nhất, bỏ chọn không tiếp tục cộng điểm. Rating mới nhất dưới 3 sao loại địa điểm khỏi gợi ý và khỏi hồ sơ tích cực; 3 sao trung tính. Không trừ vector tiêu cực vào hồ sơ. Chưa dùng suy giảm thời gian hay collaborative filtering. Đây là tham số thực nghiệm, chưa chứng minh tối ưu.
+
+`preference_alpha` mặc định 0.5: cân bằng vector sở thích khai báo và lịch sử. Chỉ có một nguồn thì dùng nguồn đó; thiếu cả hai dùng query, hoặc rating nếu query cũng trống. Chỉ lấy vector đúng model/document version và địa điểm còn hoạt động. Hồ sơ tính lại mỗi request từ bảng `recommendation_interactions` trong SQLite AI, không huấn luyện lại embedding và không đọc các bảng hành vi cũ.
+
+MMR dùng relevance là **điểm nội dung + Bayesian Rating**, thay vì chỉ cosine, nhằm giữ thành phần rating của phương án hiện tại. Cosine giữa hai địa điểm được đưa về `[0,1]`; relevance cũng trong `[0,1]`. `mmr_lambda` mặc định 0.7, có thể khảo sát 0.3/0.5/0.7/0.9/1.0. `mmr_pool_size` mặc định 100, tối đa 500, phải >= limit. Điểm đầu tiên chỉ theo relevance; các bước sau trừ mức tương đồng lớn nhất với điểm đã chọn. Thiếu vector dùng mức phạt bảo thủ 1, không coi là mới lạ. `lambda=1` giữ thứ tự relevance. MMR không đảm bảo quota loại hình hoặc cải thiện chất lượng nếu chưa đánh giá thực nghiệm.
+
+### Ghi nhận hành vi
+
+API nội bộ, yêu cầu `X-API-Key`; backend thật phải lấy user ID từ session, không tin ID tùy ý từ client. Demo dùng User ID nhập tay để thực nghiệm. Review từ dataset không tự biến thành hành vi người dùng.
+
+```http
+POST /api/v1/users/demo-user/interactions
+```
+
+```json
+{"event_id":"unique-event-001","place_id":"real-place-id","action":"save","active":true,"occurred_at":"2026-11-19T07:00:00Z"}
+```
+
+`action`: `view`, `favorite`, `save`, `rating`. Favorite/save yêu cầu `active` true/false. Rating yêu cầu `rating` 1–5. Timestamp phải có timezone và không ở tương lai. Retry cùng event ID và cùng nội dung không cộng lại; đổi nội dung cùng ID trả 409. `DELETE /api/v1/users/{user_id}/interactions` xóa lịch sử để reset thử nghiệm.
+
+```json
+{"user_id":"demo-user","mode":"personalized_mmr","preferences":["biển","thiên nhiên"],"city":"Đà Nẵng","preference_alpha":0.5,"mmr_lambda":0.7,"mmr_pool_size":100,"limit":10}
+```
+
+Response giữ `score` là relevance trước MMR, thêm `mmr_score`, `redundancy_score`; thứ tự sau MMR không nhất thiết giảm dần theo `score`. Diagnostics có số sự kiện, số địa điểm lịch sử hợp lệ, nguồn hồ sơ và tham số. Demo `/demo` có chọn phương án, alpha/lambda; mở chi tiết ghi nhận view, có nút yêu thích/lưu/bỏ chọn và đánh giá sao. Các nút là gửi trạng thái trực tiếp, không hiển thị trạng thái đã lưu từ trước. Backend/frontend chính chưa tự gửi các sự kiện này.
+
+Đánh giá bằng chia lịch sử theo thời gian, giữ tương tác tương lai làm test, không đưa test vào hồ sơ. So sánh relevance (Recall/NDCG@K) cùng đa dạng (intra-list diversity, coverage) với baseline, báo riêng cold start. Tránh coi dữ liệu minh họa là kết quả thực nghiệm.
+
 Mã AI nằm trong `ai/`, cùng một Git với `be/` và `fe/`. Chạy Docker từ thư mục gốc bằng `docker compose up -d --build`. Cấu hình Docker dùng `.env` ở gốc; không cần sao chép khóa vào mã nguồn hoặc frontend.
 
 - AI API và Swagger: http://localhost:9000/docs
@@ -552,3 +751,8 @@ python -m unittest discover -s tests -v
 Tests dùng embedding giả và Qdrant in-memory. Gemini/OSRM được mock hoặc tắt, không gọi dịch vụ trả phí. Kiểm thử logic không chứng minh chất lượng gợi ý/đường đi ngoài thực tế.
 
 Nguồn tích hợp: [OSRM Table API](https://project-osrm.org/docs/v5.24.0/api/#table-service), [Gemini generateContent](https://ai.google.dev/api/generate-content), [Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output).
+
+
+## Indexing từ backend
+
+Luồng RabbitMQ/outbox, upload S3 và bảng đo thời gian được mô tả tập trung trong [README gốc](../README.md#indexing). AI nhận lệnh nội bộ `POST /api/v1/indexing/apply`, yêu cầu service key; hỗ trợ revision, tombstone, retry và trả `timings_ms`. Các API embedding cũ không có revision, chỉ dùng cho dữ liệu ngoài backend. Chạy một API process trên SQLite hiện tại; không tăng replicas trước khi bổ sung coordination dùng chung.

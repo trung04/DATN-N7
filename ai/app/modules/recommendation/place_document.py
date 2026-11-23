@@ -14,7 +14,7 @@ def clean_text(value):
     return re.sub(r'\s+',' ',text).strip()
 def place_document(place,max_length=8000):
     labels={'name':'Tên','place_type':'Loại','city':'Thành phố','categories':'Danh mục',
-            'amenities':'Tiện ích','tags':'Sở thích','travel_styles':'Phong cách','description':'Mô tả'}
+            'amenities':'Tiện ích','tags':'Sở thích','travel_styles':'Phong cách','best_visit_times':'Thời điểm phù hợp','suitable_for':'Phù hợp với','description':'Mô tả'}
     parts=[]
     for key,label in labels.items():
         value=place.get(key)

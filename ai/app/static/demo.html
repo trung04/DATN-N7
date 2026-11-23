@@ -16,8 +16,8 @@
 <div id="globalStatus" class="status" role="status" aria-live="polite"></div>
 <p class="muted">Key chỉ giữ trong trang đang mở, không lưu vào trình duyệt. Nút lưu/index/chỉnh lịch sẽ ghi dữ liệu thật.</p>
 </div>
-<nav aria-label="Chức năng">
-<button data-tab="images" aria-selected="true">Ảnh CLIP</button><button data-tab="places" aria-selected="false">Tìm địa điểm</button><button data-tab="recommend" aria-selected="false">Recommendation</button><button data-tab="chat" aria-selected="false">Chat</button><button data-tab="trips" aria-selected="false">Lịch trình</button>
+<a href="/evaluation" style="display:inline-block;margin-top:16px;padding:10px 16px;border:1px solid #b9d1be;border-radius:10px;background:#e9f2e7;font-weight:600">↗ Gán nhãn & đánh giá tìm kiếm</a><nav aria-label="Chức năng">
+<button data-tab="images" aria-selected="true">Ảnh CLIP</button><button data-tab="places" aria-selected="false">Tìm địa điểm</button><button data-tab="recommend" aria-selected="false">Recommendation</button><button data-tab="chat" aria-selected="false">Chat & lịch trình</button>
 </nav>
 
 <section id="images" class="box">
@@ -41,25 +41,17 @@
 </section>
 
 <section id="recommend" class="box" hidden><h2>Địa điểm hợp gu, chất lượng đáng tin</h2>
-<form id="recForm"><div class="row"><div><label for="recCity">Thành phố</label><input id="recCity" placeholder="Đà Nẵng"></div><div><label for="recType">Loại địa điểm</label><select id="recType"><option value="">Tất cả</option><option>Attraction</option><option>Restaurant</option><option>Hotel</option></select></div></div>
+<form id="recForm"><label for="recMode">Phương án gợi ý</label><select id="recMode"><option value="content_rating">Content-based + Bayesian Rating</option><option value="personalized_mmr">Hành vi cá nhân + Rating + MMR</option></select><div class="row"><div><label for="recAlpha">Tỷ trọng sở thích khai báo alpha</label><input id="recAlpha" type="number" min="0" max="1" step="0.1" value="0.5"></div><div><label for="recLambda">MMR lambda (cao: ưu tiên phù hợp)</label><input id="recLambda" type="number" min="0" max="1" step="0.1" value="0.7"></div></div><div class="row"><div><label for="recCity">Thành phố</label><input id="recCity" placeholder="Đà Nẵng"></div><div><label for="recType">Loại địa điểm</label><select id="recType"><option value="">Tất cả</option><option>Attraction</option><option>Restaurant</option><option>Hotel</option></select></div></div>
 <label for="recPreferences">Sở thích, ngăn cách bằng dấu phẩy</label><input id="recPreferences" placeholder="biển, thiên nhiên, cà phê"><label for="recQuery">Bạn đang muốn trải nghiệm điều gì? (tùy chọn)</label><input id="recQuery" placeholder="Muốn tìm nơi yên tĩnh"><button class="primary" type="submit">Tìm gợi ý phù hợp</button></form>
-<p class="muted">Mặc định kết hợp độ phù hợp nội dung (75%) và chất lượng đánh giá (25%). Bỏ trống nhu cầu và sở thích để xem gợi ý theo chất lượng đánh giá.</p>
+<p class="muted">Mặc định kết hợp độ phù hợp nội dung (75%) và chất lượng đánh giá (25%). Chế độ hành vi vẫn dùng lịch sử khi bạn để trống sở thích và nhu cầu.</p>
 <div id="recStatus" class="status" role="status" aria-live="polite"></div><div id="recResult"></div><details><summary>JSON phản hồi</summary><pre id="recJson"></pre></details>
 </section>
 
-<section id="chat" class="box" hidden><h2>Chat điều phối</h2><p class="muted">Thử “1+1 bằng bao nhiêu?”, tìm địa điểm, hoặc “Lập lịch Đà Nẵng 2 ngày”. Thiếu ngày khởi hành, hệ thống sẽ hỏi lại.</p>
-<div id="chatHistory" aria-live="polite"></div><form id="chatForm"><label for="chatMessage">Tin nhắn</label><textarea id="chatMessage" required placeholder="Nhập yêu cầu..."></textarea><label class="check"><input id="useLlm" type="checkbox">Dùng Gemini (cần cấu hình key/model, có thể phát sinh phí)</label><div class="actions"><button class="primary" type="submit">Gửi</button><button id="resetChat" type="button">Hội thoại mới</button></div></form>
-<div id="chatStatus" class="status" role="status"></div><div id="chatExtra"></div><details><summary>JSON phản hồi</summary><pre id="chatJson"></pre></details>
-</section>
-
-<section id="trips" class="box" hidden><h2>Tạo và xem lịch trình</h2>
-<form id="tripForm"><div class="row three"><div><label for="tripCity">Thành phố</label><input id="tripCity" value="Đà Nẵng" required></div><div><label for="tripDate">Ngày bắt đầu</label><input id="tripDate" type="date" required></div><div><label for="tripDays">Số ngày</label><input id="tripDays" type="number" value="2" min="1" max="14" required></div></div>
-<div class="row three"><div><label for="tripStops">Số điểm/ngày</label><input id="tripStops" type="number" value="3" min="1" max="6" required></div><div><label for="tripStart">Bắt đầu mỗi ngày</label><input id="tripStart" type="time" value="09:00" required></div><div><label for="tripEnd">Kết thúc mỗi ngày</label><input id="tripEnd" type="time" value="18:00" required></div></div>
-<label for="tripPreferences">Sở thích, ngăn cách bằng dấu phẩy</label><input id="tripPreferences" placeholder="biển, văn hóa, cà phê"><div class="row"><div><label for="tripLat">Vĩ độ nơi xuất phát (tùy chọn)</label><input id="tripLat" type="number" step="any" min="-90" max="90" placeholder="16.05"></div><div><label for="tripLon">Kinh độ nơi xuất phát (tùy chọn)</label><input id="tripLon" type="number" step="any" min="-180" max="180" placeholder="108.2"></div></div>
-<label class="check"><input id="tripReturn" type="checkbox">Quay về nơi xuất phát mỗi ngày (cần tọa độ)</label><button class="primary" type="submit">Tạo và lưu lịch trình</button></form>
-<p class="muted">Nếu chưa cấu hình routing, thời gian/quãng đường sẽ được ghi là ước tính. Chưa tối ưu ngân sách.</p>
-<div class="row"><div><label for="loadTripId">Trip ID đã lưu</label><input id="loadTripId" placeholder="Dán trip_id để đọc lại"></div><div class="actions" style="align-self:end"><button id="loadTrip">Đọc lịch</button><button id="validateTrip">Kiểm tra lịch đang xem</button></div></div>
-<div id="tripStatus" class="status" role="status" aria-live="polite"></div><div id="tripResult"></div><details><summary>JSON phản hồi</summary><pre id="tripJson"></pre></details>
+<section id="chat" class="planner-workspace" hidden>
+<div class="planner-chat"><div class="planner-chat-head"><div><small>TRAVEL ASSISTANT</small><h2>Trợ lý chuyến đi</h2></div><button type="button" id="resetChat" title="Bắt đầu hội thoại mới">+ Mới</button></div>
+<div id="chatHistory" class="planner-messages" aria-live="polite"></div>
+<form id="chatForm" class="planner-composer"><label for="chatMessage" class="planner-label">Bạn muốn đi đâu?</label><textarea id="chatMessage" required maxlength="4000" rows="3" placeholder="Lập lịch Đà Nẵng 3 ngày, thích biển và ẩm thực..."></textarea><div class="planner-send-row"><label class="check"><input id="useLlm" type="checkbox" checked>Gemini AI</label><button class="primary" type="submit" id="sendPlannerChat">Gửi tin nhắn ↗</button></div><div id="chatStatus" class="planner-chat-status" role="status"></div></form></div>
+<div class="planner-itinerary"><div class="planner-demo-library"><button type="button" id="loadDemoTrips">Lịch demo đã lưu</button><div id="demoSavedTrips" aria-live="polite"></div></div><div id="itineraryContent"></div></div>
 </section>
 </main>
 <script>
@@ -98,29 +90,14 @@ $('searchImage').onclick=()=>run('images',async()=>{const form=imageForm();form.
 $('imageCollection').onclick=()=>run('images',async()=>{const d=await api('/api/v1/search/images/collection',undefined,'GET');json('imageJson',d);status('imageStatus',d.collection+' · '+d.dimensions+' chiều · '+d.points_count+' ảnh.');});
 $('placeForm').onsubmit=e=>{e.preventDefault();run('places',async()=>{const filters={};if($('searchCity').value.trim())filters.city=$('searchCity').value.trim();if($('searchType').value)filters.place_type=$('searchType').value;const d=await api('/api/v1/search/places',{query:$('placeQuery').value.trim(),filters,infer_filters:$('inferFilters').checked,limit:10});json('placeJson',d);const out=$('placeResult');out.replaceChildren(node('p','Bộ lọc áp dụng: '+JSON.stringify(d.applied_filters)));notices(out,d);cards(out,d.results);status('placeStatus','Tổng '+d.total+' kết quả.'+(d.total?'':' Kiểm tra catalog hoặc điều kiện lọc.'));});};
 $('recForm').onsubmit=e=>{e.preventDefault();run('recommend',async()=>{
- const body={user_id:user(),limit:10,preferences:values('recPreferences')};
+ const body={user_id:user(),limit:Number($('recLimit').value),preferences:values('recPreferences'),refresh_variety:$('recVariety').checked,mode:$('recMode').value,preference_alpha:Number($('recAlpha').value),mmr_lambda:Number($('recLambda').value)};
  if($('recCity').value.trim())body.city=$('recCity').value.trim();
  if($('recType').value)body.place_type=$('recType').value;
  if($('recQuery').value.trim())body.query=$('recQuery').value.trim();
  const d=await api('/api/v1/recommendations',body);json('recJson',d);
- const out=$('recResult');out.replaceChildren(node('p',d.strategy==='rating_fallback'?'Đề xuất theo chất lượng đánh giá':'Đề xuất theo nội dung và chất lượng đánh giá'));
- notices(out,d);
- cards(out,d.recommendations);
- [...out.querySelectorAll('.card')].forEach((card,i)=>{
-  const p=d.recommendations[i],content=p.content_score===null?'Chưa có':((p.content_score+1)/2*100).toFixed(1)+' / 100';
-  card.append(node('p',(p.rating===null?'Chưa có rating':'★ '+p.rating.toFixed(1)+' / 5')+' · '+Number(p.review_count||0).toLocaleString('vi-VN')+' lượt đánh giá'));
-  card.append(node('p','Độ phù hợp: '+content+' · Chất lượng Bayesian: '+(p.quality_score*100).toFixed(1)+' / 100','muted'));
- });
+ const out=$('recResult');out.replaceChildren();notices(out,d);renderRecommendationCards(out,d);
  status('recStatus',d.total?'Có '+d.total+' gợi ý. Điểm là thang xếp hạng, không phải xác suất yêu thích.':'Không có địa điểm thỏa các điều kiện đã chọn.');
 });};
-function time(value){return value?value.slice(11,16):'';}
-function renderTrip(trip,target){lastTrip=trip;$('loadTripId').value=trip.trip_id;target.replaceChildren(node('p','Trip ID: '+trip.trip_id+' · Phiên bản '+trip.version+' · '+trip.status));notices(target,trip);for(const day of trip.days){const card=node('div',undefined,'card');card.append(node('h3','Ngày '+day.day+' — '+day.date));if(!day.activities.length)card.append(node('p','Chưa xếp được địa điểm cho ngày này.'));for(const a of day.activities){const line=node('div');line.append(node('strong',time(a.start_time)+'–'+time(a.end_time)+' · '+a.name));line.append(node('p','Di chuyển: '+a.travel_time_from_previous+' phút · ID: '+a.place_id,'muted'));if(a.notes.length)line.append(node('p',a.notes.join('; '),'muted'));const remove=node('button','Bỏ điểm này khỏi ngày '+day.day);remove.onclick=()=>run(target.id==='chatExtra'?'chat':'trips',async()=>{if(user()!==trip.user_id)throw Error('User ID hiện tại khác chủ lịch trình.');const d=await api('/api/v1/trips/'+encodeURIComponent(trip.trip_id)+'/days/'+day.day,{user_id:trip.user_id,expected_version:trip.version,remove_place_ids:[a.place_id]},'PATCH');json('tripJson',d);renderTrip(d,target);status(target.id==='chatExtra'?'chatStatus':'tripStatus','Đã lưu thay đổi. Các ngày khác giữ nguyên.');});line.append(remove);card.append(line);}card.append(node('p','Tổng di chuyển: '+day.total_distance_km+' km / '+day.total_travel_minutes+' phút'));if(day.return_leg)card.append(node('p','Về nơi xuất phát lúc '+time(day.return_leg.arrival_time),'muted'));target.append(card);}}
-$('tripForm').onsubmit=e=>{e.preventDefault();run('trips',async()=>{const body={user_id:user(),city:$('tripCity').value.trim(),start_date:$('tripDate').value,days:Number($('tripDays').value),stops_per_day:Number($('tripStops').value),daily_window:{start:$('tripStart').value,end:$('tripEnd').value},return_to_start:$('tripReturn').checked};if(values('tripPreferences').length)body.preferences=values('tripPreferences');if($('tripLat').value!==''||$('tripLon').value!==''){if($('tripLat').value===''||$('tripLon').value==='')throw Error('Nhập cả vĩ độ và kinh độ.');body.start_location={latitude:Number($('tripLat').value),longitude:Number($('tripLon').value)};}if(body.return_to_start&&!body.start_location)throw Error('Cần tọa độ nơi xuất phát để quay về.');const d=await api('/api/v1/trips',body);json('tripJson',d);renderTrip(d,$('tripResult'));status('tripStatus','Đã tạo và lưu lịch trình: '+d.status);});};
-$('loadTrip').onclick=()=>run('trips',async()=>{const id=$('loadTripId').value.trim();if(!id)throw Error('Nhập Trip ID.');const d=await api('/api/v1/trips/'+encodeURIComponent(id)+'?user_id='+encodeURIComponent(user()),undefined,'GET');json('tripJson',d);renderTrip(d,$('tripResult'));status('tripStatus','Đã đọc lịch đã lưu.');});
-$('validateTrip').onclick=()=>run('trips',async()=>{if(!lastTrip)throw Error('Tạo hoặc đọc lịch trước.');const d=await api('/api/v1/trips/'+encodeURIComponent(lastTrip.trip_id)+'/validation?user_id='+encodeURIComponent(user()),undefined,'GET');json('tripJson',d);status('tripStatus','Kiểm tra: '+d.status+(d.errors.length?' — '+d.errors.join('; '):''),!d.valid);});
-$('chatForm').onsubmit=e=>{e.preventDefault();run('chat',async()=>{const message=$('chatMessage').value.trim();if(!message)throw Error('Nhập tin nhắn.');const body={user_id:user(),message,use_llm:$('useLlm').checked};if(conversationId)body.conversation_id=conversationId;const d=await api('/api/v1/chat',body);conversationId=d.conversation_id;$('chatHistory').append(node('div','Bạn: '+message,'bubble user'),node('div','AI: '+(d.message||(d.result&&d.result.answer)||('Đã trả kết quả '+d.intent)),'bubble'));$('chatMessage').value='';json('chatJson',d);const out=$('chatExtra');out.replaceChildren();if(d.trip)renderTrip(d.trip,out);else if(d.result&&d.result.results){notices(out,d.result);cards(out,d.result.results);}else if(d.result&&d.result.facts){for(const fact of d.result.facts)out.append(node('pre',JSON.stringify(fact,null,2)));notices(out,d.result);}status('chatStatus','Nhánh: '+d.intent+' · Hội thoại: '+conversationId);});};
-$('resetChat').onclick=()=>{conversationId=null;$('chatHistory').replaceChildren();$('chatExtra').replaceChildren();$('chatJson').textContent='';status('chatStatus','Đã bắt đầu hội thoại mới.');};
-$('tripDate').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 window.addEventListener('beforeunload',()=>{if(selectedUrl)URL.revokeObjectURL(selectedUrl);});
 $('health').click();
-</script><script src="/demo-assets/explore.js"></script></body></html>
+</script><script src="/demo-assets/explore.js"></script><script src="/demo-assets/recommendation-ui.js"></script><script src="/demo-assets/behavior-demo.js"></script><script src="/demo-assets/chat-planner.js"></script></body></html>

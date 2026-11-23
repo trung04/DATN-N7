@@ -43,7 +43,9 @@ class PlaceVectorRepository:
     def upsert(self, place, vector, model):
         self.ensure_collection()
         payload={key:place.get(key) for key in ("name","description","categories","amenities","tags",
-                  "rating","review_count","budget","family_friendly","active")}
+                  "rating","review_count","budget","family_friendly","active","address",
+                  "opening_hours","weekly_opening_hours","duration_minutes","best_visit_times",
+                  "suitable_for","price","contact","source","image_url","image_urls","image_count")}
         payload['category_keys']=[x.casefold() for x in place.get('categories',[])]
         payload['budget_key']=place['budget'].casefold() if place.get('budget') else None
         payload.update({

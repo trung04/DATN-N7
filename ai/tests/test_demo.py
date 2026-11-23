@@ -11,8 +11,11 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         self.assertIn('text/html',response.headers['content-type'])
         self.assertEqual(response.headers['cache-control'],'no-store')
-        for value in ('id="imageFile"','id="placeForm"','id="recForm"','id="chatForm"','id="tripForm"'):
+        for value in ('id="imageFile"','id="placeForm"','id="recForm"','id="chatForm"','id="itineraryContent"'):
             self.assertIn(value,response.text)
+        self.assertNotIn('id="tripForm"',response.text)
+        self.assertNotIn('data-tab="trips"',response.text)
+        self.assertEqual(self.client.get('/demo-assets/chat-planner.js').status_code,200)
         self.assertIn('/api/v1/embeddings/image/upload',response.text)
         self.assertIn('/api/v1/search/images/upload',response.text)
 

@@ -25,6 +25,9 @@ from app.modules.recommendation.schemas import Contract, Identifier, Text
 from .text_utils import feature_key
 
 class ImageEmbeddingRequest(Contract):
+    alt_text: str | None = Field(None,max_length=500)
+    is_primary: bool = False
+
     image_base64: str = Field(min_length=1, max_length=12_000_000)
     image_id: Identifier | None = None
     place_id: Identifier | None = None

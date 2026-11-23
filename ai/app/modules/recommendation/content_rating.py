@@ -1,4 +1,4 @@
-"""Deterministic content + Bayesian rating ranking. No behavioral reads or writes."""
+"""Content + Bayesian rating ranking with opt-in behavioral profile and MMR."""
 import json
 import logging
 import math
@@ -12,6 +12,7 @@ from .place_document import DOCUMENT_VERSION
 from .profiles import build_explicit_profile
 from .ranking import bayesian_quality
 from .schemas import RecommendationResponse
+from .personalized import build_personalized_profile, rerank_mmr, rotate_recommendations
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,10 @@ def recommend_content_rating(service, request, *, now=None, log=True):
     config = service.config
     rows = service.store.places()
     profile = build_explicit_profile(service.embedding, request, service.store, config.max_interest_groups)
+    personalized = request.mode == "personalized_mmr"
+    history_diagnostics, negative = {}, set()
+    if personalized:
+        profile, negative, history_diagnostics = build_personalized_profile(service, request, profile, rows, now)
     profile = profile if profile.queries else None
     priors = defaultdict(list)
     places = [(row, json.loads(row["data"])) for row in rows]
@@ -33,7 +38,7 @@ def recommend_content_rating(service, request, *, now=None, log=True):
              for key, values in priors.items()}
     candidates = []
     service_excluded = 0
-    excluded = set(request.exclude_place_ids)
+    excluded = set(request.exclude_place_ids) | negative
     for row, place in places:
         if not place["active"] or place["place_id"] in excluded:
             continue
@@ -115,13 +120,28 @@ def recommend_content_rating(service, request, *, now=None, log=True):
             suppressed += 1
             continue
         identities.add(identity)
-        if len(selected) < request.limit:
+        if len(selected) < (request.mmr_pool_size if personalized else request.limit):
             selected.append(item)
+    if personalized:
+        vectors = {c["place"]["place_id"]: service._vector(c["row"]) for c in candidates}
+        pool = selected
+        selected = rerank_mmr(pool, vectors, request.limit, request.mmr_lambda)
+        if request.refresh_variety:
+            recent = service.store.recent_personalized(request.user_id, now.isoformat())
+            selected, rotation = rotate_recommendations(pool, selected, vectors, request, recent)
+            history_diagnostics.update(rotation)
+            if rotation['rotation_applied'] and rotation['fresh_count'] < rotation['rotation_target']:
+                warnings.append('Không đủ địa điểm mới phù hợp để đổi đủ 30% danh sách; một số kết quả được giữ lại.')
+        for item in selected:
+            item["reasons"].append("Personalized history profile + MMR diversity")
     result = RecommendationResponse(
         request_id=str(uuid.uuid4()), user_id=request.user_id, total=len(selected),
-        strategy="content_rating" if profile is not None else "rating_fallback",
+        strategy=("personalized_mmr" if personalized else "content_rating") if profile is not None else ("rating_mmr_fallback" if personalized else "rating_fallback"),
         model_version=service.version, retrieval=retrieval, recommendations=selected,
-        warnings=warnings, diagnostics={"mode": "content_rating", "interest_groups": len(profile.groups) if profile else 0,
+        warnings=warnings, diagnostics={"mode": request.mode, **history_diagnostics,
+            **({"mmr_lambda": request.mmr_lambda, "mmr_pool_size": request.mmr_pool_size,
+                "mmr_relevance": "content + Bayesian rating", "similarity_scale": "[0,1]"} if personalized else {}),
+            "interest_groups": len(profile.groups) if profile else 0,
             "candidate_count": len(candidates),
             "service_only_excluded": service_excluded, "same_name_suppressed": suppressed,
             "document_version": DOCUMENT_VERSION, "score_is_probability": False,
