@@ -586,7 +586,7 @@
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Mmr Lambda",
-            "default": 0.7
+            "default": 0.85
           },
           "mmr_pool_size": {
             "type": "integer",
@@ -594,6 +594,29 @@
             "minimum": 1.0,
             "title": "Mmr Pool Size",
             "default": 100
+          },
+          "diversity_policy": {
+            "type": "string",
+            "enum": [
+              "guarded",
+              "legacy"
+            ],
+            "title": "Diversity Policy",
+            "default": "guarded"
+          },
+          "mmr_relevance_tolerance": {
+            "type": "number",
+            "maximum": 0.2,
+            "minimum": 0.0,
+            "title": "Mmr Relevance Tolerance",
+            "default": 0.005
+          },
+          "personalized_content_weight": {
+            "type": "number",
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Personalized Content Weight",
+            "default": 0.95
           },
           "refresh_variety": {
             "type": "boolean",
@@ -862,6 +885,17 @@
               }
             ],
             "title": "Content Score"
+          },
+          "intent_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent Score"
           },
           "mmr_score": {
             "anyOf": [

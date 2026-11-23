@@ -92,7 +92,7 @@ def main():
             def request(c):
                 return RecommendationRequest(user_id='eval-'+c['case_id'],mode='content_rating' if method=='rating_only' else method,
                     preferences=[] if method=='rating_only' else c['preferences'],**c['filters'],
-                    exclude_place_ids=c['exclude_place_ids'],limit=20,refresh_variety=False)
+                    exclude_place_ids=c['exclude_place_ids'],limit=20,refresh_variety=False,diversity_policy='legacy',mmr_lambda=.7,preference_alpha=.5)
             start=time.perf_counter();svc.recommend(request(cases[0]),log=False);warmup_ms=(time.perf_counter()-start)*1000
             stop=threading.Event();samples=[memory()]
             def monitor():

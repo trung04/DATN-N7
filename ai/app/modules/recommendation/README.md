@@ -6,6 +6,21 @@ Hai phương án đối chứng nội dung thuần đã bổ sung: gửi `mode: 
 
 ## Cơ chế mặc định `auto`
 
+### Đa dạng hóa có chặn lệch sở thích (`guarded`)
+
+Nhánh có lịch sử hiện dùng `diversity_policy: "guarded"`. Hệ thống lấy mức phù hợp với **sở thích/nhu cầu hiện tại** (`intent_score`) làm điều kiện trước, rồi mới dùng hồ sơ hành vi, chất lượng và độ mới lạ để chọn trong nhóm đủ gần. Không chỉ cộng/phạt điểm MMR trên toàn bộ ứng viên.
+
+- Cấu hình chọn trên validation: alpha **0.5**, trọng số nội dung cá nhân **0.95** / chất lượng **0.05**, MMR lambda **0.85**, tolerance **0.005** trên thang phù hợp chuẩn hóa [0,1]. `content_rating` thuần vẫn mặc định 75%/25% như trước.
+- Ở mỗi vị trí, chỉ chọn điểm không thấp hơn điểm tốt nhất còn lại quá tolerance. Đồng thời không xuống dưới mức phù hợp của điểm thứ K theo nội dung trừ tolerance. Vì vậy độ đa dạng chỉ tăng trong nhóm gần tương đương về nội dung.
+- Nếu có hồ sơ nhưng địa điểm thiếu vector đúng model, không đưa điểm đó vào nhánh guarded chỉ vì rating cao. Nếu không có vector hồ sơ thì vẫn có fallback Rating, được ghi rõ trong diagnostics/warnings.
+- Luân phiên 30% danh sách cũng phải qua kiểm tra độ phù hợp trên **toàn bộ pool**, không chỉ nhóm điểm mới. Không đủ điểm mới an toàn thì giữ danh sách, kèm `rotation_relevance_guard_blocked`; không ép thay điểm cho đủ tỷ lệ.
+- `intent_score` là độ phù hợp nội dung [-1,1], khác `content_score` của hồ sơ đã kết hợp lịch sử. Khi alpha=0 và không có query hiện tại, dùng hồ sơ hành vi làm căn cứ phù hợp.
+- Đây là ràng buộc trên điểm vector, **không phải bảo đảm người dùng thực sự thích mọi địa điểm**. Dữ liệu và tập validation hiện còn nhỏ, nhãn mô phỏng.
+
+Tham số API thêm: `diversity_policy` (`guarded` mặc định hoặc `legacy`), `mmr_relevance_tolerance` (0..0.2), `personalized_content_weight` (0..1, không nhận hai đầu mút). `mmr_lambda` mặc định mới là 0.85. `diagnostics` trả lại các giá trị đang sử dụng. Khi đối chứng bản cũ, gửi rõ `diversity_policy:"legacy", preference_alpha:0.5, mmr_lambda:0.7`; nhánh legacy giữ trọng số cấu hình cũ, không dùng personalized_content_weight.
+
+Số đo trước/sau trên test được lưu riêng ở `evaluation/results/recommendation-guarded-v1`; không trộn với báo cáo ban đầu 44 hồ sơ.
+
 Backend chỉ gọi một API `POST /api/v1/recommendations`, không cần tự kiểm tra lịch sử hoặc tự chọn thuật toán.
 
 | Dữ liệu của user | Xử lý khi bỏ `mode` hoặc gửi `auto` |
@@ -60,7 +75,7 @@ Request sử dụng trong sản phẩm:
 | `limit` | integer 1–100, mặc định 10 | Top K, có thể trả ít hơn nếu không đủ ứng viên |
 | `include_service_places` | boolean, mặc định false | Mặc định bỏ các mục kinh doanh dịch vụ không phù hợp đi tham quan |
 | `preference_alpha` | number 0..1, mặc định 0.5 | Cân bằng sở thích khai báo và lịch sử khi có cả hai |
-| `mmr_lambda` | number 0..1, mặc định 0.7 | Cao: ưu tiên phù hợp; thấp: tăng phạt tương đồng |
+| `mmr_lambda` | number 0..1, mặc định 0.85 | Cao: ưu tiên phù hợp; thấp: tăng phạt tương đồng; nhánh guarded còn chặn mức giảm phù hợp |
 | `mmr_pool_size` | integer 1–500, mặc định 100 | Tập xếp lại; phải ≥ limit với `auto`/`personalized_mmr` |
 | `refresh_variety` | boolean, mặc định true | Trong chế độ hành vi, cố gắng đổi khoảng 30% danh sách giữa các lần; false để tắt luân phiên |
 
@@ -79,17 +94,18 @@ Response **200**, ví dụ minh họa user đã có lịch sử (điểm/ID ch�
     "name": "Bãi biển Mỹ Khê",
     "place_type": "Attraction",
     "city": "Đà Nẵng",
-    "score": 0.875,
+    "score": 0.895,
     "content_score": 0.8,
+    "intent_score": 0.8,
     "quality_score": 0.8,
-    "mmr_score": 0.6125,
+    "mmr_score": 0.76075,
     "redundancy_score": 0.0,
     "fresh_since_last": false,
     "rating": 4.5,
     "review_count": 100,
     "distance_km": null,
     "image_url": null,
-    "effective_weights": {"quality": 0.25, "content": 0.75},
+    "effective_weights": {"quality": 0.05, "content": 0.95},
     "reasons": ["Điểm chất lượng Bayesian từ rating và số lượt đánh giá", "Cá nhân hóa từ hành vi + MMR"]
   }],
   "diagnostics": {
@@ -100,7 +116,10 @@ Response **200**, ví dụ minh họa user đã có lịch sử (điểm/ID ch�
     "history_available": true,
     "history_places_used": 1,
     "preference_alpha": 0.5,
-    "mmr_lambda": 0.7,
+    "mmr_lambda": 0.85,
+    "diversity_policy": "guarded",
+    "mmr_relevance_tolerance": 0.005,
+    "personalized_content_weight": 0.95,
     "score_is_probability": false
   },
   "warnings": []
@@ -110,7 +129,7 @@ Response **200**, ví dụ minh họa user đã có lịch sử (điểm/ID ch�
 `diagnostics` có thể có thêm thông tin ứng viên, vector thiếu, trọng số hành vi và luân phiên. User mới trả `diagnostics.mode: "content_rating"`, `selection_reason: "no_history"`, `history_event_count: 0`; `mmr_score`/`redundancy_score` là null. `strategy` có thể là `content_rating`, `rating_fallback`, `personalized_mmr` hoặc `rating_mmr_fallback`.
 
 - `content_score` là độ phù hợp trong [-1,1], được đổi thành `(content_score+1)/2` trước khi cộng điểm.
-- Mặc định `score = 0.75 * content_normalized + 0.25 * quality_score`. Nếu thiếu điểm nội dung, dùng chất lượng với trọng số 1. Trọng số có thể đổi bằng biến môi trường; đọc `effective_weights` và `/recommendation/status` để biết giá trị thật.
+- `content_rating`/legacy mặc định `score = 0.75 * content_normalized + 0.25 * quality_score`; personalized guarded dùng 0.95/0.05 theo tham số đã chọn. Nếu không tạo được hồ sơ thì dùng chất lượng dự phòng; khi đã có hồ sơ, guarded bỏ ứng viên thiếu vector thay vì đưa vào vì rating cao. Đọc `effective_weights` và `diagnostics` để biết giá trị thực sự dùng.
 - `mmr_score` là điểm lựa chọn ở bước MMR, **không phải** xác suất và không thay thế `score`. Giữ thứ tự API trả về, không sort lại theo `score` ở frontend.
 - `fresh_since_last` chỉ phản ánh thay đổi so với danh sách trước khi có luân phiên, không phải địa điểm mới trong catalog. Không đảm bảo mỗi lần luôn đổi nếu thiếu ứng viên phù hợp.
 - `total` là số mục thực trả về. Không tự nới bộ lọc khi thiếu kết quả; `warnings` mô tả các giới hạn.

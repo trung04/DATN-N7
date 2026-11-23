@@ -14,7 +14,7 @@ from .place_document import DOCUMENT_VERSION, place_document
 from .schemas import PlaceData
 
 logger = logging.getLogger(__name__)
-RANKING_VERSION = 'auto-content-rating-personalized-mmr-v1'
+RANKING_VERSION = 'auto-content-rating-guarded-mmr-v2'
 
 
 class RecommendationService:

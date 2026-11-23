@@ -1,0 +1,203 @@
+{
+  "selection": {
+    "parameters": {
+      "preference_alpha": 0.5,
+      "personalized_content_weight": 0.95,
+      "mmr_lambda": 0.85,
+      "mmr_relevance_tolerance": 0.005
+    },
+    "validation_profiles": 5,
+    "selection": {
+      "preference_alpha": 0.5,
+      "personalized_content_weight": 0.95,
+      "mmr_lambda": 0.85,
+      "mmr_relevance_tolerance": 0.005,
+      "feasible": true,
+      "ndcg": 0.8777775005686413,
+      "recall": 0.3439089352809089,
+      "ild": 0.13422802090644836
+    },
+    "policy": "Max validation ILD subject to >=99% semantic mean nDCG/Recall and per-profile losses <=0.03; no test labels used",
+    "dataset_catalog_hash": "746bc6310363c55d02eb470af89d5d63ece64615eddcb7512a3eb65164c7cee9"
+  },
+  "split": "test",
+  "cohort": "warm",
+  "test_profiles": 17,
+  "repeats": 3,
+  "reports": [
+    {
+      "method": "semantic",
+      "profiles": 17,
+      "quality_metrics": [
+        {
+          "k": 5,
+          "precision": 0.8941176470588236,
+          "recall": 0.15718923373813476,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.88388081656376,
+          "ild": 0.13766833245754242
+        },
+        {
+          "k": 10,
+          "precision": 0.8764705882352941,
+          "recall": 0.27358821198013167,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.894120048007977,
+          "ild": 0.1369716260947433
+        },
+        {
+          "k": 20,
+          "precision": 0.8058823529411765,
+          "recall": 0.4097897618491595,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.8893152044762915,
+          "ild": 0.143086369657049
+        }
+      ],
+      "latency_ms": {
+        "mean": 428.43130529360553,
+        "p95": 704.3666015015333
+      }
+    },
+    {
+      "method": "legacy_personalized",
+      "profiles": 17,
+      "quality_metrics": [
+        {
+          "k": 5,
+          "precision": 0.8117647058823529,
+          "recall": 0.12744209061291756,
+          "mrr": 1.0,
+          "ndcg": 0.8428032835408131,
+          "ild": 0.16132630390279434
+        },
+        {
+          "k": 10,
+          "precision": 0.7588235294117647,
+          "recall": 0.2339560328764028,
+          "mrr": 1.0,
+          "ndcg": 0.8062076821776699,
+          "ild": 0.1583842330898335
+        },
+        {
+          "k": 20,
+          "precision": 0.7058823529411765,
+          "recall": 0.3541486232221701,
+          "mrr": 1.0,
+          "ndcg": 0.7993138002102684,
+          "ild": 0.1573356393536301
+        }
+      ],
+      "latency_ms": {
+        "mean": 879.5722192749678,
+        "p95": 1412.7129794978828
+      }
+    },
+    {
+      "method": "guarded_personalized",
+      "profiles": 17,
+      "quality_metrics": [
+        {
+          "k": 5,
+          "precision": 0.8823529411764706,
+          "recall": 0.15681456157627638,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.8756632650351226,
+          "ild": 0.1356235658421236
+        },
+        {
+          "k": 10,
+          "precision": 0.8705882352941177,
+          "recall": 0.2748178178931396,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.8887697588293003,
+          "ild": 0.1371145214130676
+        },
+        {
+          "k": 20,
+          "precision": 0.8058823529411765,
+          "recall": 0.41078307874338865,
+          "mrr": 0.9607843137254902,
+          "ndcg": 0.8887624492221353,
+          "ild": 0.1422827815339046
+        }
+      ],
+      "latency_ms": {
+        "mean": 819.2291170585211,
+        "p95": 1610.6073969967838
+      }
+    }
+  ],
+  "paired_comparisons": [
+    {
+      "a": "guarded_personalized",
+      "b": "semantic",
+      "metric_at_10": "ndcg",
+      "difference": -0.00535028917867667,
+      "paired_bootstrap_95_ci": [
+        -0.01942518010947689,
+        0.006659879614877553
+      ]
+    },
+    {
+      "a": "guarded_personalized",
+      "b": "semantic",
+      "metric_at_10": "recall",
+      "difference": 0.0012296059130079357,
+      "paired_bootstrap_95_ci": [
+        -0.004010695187165774,
+        0.008823529411764704
+      ]
+    },
+    {
+      "a": "guarded_personalized",
+      "b": "semantic",
+      "metric_at_10": "ild",
+      "difference": 0.00014289531832427209,
+      "paired_bootstrap_95_ci": [
+        -0.0019213450256905479,
+        0.0025532261287075264
+      ]
+    },
+    {
+      "a": "guarded_personalized",
+      "b": "legacy_personalized",
+      "metric_at_10": "ndcg",
+      "difference": 0.08256207665163037,
+      "paired_bootstrap_95_ci": [
+        0.001183875773060179,
+        0.16201137445645034
+      ]
+    },
+    {
+      "a": "guarded_personalized",
+      "b": "legacy_personalized",
+      "metric_at_10": "recall",
+      "difference": 0.040861785016736776,
+      "paired_bootstrap_95_ci": [
+        0.002055658136855826,
+        0.09763865232610194
+      ]
+    },
+    {
+      "a": "guarded_personalized",
+      "b": "legacy_personalized",
+      "metric_at_10": "ild",
+      "difference": -0.02126971167676589,
+      "paired_bootstrap_95_ci": [
+        -0.028027187196257845,
+        -0.015160145695302999
+      ]
+    }
+  ],
+  "caveat": "Silver labels, 5 validation/17 held-out test simulated users; do not claim real-user correctness. In-process latency includes BGE preference embedding; no HTTP.",
+  "source_catalog_and_vector_hashes_verified": true,
+  "protocol_note": "Exploratory: only 5 validation profiles for 144 configurations. Test excluded from this parameter selection; previous aggregate benchmark already contained these test profiles, so this is not a newly collected unseen confirmation set.",
+  "successful_test_requests": 153,
+  "dataset_hashes": {
+    "catalog.jsonl": "6f819995118e6975390f74f7e3891cc0879229dad5bec65cf2c6cd3795a32f36",
+    "profiles.jsonl": "f7b593ed5ca5dcddcd322e3306c1608b67bfe385bc8c6c854039b5287e5bd5f5",
+    "judgments.csv": "e3f93549b1df073ae25d8fb45c5cb58ee7ca2aa7ffcef9c2101b4e2c0b29b832",
+    "manifest.json": "a51b4e592b79fb04752a08928a4a78050af9db6ed763501de3a5b230eccdbe75"
+  }
+}

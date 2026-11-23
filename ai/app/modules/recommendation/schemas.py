@@ -156,8 +156,11 @@ class InteractionEvent(Contract):
 class RecommendationRequest(Contract):
     mode: Literal['auto', 'tfidf', 'semantic', 'content_rating', 'personalized_mmr'] = 'auto'
     preference_alpha: float = Field(0.5, ge=0, le=1)
-    mmr_lambda: float = Field(0.7, ge=0, le=1)
+    mmr_lambda: float = Field(0.85, ge=0, le=1)
     mmr_pool_size: int = Field(100, ge=1, le=500)
+    diversity_policy: Literal['guarded', 'legacy'] = 'guarded'
+    mmr_relevance_tolerance: float = Field(0.005, ge=0, le=0.2)
+    personalized_content_weight: float = Field(0.95, gt=0, lt=1)
     refresh_variety: bool = True
     user_id: Identifier
     include_service_places: bool = False
@@ -192,6 +195,7 @@ class RecommendationItem(Contract):
     city: str
     score: float
     content_score: float | None = None
+    intent_score: float | None = None
     mmr_score: float | None = None
     redundancy_score: float | None = None
     fresh_since_last: bool = False

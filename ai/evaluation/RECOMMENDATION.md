@@ -1,5 +1,25 @@
 # So sánh các phương pháp Recommendation
 
+## Cập nhật guarded MMR — 24/11/2026
+
+Đã chọn tham số trên **5 hồ sơ warm validation**, đóng băng cấu hình rồi đo **17 hồ sơ warm test × 3 lần × 3 phương án**. Test không tham gia chọn tham số lần này; vì các hồ sơ đó từng có trong báo cáo tổng hợp trước, đây vẫn là đánh giá thăm dò, không phải bộ xác nhận hoàn toàn mới.
+
+Tham số được chọn để tối đa ILD validation, với điều kiện nDCG/Recall trung bình không giảm quá 1% so với Semantic và không hồ sơ nào mất quá 0.03: alpha 0.5, trọng số nội dung 0.95/chất lượng 0.05, lambda 0.85, tolerance 0.005. Chưa chỉnh lại tham số theo kết quả test.
+
+| Phương pháp trên cùng test | Precision@10 | Recall@10 | MRR@10 | nDCG@10 | ILD@10 | Latency TB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Semantic BGE | 0.8765 | 0.2736 | 0.9608 | 0.8941 | 0.1370 | 428 ms |
+| Cá nhân hóa + Rating + MMR cũ | 0.7588 | 0.2340 | 1.0000 | 0.8062 | 0.1584 | 880 ms |
+| Cá nhân hóa + Rating + guarded MMR | 0.8706 | 0.2748 | 0.9608 | 0.8888 | 0.1371 | 819 ms |
+
+Bản guarded phục hồi độ phù hợp so với MMR cũ: chênh lệch nDCG +0.0826 (CI 95% [0.0012, 0.1620]), Recall +0.0409. Đổi lại, ILD giảm so với bản cũ. So với Semantic, ILD chỉ tăng 0.00014 và CI [-0.00192, 0.00255] còn chứa 0: **chưa chứng minh được đa dạng hơn rõ rệt**. Không được trình bày là đồng thời vượt trội cả relevance lẫn diversity.
+
+Guard dựa trên điểm tương đồng với nhu cầu, không dựa trên nhãn thật khi phục vụ. Nó giới hạn mức giảm điểm phù hợp ở mỗi vị trí, giữ ngưỡng Top K và kiểm tra lại luân phiên danh sách trên toàn pool. Nếu điểm mới không đạt ngưỡng thì giữ danh sách; không chèn điểm lệch nhu cầu để đạt tỷ lệ đổi mới. Các bộ lọc bắt buộc và loại trừ do đánh giá thấp vẫn có hiệu lực.
+
+File mới ở `results/recommendation-guarded-v1`: `summary.json`, `selected-config.json`, `validation-grid.csv`, `runs.jsonl`, `comparison.md`. Báo cáo `recommendation-v1` cũ giữ nguyên để đối chứng; không trộn số trung bình 22/44 hồ sơ với 17 hồ sơ test.
+
+Chạy lại bằng `python scripts/tune_guarded_recommendation.py --catalog-db /path/catalog-snapshot.sqlite3`. Script kiểm tra hash catalog/văn bản-vector và đóng băng cấu hình trước khi tính chỉ số test. Lưu ý 144 cấu hình trên chỉ 5 hồ sơ validation có nguy cơ overfit; cần bổ sung nhãn được người duyệt và dữ liệu mới trước khi kết luận ngoài bộ mô phỏng này.
+
 ## Các phương án
 
 | Phương án | Đặc trưng | Dùng hành vi? | Rating? | MMR? |
