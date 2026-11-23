@@ -48,6 +48,12 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
   integer('AI_TIMEOUT_MS', 15000, 1, 120000);
+  integer('MAPBOX_DIRECTIONS_TIMEOUT_MS', 8000, 1, 120000);
+  integer('MAPBOX_ROUTE_STORAGE_TTL_DAYS', 30, 1, 30);
+  config.MAPBOX_DIRECTIONS_ACCESS_TOKEN ??= '';
+  if (typeof config.MAPBOX_DIRECTIONS_ACCESS_TOKEN !== 'string') {
+    throw new Error('MAPBOX_DIRECTIONS_ACCESS_TOKEN must be a string');
+  }
   config.S3_ENDPOINT ??= 'http://localhost:9002';
   validateHttpOrigin(config, 'S3_ENDPOINT');
   const storageUrl = new URL(String(config.S3_ENDPOINT));

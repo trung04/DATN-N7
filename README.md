@@ -29,6 +29,12 @@ Nếu đã có `.env` được cấu hình thì giữ nguyên, không sao chép 
 
 Backend NestJS từ `dev` đã có API nghiệp vụ, Swagger, đăng nhập mật khẩu/Google, session xoay vòng trên Redis và phân quyền theo vai trò/chủ sở hữu. Các module bao gồm địa điểm, khách sạn, phòng, tiện ích, người dùng, chủ khách sạn, lịch trình, điểm dừng, hoạt động, chính sách hủy và booking. Xem [backend README](be/README.md) cho hợp đồng API chi tiết.
 
+Routing lịch trình được tạo ở backend qua Mapbox Directions và lưu dưới dạng
+GeoJSON/PostGIS tối đa 30 ngày. Cấu hình `MAPBOX_DIRECTIONS_ACCESS_TOKEN` trong
+root `.env`; backend trả route đã lưu cho frontend, đánh dấu route cũ khi danh
+sách điểm dừng thay đổi và xóa payload khi hết hạn. Xem
+[Stored itinerary routes](be/README.md#stored-itinerary-routes).
+
 Cấu hình tích hợp AI dùng nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Client nghiệp vụ gọi AI từ NestJS chưa được triển khai; demo AI gọi trực tiếp FastAPI.
 
 ## Database and Redis configuration

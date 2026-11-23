@@ -46,10 +46,10 @@ describe('environment validation', () => {
     expect(result.BOOKING_COMMISSION_RATE).toBe(15);
     expect(result.BOOKING_HOLD_MINUTES).toBe(15);
     expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
+    expect(result.MAPBOX_DIRECTIONS_TIMEOUT_MS).toBe(8000);
+    expect(result.MAPBOX_ROUTE_STORAGE_TTL_DAYS).toBe(30);
     expect(result.DATABASE_PASSWORD).toBe(database.DATABASE_PASSWORD);
-    expect(result.SEPAY_V2_BASE_URL).toBe(
-      'https://userapi-sandbox.sepay.vn/v2',
-    );
+    expect(result.SEPAY_V2_BASE_URL).toBe('https://userapi-sandbox.sepay.vn/v2');
   });
 
   it('accepts POSTGRES aliases used by the deployment configuration', () => {
@@ -89,6 +89,8 @@ describe('environment validation', () => {
     ['AI_BASE_URL', 'http://user:secret@ai:9000'],
     ['AI_BASE_URL', 'http://ai:9000/path'],
     ['AI_TIMEOUT_MS', '0'],
+    ['MAPBOX_DIRECTIONS_TIMEOUT_MS', '0'],
+    ['MAPBOX_ROUTE_STORAGE_TTL_DAYS', '31'],
     ['BOOKING_COMMISSION_RATE', '101'],
     ['BOOKING_HOLD_MINUTES', '0'],
     ['IDEMPOTENCY_KEY_TTL_HOURS', '169'],
@@ -145,7 +147,9 @@ describe('environment validation', () => {
       SEPAY_V2_BANK_ACCOUNT_XID: 'f9e8d7c6-b5a4-4210-8edc-ba0987654321',
       SEPAY_WEBHOOK_SECRET: 'test-only-webhook-secret',
     });
-    expect(result.SEPAY_V2_BASE_URL).toBe('https://userapi-sandbox.sepay.vn/v2');
+    expect(result.SEPAY_V2_BASE_URL).toBe(
+      'https://userapi-sandbox.sepay.vn/v2',
+    );
     expect(result.SEPAY_WEBHOOK_AUTH_TYPE).toBe('HMAC_SHA256');
   });
 

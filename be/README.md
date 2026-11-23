@@ -152,6 +152,39 @@ Users have `TOURIST`, `HOTEL_OWNER`, or `ADMIN` roles; newly created users
 default to `TOURIST`. Deleting any currently implemented entity sets its
 `deleted_at` timestamp, and normal repository queries omit deleted records.
 
+### Stored itinerary routes
+
+Authenticated tourists can generate and retrieve a Mapbox route for one
+itinerary day and travel profile:
+
+- `POST /api/v1/itineraries/:itineraryId/routes` accepts `routeDate` and
+  `profile` (`driving`, `driving-traffic`, `walking`, or `cycling`). The backend
+  resolves the day's ordered stopovers, calls Mapbox Directions, validates the
+  response, and stores normalized GeoJSON, waypoint, leg, distance, and
+  duration data.
+- `GET /api/v1/itineraries/:itineraryId/routes?routeDate=YYYY-MM-DD&profile=driving`
+  returns the current stored route without another provider call.
+
+Routes require at least two stopovers with coordinates. A SHA-256 waypoint
+signature prevents regenerating an unchanged current route. When the itinerary
+stops no longer match, the GET returns `409 ITINERARY_ROUTE_STALE`; a missing
+route returns `404 ITINERARY_ROUTE_NOT_FOUND`.
+
+Mapbox route payloads have an explicit `expiresAt` and a database constraint
+that caps storage at 30 days. Accessing an expired row deletes it and returns
+`410 ITINERARY_ROUTE_EXPIRED`; a six-hour cleanup loop also removes expired
+rows that are not read. Configure the server-side integration with:
+
+```dotenv
+MAPBOX_DIRECTIONS_ACCESS_TOKEN=your_server_side_mapbox_token
+MAPBOX_DIRECTIONS_TIMEOUT_MS=8000
+MAPBOX_ROUTE_STORAGE_TTL_DAYS=30
+```
+
+The access token is optional at process startup so non-routing development can
+continue, but route generation returns `503 MAPBOX_DIRECTIONS_NOT_CONFIGURED`
+until it is configured. The TTL is validated between 1 and 30 days.
+
 ## Hotels API
 
 Hotel onboarding is available at `/api/v1/hotels`. New hotels start as `DRAFT`;

@@ -52,6 +52,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         unauthorized: HttpStatus.UNAUTHORIZED,
         forbidden: HttpStatus.FORBIDDEN,
         not_found: HttpStatus.NOT_FOUND,
+        gone: HttpStatus.GONE,
         conflict: HttpStatus.CONFLICT,
         bad_gateway: HttpStatus.BAD_GATEWAY,
         rate_limited: HttpStatus.TOO_MANY_REQUESTS,

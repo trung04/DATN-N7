@@ -82,6 +82,8 @@ import { RoomGuestPolicyEntity } from '../modules/rooms/entities/room-guest-poli
 import { AddRoomGuestPolicies1794500009000 } from './migrations/1794500009000-AddRoomGuestPolicies';
 import { CreateNotificationEmailOutbox1794500010000 } from './migrations/1794500010000-CreateNotificationEmailOutbox';
 import { AddSePaySandboxSettlementPayout1794500011000 } from './migrations/1794500011000-AddSePaySandboxSettlementPayout';
+import { ItineraryRouteEntity } from '../modules/itinerary-routes/entities/itinerary-route.entity';
+import { CreateItineraryRoutes1794500012000 } from './migrations/1794500012000-CreateItineraryRoutes';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -134,6 +136,7 @@ export default new DataSource({
     ReviewModerationHistoryEntity,
     NotificationEntity,
     NotificationEmailDeliveryEntity,
+    ItineraryRouteEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -177,6 +180,7 @@ export default new DataSource({
     AddRoomGuestPolicies1794500009000,
     CreateNotificationEmailOutbox1794500010000,
     AddSePaySandboxSettlementPayout1794500011000,
+    CreateItineraryRoutes1794500012000,
   ],
   synchronize: false,
   logging: false,

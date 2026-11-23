@@ -88,6 +88,17 @@ export class StopoversService {
     });
   }
 
+  async findByItineraryForTourist(
+    itineraryId: string,
+    touristUserId: string,
+  ): Promise<StopoverEntity[]> {
+    await this.itinerariesService.findByIdForTourist(
+      itineraryId,
+      touristUserId,
+    );
+    return this.repository.findByItineraryId(itineraryId);
+  }
+
   async findById(id: string): Promise<StopoverEntity> {
     const stopover = await this.repository.findById(id);
     if (!stopover) throw new StopoverNotFoundException(id);

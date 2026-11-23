@@ -3,6 +3,7 @@ export type DomainExceptionCategory =
   | 'unauthorized'
   | 'forbidden'
   | 'not_found'
+  | 'gone'
   | 'conflict'
   | 'bad_gateway'
   | 'rate_limited'
