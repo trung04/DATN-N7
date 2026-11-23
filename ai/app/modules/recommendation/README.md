@@ -1,5 +1,9 @@
 # Recommendation — hướng dẫn tích hợp
 
+Hai phương án đối chứng nội dung thuần đã bổ sung: gửi `mode: "tfidf"` hoặc `mode: "semantic"` vào cùng `POST /api/v1/recommendations`. Cả hai dùng cùng văn bản địa điểm và bộ lọc, cùng cách tổng hợp sở thích khai báo; không đọc lịch sử, không cộng Rating, không MMR. `semantic` dùng cosine BGE-M3; `tfidf` dùng cosine TF-IDF word 1–2 gram, bỏ dấu/chữ thường, sublinear TF, smooth IDF và chuẩn hóa L2. TF-IDF fit trên catalog hoạt động, cache trong RAM và tự làm mới khi catalog đổi; không dùng nhãn test để fit.
+
+Điểm nội dung thuần trả ở `score`/`content_score`; `quality_score: 0` chỉ đánh dấu Rating không tham gia, không có nghĩa địa điểm chất lượng bằng 0. Khi thiếu sở thích hoặc toàn bộ từ ngoài từ vựng TF-IDF, baseline trả danh sách rỗng kèm cảnh báo thay vì âm thầm dùng Rating. `auto` vẫn giữ luồng sản phẩm bên dưới. Bộ so sánh, dữ liệu và giới hạn kết luận được mô tả ở `evaluation/RECOMMENDATION.md`.
+
 ## Cơ chế mặc định `auto`
 
 Backend chỉ gọi một API `POST /api/v1/recommendations`, không cần tự kiểm tra lịch sử hoặc tự chọn thuật toán.
@@ -46,7 +50,7 @@ Request sử dụng trong sản phẩm:
 | Trường | Kiểu / mặc định | Ý nghĩa |
 | --- | --- | --- |
 | `user_id` | string, bắt buộc, 1–128 ký tự | Danh tính từ backend |
-| `mode` | `auto` (mặc định), `content_rating`, `personalized_mmr` | Hai chế độ chỉ định dành cho đối chứng/debug; `content_rating` bỏ qua lịch sử và MMR |
+| `mode` | `auto` (mặc định), `tfidf`, `semantic`, `content_rating`, `personalized_mmr` | Các chế độ chỉ định dành cho đối chứng/debug; `tfidf`/`semantic` bỏ Rating, lịch sử và MMR; `content_rating` bỏ lịch sử và MMR |
 | `preferences` | string[] hoặc null, tối đa 30 | Sở thích khai báo; không gửi/null thì đọc sở thích đã lưu |
 | `query` | string hoặc null, 1–2000 ký tự | Nhu cầu chuyến đi hiện tại, được giữ riêng với hồ sơ dài hạn |
 | `city`, `place_type`, `category`, `budget` | string hoặc null | Lọc bắt buộc; type: `Hotel`/`Restaurant`/`Attraction`; budget là nhãn có sẵn, không phải tiền |

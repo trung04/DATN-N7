@@ -566,6 +566,8 @@
             "type": "string",
             "enum": [
               "auto",
+              "tfidf",
+              "semantic",
               "content_rating",
               "personalized_mmr"
             ],

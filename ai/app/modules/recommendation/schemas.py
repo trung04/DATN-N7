@@ -154,7 +154,7 @@ class InteractionEvent(Contract):
 
 
 class RecommendationRequest(Contract):
-    mode: Literal['auto', 'content_rating', 'personalized_mmr'] = 'auto'
+    mode: Literal['auto', 'tfidf', 'semantic', 'content_rating', 'personalized_mmr'] = 'auto'
     preference_alpha: float = Field(0.5, ge=0, le=1)
     mmr_lambda: float = Field(0.7, ge=0, le=1)
     mmr_pool_size: int = Field(100, ge=1, le=500)
@@ -176,7 +176,7 @@ class RecommendationRequest(Contract):
 
     @model_validator(mode="after")
     def location(self):
-        if self.mode != 'content_rating' and self.mmr_pool_size < self.limit:
+        if self.mode in ('auto', 'personalized_mmr') and self.mmr_pool_size < self.limit:
             raise ValueError('mmr_pool_size must be >= limit for auto/personalized_mmr')
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude và longitude phải có cùng nhau")

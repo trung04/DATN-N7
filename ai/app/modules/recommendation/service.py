@@ -86,7 +86,11 @@ class RecommendationService:
         return vector if vector is not None and vector.shape == (self.embedding.dimensions,) else None
 
     def recommend(self, request, *, now=None, log=True):
-        return recommend_content_rating(self, request, now=now, log=log)
+        with self.lock:
+            if request.mode in ('tfidf', 'semantic'):
+                from .content_baselines import recommend_baseline
+                return recommend_baseline(self, request, now=now, log=log)
+            return recommend_content_rating(self, request, now=now, log=log)
 
     def status(self):
         rows = self.store.places()
@@ -95,7 +99,7 @@ class RecommendationService:
                 "document_version": DOCUMENT_VERSION, "reviews_in_place_vector": False,
                 "places": len(rows), "pending_index": sum(not r["indexed"] or r["model"] != self.model or not r["content_hash"] for r in rows),
                 "embedding_model": self.model, "model_version": self.version, "mode": "auto",
-                "supported_modes": ['auto', 'content_rating', 'personalized_mmr'],
+                "supported_modes": ['auto', 'tfidf', 'semantic', 'content_rating', 'personalized_mmr'],
                 "ranking_config": {"content_weight": self.config.content_weight / total,
                                    "quality_weight": self.config.quality_weight / total,
                                    "prior_strength": self.config.prior_strength,
