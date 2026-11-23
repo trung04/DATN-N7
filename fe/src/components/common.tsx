@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
+import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { ArrowRight, Image as ImageIcon, LoaderCircle, SearchX } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Image as ImageIcon, LoaderCircle, SearchX } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Button } from './ui/button'
 import { formatStatus } from '@/lib/utils'
@@ -24,8 +24,12 @@ export function StatusBadge({ status }: { status: string }) {
   const negative = ['FAILED', 'CANCELLED', 'REJECTED', 'HIDDEN', 'EXPIRED', 'INACTIVE', 'SUSPENDED', 'DEACTIVATED'].includes(status)
   return <span className={cn('inline-flex rounded-full px-2.5 py-1 text-xs font-semibold', positive ? 'bg-emerald-50 text-emerald-800' : negative ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800')}>{formatStatus(status)}</span>
 }
-export function FormField({ label, error, children, hint }: { label: string; error?: string; children: ReactNode; hint?: string }) {
-  return <label className="block text-sm font-medium text-slate-700">{label}{children}{error && <span className="mt-1 block text-xs text-red-700">{error}</span>}{hint && !error && <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span>}</label>
+export function FormField({ label, error, children, hint, className }: { label: string; error?: string; children: ReactNode; hint?: string; className?: string }) {
+  return <label className={cn('block text-sm font-medium text-slate-700', className)}><span className={error ? 'text-red-700 font-medium' : 'text-slate-700'}>{label}</span>{children}{error && <span role="alert" className="mt-1 block text-xs font-medium text-red-600">{error}</span>}{hint && !error && <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span>}</label>
 }
+export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function PasswordInput({ className, ...props }, ref) {
+  const [show, setShow] = useState(false)
+  return <div className="relative mt-1.5"><input {...props} ref={ref} type={show ? 'text' : 'password'} style={{ marginTop: 0 }} className={cn('pr-10', className)} /><button type="button" tabIndex={-1} onClick={() => setShow(s => !s)} aria-label={show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none">{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+})
 export function DetailLink({ to, children = 'Xem chi tiết' }: { to: string; children?: ReactNode }) { return <Link to={to} className="inline-flex items-center gap-1 text-sm font-semibold text-[#1E3A5F] hover:underline">{children}<ArrowRight size={15} /></Link> }
 export function Feedback({ message, kind = 'success' }: { message?: string; kind?: 'success' | 'error' }) { return message ? <p role="status" className={cn('rounded-lg px-4 py-3 text-sm', kind === 'error' ? 'border border-red-200 bg-red-50 text-red-800' : 'border border-emerald-200 bg-emerald-50 text-emerald-800')}>{message}</p> : null }
