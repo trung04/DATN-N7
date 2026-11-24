@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { LoadingState } from '@/components/common'
 import { isMock, repo } from '@/services'
 import { useSession } from '@/stores/session'
@@ -8,6 +8,7 @@ export function SessionBootstrap({ children }: { children: ReactNode }) {
   const login = useSession(state => state.login)
   const logout = useSession(state => state.logout)
   const markAuthReady = useSession(state => state.markAuthReady)
+  const sessionRequest = useRef<ReturnType<typeof repo.currentUser> | null>(null)
 
   useEffect(() => {
     let active = true
@@ -17,8 +18,13 @@ export function SessionBootstrap({ children }: { children: ReactNode }) {
     if (isMock) {
       markAuthReady()
     } else {
-      void repo.currentUser()
-        .then(user => { if (active && user) login(user) })
+      sessionRequest.current ??= repo.currentUser()
+      void sessionRequest.current
+        .then(user => {
+          if (!active) return
+          if (user) login(user)
+          else logout()
+        })
         .catch(clearSession)
         .finally(() => { if (active) markAuthReady() })
     }

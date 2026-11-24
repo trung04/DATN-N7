@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
 import { ArrowRight, Check, Compass, Hotel, ShieldCheck } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,11 +8,12 @@ import { Card, Feedback, FormField, PasswordInput } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { demoAccounts, DEMO_PASSWORD } from '@/services/mock/seed'
 import { isMock, repo } from '@/services'
+import { googleLoginUrl } from '@/services/api/client'
 import { errorMessage } from '@/lib/utils'
 import { useSession } from '@/stores/session'
 import type { Role } from '@/types/domain'
 import { cn } from '@/lib/cn'
-import { loginDestination } from '@/lib/auth-navigation'
+import { localReturnPath, loginDestination } from '@/lib/auth-navigation'
 import { clearOtpResendCooldown, formatOtpCountdown, startOtpResendCooldown, useOtpResendCooldown } from './otp-cooldown'
 
 function GoogleIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
@@ -77,6 +78,27 @@ const passwordResetErrorMessage = (error: unknown): string => {
   }
 }
 
+function googleErrorMessage(error: string | null): string {
+  switch (error) {
+    case 'google_cancelled': return 'Bạn đã hủy đăng nhập bằng Google.'
+    case 'google_failed': return 'Không thể xác thực với Google. Vui lòng thử lại.'
+    case 'account_link_required': return 'Email này đã được đăng ký. Hãy chọn đúng tài khoản Google đã liên kết hoặc dùng phương thức đăng nhập trước đây.'
+    case 'google_session_failed': return 'Không thể khôi phục phiên đăng nhập Google. Vui lòng thử lại.'
+    default: return ''
+  }
+}
+
+export function GoogleCompletePage() {
+  const [params] = useSearchParams()
+  const user = useSession(s => s.user)
+  const returnTo = localReturnPath(params.get('returnTo'))
+  if (user) return <Navigate to={loginDestination(user.role, returnTo)} replace />
+
+  const retryParams = new URLSearchParams({ error: 'google_session_failed' })
+  if (returnTo) retryParams.set('returnTo', returnTo)
+  return <Navigate to={'/auth/login?' + retryParams.toString()} replace />
+}
+
 export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -87,6 +109,7 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
   const PortalIcon = portal?.icon
   const visibleDemoAccounts = expectedRole ? demoAccounts.filter(account => account.email === ({ tourist: 'khach@demo.vn', partner: 'doitac@demo.vn', admin: 'admin@demo.vn' } as const)[expectedRole]) : demoAccounts
   const showGoogleLogin = !expectedRole || expectedRole === 'tourist'
+  const returnTo = localReturnPath(params.get('returnTo'))
   return <Card className="auth-form-card p-6 sm:p-8">
     {portal && <div className="auth-role"><span className="auth-role-icon">{PortalIcon && <PortalIcon size={17} />}</span><span>{portal.label}</span></div>}
     <h1 className="auth-form-title text-2xl font-semibold">{portal?.title ?? 'Đăng nhập'}</h1>
@@ -101,9 +124,7 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
           return
         }
         login(user)
-        const target = params.get('returnTo')
-        const safeTarget = target?.startsWith('/') && !target.startsWith('//') ? target : undefined
-        navigate(loginDestination(user.role, safeTarget), { replace: true })
+        navigate(loginDestination(user.role, returnTo), { replace: true })
       } catch (error) { setMessage(errorMessage(error)) }
     })}>
       <FormField label="Tên đăng nhập hoặc email" error={errors.username?.message}><input autoComplete="username" aria-invalid={Boolean(errors.username)} {...register('username')} /></FormField>
@@ -115,10 +136,10 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
         </label>
         <Link className="font-semibold text-[#10545b] hover:underline text-xs sm:text-sm" to="/auth/forgot-password">Quên mật khẩu?</Link>
       </div>
-      <Feedback message={message} kind="error" />
+      <Feedback message={message || googleErrorMessage(params.get('error'))} kind="error" />
       <Button disabled={isSubmitting}>{isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}</Button>
     </form>
-    {showGoogleLogin && <><div className="my-4 flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />HOẶC<span className="h-px flex-1 bg-slate-200" /></div><Button variant="secondary" className="w-full flex items-center justify-center gap-2.5 font-medium" disabled={isMock || !import.meta.env.VITE_API_BASE_URL} onClick={() => { window.location.href = import.meta.env.VITE_API_BASE_URL + '/auth/google/start' }}><GoogleIcon />Đăng nhập bằng Google</Button>{isMock && <p className="mt-2 text-xs text-slate-500">Google OAuth cần backend được cấu hình.</p>}</>}
+    {showGoogleLogin && <><div className="my-4 flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />HOẶC<span className="h-px flex-1 bg-slate-200" /></div><Button variant="secondary" className="w-full flex items-center justify-center gap-2.5 font-medium" disabled={isMock} onClick={() => { window.location.assign(googleLoginUrl(returnTo)) }}><GoogleIcon />Đăng nhập bằng Google</Button>{isMock && <p className="mt-2 text-xs text-slate-500">Google OAuth cần backend được cấu hình.</p>}</>}
     {isMock && <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4"><p className="text-sm font-semibold text-amber-950">Tài khoản demo · mật khẩu {DEMO_PASSWORD}</p><div className="mt-2 grid gap-1">{visibleDemoAccounts.map(account => <button key={account.email} className="text-left text-sm text-[#10545b] hover:underline" onClick={() => { setValue('username', account.email); setValue('password', DEMO_PASSWORD) }} type="button">{account.role}: {account.email}</button>)}</div></div>}
     {(!expectedRole || expectedRole === 'tourist') && <p className="mt-6 text-center text-sm text-slate-600">Chưa có tài khoản? <Link className="font-semibold text-[#10545b] hover:underline" to="/auth/register">Đăng ký du khách</Link></p>}
     <div className="mt-6 border-t border-slate-100 pt-5"><p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-slate-400">Chọn cổng đăng nhập</p><nav aria-label="Cổng đăng nhập theo vai trò" className="grid grid-cols-1 gap-2 sm:grid-cols-3">{loginPortals.map(item => <Link key={item.role} to={item.path} aria-current={item.role === expectedRole ? 'page' : undefined} className={'flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm transition-colors ' + (item.role === expectedRole ? 'border-[#10545b] bg-[#dcefeb] font-semibold text-[#10545b]' : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50')}>{item.label}{item.role !== expectedRole && <ArrowRight size={14} />}</Link>)}</nav></div>
@@ -171,7 +192,7 @@ export function RegisterPage() {
       HOẶC
       <span className="h-px flex-1 bg-slate-200" />
     </div>
-    <Button variant="secondary" className="w-full flex items-center justify-center gap-2.5 font-medium" disabled={isMock || !import.meta.env.VITE_API_BASE_URL} onClick={() => { window.location.href = import.meta.env.VITE_API_BASE_URL + '/auth/google/start' }}>
+    <Button variant="secondary" className="w-full flex items-center justify-center gap-2.5 font-medium" disabled={isMock} onClick={() => { window.location.assign(googleLoginUrl()) }}>
       <GoogleIcon />Đăng ký bằng Google
     </Button>
     {isMock && <p className="mt-2 text-xs text-slate-500">Chế độ demo không gửi email thật.</p>}

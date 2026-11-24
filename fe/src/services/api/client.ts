@@ -180,6 +180,12 @@ export function mapBackendUser(user: BackendUser): User {
 }
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+
+export function googleLoginUrl(returnTo: string | null = null): string {
+  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/start'
+  if (!returnTo) return startPath
+  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
+}
 const interestCodesByLabel: Record<string, string> = {
   'Bi\u1ec3n': 'BEACH',
   'Thi\u00ean nhi\u00ean': 'NATURE',
