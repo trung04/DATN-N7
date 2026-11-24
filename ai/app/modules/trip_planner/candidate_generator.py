@@ -1,4 +1,5 @@
 import json
+import re
 from app.modules.semantic_search.schemas import PlaceSearchRequest, SearchFilters
 from app.modules.semantic_search.text_utils import folded
 from app.modules.recommendation.schemas import RecommendationRequest
@@ -7,6 +8,10 @@ from .preference_analyzer import PreferenceAnalyzer
 from app.modules.recommendation.eligibility import service_only
 from app.tools.semantic_search_tool import semantic_search
 from app.tools.recommendation_tool import recommend
+
+
+def transport_provider(place):
+    return place['place_type']=='Attraction' and bool(re.search(r'\b(car rental|private car|car travel|car transfer|airport transfer|thue xe|dich vu xe)\b',folded(place['name'])))
 
 class CandidateGenerator:
     def __init__(self,rec):
@@ -34,7 +39,7 @@ class CandidateGenerator:
         if blocked:
             raise ValueError("Địa điểm bắt buộc bị loại, sai thành phố/loại hoặc thiếu tọa độ: "+", ".join(sorted(blocked)))
         query = PreferenceAnalyzer.query(req,self.rec.store,query)
-        scores = {}
+        scores = {};semantic_scores={}
         for kind in req.include_types:
             search = semantic_search(self.rec,PlaceSearchRequest(query=query, infer_filters=False,
                 filters=SearchFilters(city=req.city,place_type=kind,exclude_place_ids=list(excluded)),limit=80))
@@ -42,10 +47,11 @@ class CandidateGenerator:
                 place_type=kind,preferences=req.preferences,query=query,limit=80,
                 exclude_place_ids=list(excluded),mode='personalized_mmr',refresh_variety=False))
             rec_scores = {p["place_id"]:p["score"] for p in recommended["recommendations"]}
+            semantic_scores.update({p['place_id']:p.get('content_score',0) for p in recommended['recommendations']})
             for rank, result in enumerate(search["results"],1):
                 pid = result["place_id"]
                 p = rows[pid]
-                if p["latitude"] is None or p["longitude"] is None or (service_only(p) and pid not in required):
+                if p["latitude"] is None or p["longitude"] is None or ((service_only(p) or transport_provider(p)) and pid not in required):
                     continue
                 scores[pid] = rank_candidate(rank,rec_scores.get(pid,0),p["rating"])
         for pid in required:
@@ -56,4 +62,15 @@ class CandidateGenerator:
                     and rows[pid]['latitude'] is not None and rows[pid]['longitude'] is not None}
             if len(scores)!=len(req.selected_place_ids):raise ValueError('Selected place is inactive, filtered or missing coordinates')
         ordered = sorted(scores,key=lambda pid:(-int(pid in required),-scores[pid],pid))[:max(req.candidate_limit,len(required))]
-        return [{"place":rows[pid],"score":scores[pid],"required":pid in required} for pid in ordered]
+        if req.fill_day and not req.selected_place_ids:
+            from .schemas import minutes
+            from .time_suitability import night_market
+            if minutes(req.daily_window.end)>19*60:
+                evening=sorted((pid for pid in scores if night_market(rows[pid])),key=lambda pid:(-scores[pid],pid))[:req.days]
+                daylight=sorted((pid for pid in scores if rows[pid]['place_type']=='Attraction' and not night_market(rows[pid])),key=lambda pid:(-scores[pid],pid))[:min(req.days*5,req.candidate_limit//2)]
+                keep=list(dict.fromkeys([*sorted(required),*evening,*daylight,*ordered]))
+                ordered=keep[:max(req.candidate_limit,len(required))]
+        candidates=[{"place":rows[pid],"score":scores[pid],"semantic_score":semantic_scores.get(pid,.5),"required":pid in required} for pid in ordered]
+        from .visit_duration import prepare_durations
+        from .time_suitability import mark_sunset_candidates
+        return mark_sunset_candidates(req,prepare_durations(req,candidates,self.rec))

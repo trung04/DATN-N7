@@ -1,4 +1,4 @@
-"""Comparable dimensionless travel objective, independent of recommendation priority."""
+"""Travel objective; auto fill-window mode additionally penalizes idle waiting."""
 
 
 def references(matrix, count):
@@ -10,8 +10,15 @@ def references(matrix, count):
 def travel_cost(schedule, request, matrix, count):
     d_ref,t_ref=references(matrix,count)
     total=request.distance_weight+request.duration_weight
-    return (request.distance_weight*schedule['total_distance_km']/d_ref
+    cost=(request.distance_weight*schedule['total_distance_km']/d_ref
             +request.duration_weight*(schedule.get('total_travel_seconds',schedule['total_travel_minutes']*60)/60)/t_ref)/total
+    if request.fill_day and request.activity_budget_mode=='auto':
+        from .schemas import minutes
+        span=max(1,minutes(schedule['window']['end'])-minutes(schedule['window']['start']))
+        idle=max(0,sum(a['waiting_minutes'] for a in schedule['activities'])-schedule.get('total_break_minutes',0))
+        tail=max(0,minutes(schedule['window']['end'])-minutes(schedule['end_time'][11:16])-schedule.get('fillable_tail_minutes',0))
+        cost+=(idle+tail)/span
+    return cost
 
 
 def improve_2opt(route, schedule, evaluate, request, matrix, count):

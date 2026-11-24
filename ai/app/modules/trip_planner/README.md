@@ -141,7 +141,51 @@ Trong env **backend**, `AI_BASE_URL` là base URL nêu trên; `AI_API_KEY` phả
 
 `city`, `start_date`, `days` (1–14), `preferences`, `party_size`, `transport`, `daily_window`. Chat hỏi tối đa 2 thông tin còn thiếu mỗi lượt. “Dùng mặc định” chỉ bổ sung 1 người, ô tô và 09:00–18:00, không tự chọn ngày/thành phố/sở thích. `transport`: `driving`, `walking`, `cycling`; máy bay không phải phương tiện tại điểm đến.
 
-Chat mặc định `fill_day=true`: thêm điểm còn xếp vừa giờ, không dừng cứng ở 3 điểm/ngày. Ngân sách tối đa 480 phút tính tham quan/đi đường/chờ, giờ nghỉ tính riêng; không kéo dài giả thời lượng hoặc vi phạm giờ mở cửa cho đủ khung. API cấu trúc cũ giữ `fill_day=false` để tương thích, muốn tận dụng giờ phải gửi `true`.
+Chat mặc định `fill_day=true`: thêm điểm còn xếp vừa giờ, không dừng cứng ở 3 điểm/ngày. Ngân sách tự khớp khung đã chọn trừ nghỉ (`activity_budget_mode=auto`); ví dụ 08:00–22:00 và nghỉ 12–13h là 780 phút, không còn trần ngầm 480 phút. Nếu khách chủ động giới hạn số giờ thì giữ `explicit`. API cấu trúc cũ giữ `fill_day=false`, `visit_duration_mode=fixed`, `activity_budget_mode=explicit`, 480 phút để tương thích; cần gửi rõ các chế độ mới nếu muốn tự phân bổ.
+
+### Ưu tiên thời gian và thời điểm tham quan
+
+Không cần thêm ENV/API key ngoài phần cấu hình ở trên. Các trường này là **JSON request**, không phải biến môi trường:
+
+| Field | Ý nghĩa |
+|---|---|
+| `visit_duration_mode` | `adaptive`: tự phân bổ; `fixed`: thời lượng catalog/override như trước. Chat mới mặc định adaptive. |
+| `duration_focus` | Danh sách trải nghiệm/địa điểm muốn dành nhiều thời gian; `[]` nghĩa là tự chia theo độ phù hợp nội dung. `null`/chưa có: chat có thể hỏi một lần nếu có nhiều sở thích. |
+| `activity_budget_mode` | `auto`: ngân sách theo khung từng ngày trừ nghỉ; `explicit`: giữ `max_daily_activity_minutes` (30–1440). |
+| `meal_windows` | Mặc định `lunch: 11:30–13:30`, `dinner: 18:00–20:00`; mỗi bữa tối đa một nhà hàng tự chọn. Override từng key chỉ khi khách yêu cầu. |
+| `meal_start_times` | Giờ bắt đầu chính xác khách yêu cầu, ví dụ `{"lunch":"14:00"}`. Nếu ngoài khung ngày thì chat hỏi đổi giờ ăn hay khung ngày. |
+| `meal_break_is_rest` | `true` giữ giờ nghỉ cứng do khách đặt. `false` cho bữa trưa thay phần nghỉ mặc định 12–13h bị trùng. Chat tự phân biệt nghỉ mặc định và nghỉ do khách yêu cầu. |
+
+Ví dụ request cấu trúc cho `POST /api/v1/trips/preview`:
+
+```json
+{
+  "user_id": "backend-user-123",
+  "city": "Đà Nẵng",
+  "start_date": "2026-12-01",
+  "days": 3,
+  "party_size": 2,
+  "transport": "driving",
+  "preferences": ["biển", "ẩm thực", "yên tĩnh", "chùa", "hoàng hôn"],
+  "daily_window": {"start":"08:00", "end":"22:00"},
+  "fill_day": true,
+  "visit_duration_mode": "adaptive",
+  "duration_focus": [],
+  "activity_budget_mode": "auto"
+}
+```
+
+Chat hiểu các dạng `9h đến 18h`, `9h–18h`, `9:30–18:15`, `9 giờ sáng đến 5 giờ chiều`; trích xuất deterministic bổ sung khi LLM bỏ sót, không hỏi lại giờ đã có. Đổi giờ ăn không tự đổi khung tham quan.
+
+Phân bổ phút dùng content similarity, hoặc BGE similarity với `duration_focus`; không lấy rating làm trọng số chia giờ. Những mục 60 phút/mục thiếu thời lượng được coi là mốc tham khảo, điều chỉnh 45–90 phút ban đầu. Phần thời gian còn khả thi được chia theo trọng số, bước 5 phút, trần thường 120 phút/nhà hàng và 180 phút/điểm tham quan. Thời lượng catalog dài hơn 180 phút giữ nguyên; `duration_overrides` luôn được ưu tiên. Đây là ước tính lập lịch, không sửa catalog hoặc khẳng định thời lượng thực tế đã xác minh.
+
+Chợ đêm chỉ xếp sau 18h và vẫn phải khớp giờ mở cửa; nguồn thiếu giờ tiếp tục được cảnh báo. Hoàng hôn được ước tính theo ngày/tọa độ và UTC+7 theo [công thức NOAA](https://gml.noaa.gov/grad/solcalc/solareqns.PDF), không cố định 16h. Planner ưu tiên một điểm ngắm hoàng hôn phù hợp mỗi ngày, kiểm tra đường đi nối được các điểm; không bảo đảm hướng nhìn/thời tiết. `visit_windows` cụ thể do khách đặt được ưu tiên, nhưng sẽ cảnh báo nếu không đạt ý định hoàng hôn.
+
+Chế độ auto thêm mục tiêu giảm chờ/khoảng trống cuối ngày, cân bằng ứng viên ban ngày/buổi tối và chuyển điểm giữa các ngày khi có thể sửa buổi sáng trống. Không dùng nhà xe/đơn vị cho thuê xe như điểm tham quan tự chọn. Thời gian còn trống do ràng buộc/dữ liệu vẫn được báo, không giả định mọi input luôn phủ kín ngày.
+
+Response bổ sung trên hoạt động: `duration_source` (`explicit`, `catalog`, `type_estimate`, `focus_estimate`, `similarity_estimate`), `meal_slot`, `time_intent` (`sunset`, `night_market` hoặc null), `estimated_sunset_time` (`HH:MM` hoặc null). Trên ngày: `meal_pause_minutes` và `fillable_tail_minutes` phục vụ chẩn đoán; không cộng `meal_pause_minutes` thêm vào timeline vì đã nằm trong bữa trưa. `completion_reason=activity_budget` chỉ ra giới hạn riêng khiến lịch dừng sớm; cảnh báo còn cho biết buổi sáng trống hoặc chưa xếp được hoàng hôn.
+
+Kiểm tra thực tế với cùng yêu cầu 3 ngày Đà Nẵng 01/12/2026 và catalog/ORS hiện có, tự phân bổ: 08:00–22:00, 08:00–21:57, 08:00–21:57; mỗi ngày có điểm bao phủ hoàng hôn và chợ đêm sau 18h. Đây là một lượt kiểm chứng, không phải cam kết cho mọi dữ liệu/user profile. Fixture request để thử nằm tại `tests/fixtures/long_day_chat.json`; chọn ngày tương lai khi chạy lại. Cuộc trò chuyện/lịch đã lưu không tự sửa lại: tạo session mới hoặc yêu cầu lập lại lịch. Ngân sách mặc định legacy chưa có mode được khớp lại khi khách đưa khung mới; giới hạn explicit đã đánh dấu vẫn được giữ.
 
 ### Response và cách render
 
@@ -231,4 +275,4 @@ Trong `ai/`: `python -m unittest discover -s tests -q`. Test dùng model/routing
 
 Bộ TC31–TC85 và partition development/holdout nằm trong `tests/fixtures/chat_orchestration_cases.json`. Các JSON kết quả thử nghiệm, dữ liệu thật và UI demo không nằm trong commit bàn giao. Chạy live có sử dụng quota Gemini.
 
-Kết quả live trên môi trường phát triển: development 41/42, holdout 9/13; regression của workspace trước tách 217/217. Bản bàn giao sạch từ dev chạy 203 test: 202 đạt, 1 bỏ qua benchmark tùy chọn không thuộc gói bàn giao; không có lỗi. Còn hạn chế TC53/TC68/TC69 về thời lượng mơ hồ, TC59 về intent phương tiện, TC72 về số người tương đối. Không dùng con số này để khẳng định chatbot hiểu đúng mọi câu. Trường quan trọng nên được UI xác nhận/cho sửa trước khi lưu chính thức. Chỉ kiểm tra định dạng không thay thế kiểm tra ý nghĩa đầu vào.
+Kết quả live trên môi trường phát triển: development 41/42, holdout 9/13; regression của workspace trước tách 241/241. Bản bàn giao sạch từ dev chạy 227 test: 226 đạt, 1 bỏ qua benchmark tùy chọn không thuộc gói bàn giao; không có lỗi. Còn hạn chế TC53/TC68/TC69 về thời lượng mơ hồ, TC59 về intent phương tiện, TC72 về số người tương đối. Không dùng con số này để khẳng định chatbot hiểu đúng mọi câu. Trường quan trọng nên được UI xác nhận/cho sửa trước khi lưu chính thức. Chỉ kiểm tra định dạng không thay thế kiểm tra ý nghĩa đầu vào.

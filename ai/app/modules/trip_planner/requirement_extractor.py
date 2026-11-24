@@ -15,14 +15,19 @@ class RequirementFields(Contract):
     days: int | None = Field(None,ge=1,le=14)
     party_size: int | None = Field(None,ge=1,le=100)
     preferences: list[Text] | None = Field(None,max_length=30)
+    duration_focus: list[Text] | None = Field(None,max_length=10,description='Experiences or named venues the user explicitly wants to spend MORE TIME on; [] means automatic similarity-based time allocation. This is separate from general preferences. Never invent visit durations.')
+    visit_duration_mode: Literal['fixed','adaptive'] | None = None
     excluded_preferences: list[Text] | None = Field(None,max_length=30)
     max_daily_distance_km: float | None = Field(None,gt=0,le=1000)
     max_leg_minutes: int | None = Field(None,gt=0,le=600)
     stops_per_day: int | None = Field(None,ge=1,le=30)
     fill_day: bool | None = None
     daily_window: TimeWindow | None = None
-    max_daily_activity_minutes: int | None = Field(None,ge=30,le=480)
+    max_daily_activity_minutes: int | None = Field(None,ge=30,le=1440)
+    activity_budget_mode: Literal['auto','explicit'] | None = None
     breaks: list[TimeWindow] | None = Field(None,max_length=5)
+    meal_windows: dict[Literal['lunch','dinner'],TimeWindow] | None = Field(None,description='Change meal windows only if explicitly requested; default lunch 11:30-13:30, dinner 18:00-20:00. Preserve unchanged meal windows.')
+    meal_start_times: dict[Literal['lunch','dinner'],str] | None = Field(None,description='Explicit exact meal start times in HH:MM; lunch at 14h becomes lunch:14:00. Never infer different meal times to fit a route.')
     start_location: Coordinate | None = None
     end_location: Coordinate | None = None
     required_place_names: list[Text] | None = Field(None,max_length=30,description='Specific named venues only, never cities, categories or search criteria.')
@@ -116,15 +121,35 @@ class RequirementExtractor:
             fields['max_daily_activity_minutes']=int(match[1])*60
         if (match:=re.search(r'(?:tham quan|hoat dong)\s*(?:khoang|toi da)?\s*(\d{1,2})\s*(?:tieng|gio)',text)):
             fields['max_daily_activity_minutes']=int(match[1])*60
-        if (match:=re.search(r'(?:tu|moi ngay tu)\s*(\d{1,2})(?::(\d{2}))?\s*(?:gio)?\s*(?:den|toi|-)\s*(\d{1,2})(?::(\d{2}))?\s*(?:gio)',text)):
-            fields['daily_window']={'start':f'{int(match[1]):02d}:{int(match[2] or 0):02d}', 'end':f'{int(match[3]):02d}:{int(match[4] or 0):02d}'}
-        if match:=re.search(r'\b(\d{1,2})\s*h\s*[-–—]\s*(\d{1,2})\s*h\b',message,re.I):
-            fields['daily_window']={'start':f'{int(match[1]):02d}:00','end':f'{int(match[2]):02d}:00'}
+        from .time_parser import parse_daily_window
+        meal=re.search(r'\b(?:an|bua)\s+(trua|toi)\b',text)
+        meal_only=meal and not re.search(r'\b(khung gio|tham quan|moi ngay|lap lich|lich trinh)\b',text)
+        if meal_only:fields.pop('daily_window',None)
+        if window:=parse_daily_window(message):
+            if meal_only:
+                fields.setdefault('meal_windows',{})['lunch' if meal[1]=='trua' else 'dinner']=window
+            else:fields['daily_window']=window
+        elif meal_only:
+            clock=re.search(r'\b(?:an|bua)\s+(trua|toi)\s+(?:(?:luc|vao)\s+)?(\d{1,2})(?:\s*(?:h|:|gio)\s*(\d{1,2})?)',text)
+            if clock:
+                hour=int(clock[2]);minute=int(clock[3] or 0)
+                if clock[1]=='toi' and hour<12:hour+=12
+                fields.setdefault('meal_start_times',{})['lunch' if clock[1]=='trua' else 'dinner']=f'{hour:02d}:{minute:02d}'
         # Typed validation catches impossible day counts/party sizes from both parsers.
         fields=RequirementFields.model_validate(fields).model_dump(mode="json",exclude_none=True)
+        if 'duration_focus' in fields and 'visit_duration_mode' not in fields:
+            fields['visit_duration_mode']='adaptive'
+        if 'max_daily_activity_minutes' in fields and 'activity_budget_mode' not in fields:fields['activity_budget_mode']='explicit'
         allowed=set(TripRequest.model_fields)-{"user_id"}
         draft={k:v for k,v in (context or {}).items() if k in allowed}
         draft.update({k:v for k,v in fields.items() if k in allowed})
+        if fields.get('daily_window') and 'max_daily_activity_minutes' not in fields and 'activity_budget_mode' not in (context or {}):
+            draft['activity_budget_mode']='auto'
+        if fields.get('breaks') is not None:draft['meal_break_is_rest']=True
+        for key in ('meal_windows','meal_start_times'):
+            if key in fields:draft[key]={**(context or {}).get(key,{}),**fields[key]}
+        for name in fields.get('meal_windows',{}):
+            if name not in fields.get('meal_start_times',{}):draft.get('meal_start_times',{}).pop(name,None)
         if fields.get('stops_per_day') is not None:draft['fill_day']=False
         if 'may bay' in text:draft.pop('transport',None)
         if fields.get('city') and (context or {}).get('city') and folded(fields['city'])!=folded(context['city']):

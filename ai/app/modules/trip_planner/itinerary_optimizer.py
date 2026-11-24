@@ -42,10 +42,40 @@ class PlanningEngine:
     def schedule(self,route,day_number,req,candidates,matrix,anchor):
         return schedule_route(route,day_number,req,candidates,matrix,anchor)
 
+    def rebalance_mornings(self,req,candidates,matrix,anchor,routes,schedules):
+        if not (req.fill_day and req.activity_budget_mode=='auto'):return routes,schedules
+        from .schemas import minutes
+        from .time_suitability import night_market
+        def prefix(day):
+            return minutes(day['activities'][0]['start_time'][11:16])-minutes(day['window']['start']) if day['activities'] else 1440
+        for _ in range(min(req.days,4)):
+            choices=[]
+            for target,current in enumerate(schedules):
+                if prefix(current)<30 or len(routes[target])>=req.stop_limit(target+1):continue
+                for source,route in enumerate(routes):
+                    if source==target:continue
+                    for i in route:
+                        c=candidates[i]
+                        if c['required'] or c.get('time_priority') or c['place']['place_type']=='Restaurant' or night_market(c['place']):continue
+                        shorter=[j for j in route if j!=i]
+                        source_day=self.schedule(shorter,source+1,req,candidates,matrix,anchor)
+                        if not source_day or not source_day['activities'] or prefix(source_day)>prefix(schedules[source])+15:continue
+                        for position in range(len(routes[target])+1):
+                            longer=routes[target][:position]+[i]+routes[target][position:]
+                            target_day=self.schedule(longer,target+1,req,candidates,matrix,anchor)
+                            if not target_day or prefix(current)-prefix(target_day)<30:continue
+                            cost=sum(travel_cost(d,req,matrix,len(candidates)) for d in (source_day,target_day))
+                            choices.append((prefix(target_day),cost,source,target,shorter,longer,source_day,target_day))
+            if not choices:break
+            _,_,source,target,shorter,longer,source_day,target_day=min(choices,key=lambda x:x[:2])
+            routes[source],routes[target]=shorter,longer
+            schedules[source],schedules[target]=source_day,target_day
+        return routes,schedules
+
     def plan_day(self, day_number, req, candidates, matrix, anchor, used, target=None):
         target=req.stop_limit(day_number) if target is None else target
         route=[];current=self.schedule(route,day_number,req,candidates,matrix,anchor)
-        ordered=sorted(range(len(candidates)),key=lambda i:(-int(candidates[i]['required']),-candidates[i]['score'],candidates[i]['place']['place_id']))
+        ordered=sorted(range(len(candidates)),key=lambda i:(-int(candidates[i]['required']),-int(candidates[i].get('time_priority',False)),-candidates[i]['score'],candidates[i]['place']['place_id']))
         for i in ordered:
             if i in used or len(route)>=target:continue
             options=[]
@@ -58,19 +88,23 @@ class PlanningEngine:
         if req.optimizer=='greedy_2opt':
             route,current,_,_=improve_2opt(route,current,lambda r:self.schedule(r,day_number,req,candidates,matrix,anchor),req,matrix,len(candidates))
         used.update(route)
-        return current
+        from .visit_duration import distribute_spare_time
+        return distribute_spare_time(route,day_number,req,candidates,matrix,anchor,schedule_route)
 
     def build(self, req):
         candidates=self.candidates(req)
         matrix,anchor=self.prepare(req,candidates)
+        from .time_suitability import mark_sunset_candidates,night_market
+        mark_sunset_candidates(req,candidates,matrix)
         routes=[[] for _ in range(req.days)]
         schedules=[self.schedule([],day+1,req,candidates,matrix,anchor) for day in range(req.days)]
-        ordered=sorted(range(len(candidates)),key=lambda i:(-int(candidates[i]['required']),-candidates[i]['score'],candidates[i]['place']['place_id']))
+        ordered=sorted(range(len(candidates)),key=lambda i:(-int(candidates[i]['required']),-int(candidates[i].get('time_priority',False)),-candidates[i]['score'],candidates[i]['place']['place_id']))
         mixed={'Attraction','Restaurant'} <= {c['place']['place_type'] for c in candidates}
         def options(i,append_only=False,balance=True):
             values=[]
             for day,route in enumerate(routes):
                 if len(route)>=req.stop_limit(day+1):continue
+                if not candidates[i]['required'] and night_market(candidates[i]['place']) and any(night_market(candidates[j]['place']) for j in route):continue
                 # Selection policy, not part of the distance/time objective:
                 # leave room for sightseeing before adding a second optional meal.
                 if balance and mixed and not candidates[i]['required'] and candidates[i]['place']['place_type']=='Restaurant' and any(candidates[j]['place']['place_type']=='Restaurant' for j in route):continue
@@ -80,6 +114,7 @@ class PlanningEngine:
                     schedule=self.schedule(trial,day+1,req,candidates,matrix,anchor)
                     if schedule:
                         delta=travel_cost(schedule,req,matrix,len(candidates))-travel_cost(schedules[day],req,matrix,len(candidates))
+                        if req.fill_day and req.activity_budget_mode=='auto':delta=len(route)+delta*.1
                         values.append((delta,len(route),day,position,trial,schedule))
             return values
         if req.optimizer=='nearest_neighbor':
@@ -88,7 +123,7 @@ class PlanningEngine:
                 while remaining:
                     choices=[(option,i) for i in remaining for option in options(i,True)]
                     if not choices:break
-                    option,i=min(choices,key=lambda p:(p[0][0],p[0][1],-candidates[p[1]]['score'],p[1]))
+                    option,i=min(choices,key=lambda p:(-int(candidates[p[1]].get('time_priority',False)),p[0][0],p[0][1],-candidates[p[1]]['score'],p[1]))
                     _,_,day,_,routes[day],schedules[day]=option;remaining.remove(i)
         else:
             for i in ordered:
@@ -117,6 +152,9 @@ class PlanningEngine:
                 _,_,day,_,routes[day],schedules[day]=option
                 if req.optimizer=='greedy_2opt':
                     routes[day],schedules[day],_,_=improve_2opt(routes[day],schedules[day],lambda r,d=day:self.schedule(r,d+1,req,candidates,matrix,anchor),req,matrix,len(candidates))
+        from .visit_duration import distribute_spare_time
+        routes,schedules=self.rebalance_mornings(req,candidates,matrix,anchor,routes,schedules)
+        schedules=[distribute_spare_time(route,day+1,req,candidates,matrix,anchor,schedule_route) for day,route in enumerate(routes)]
         return format_plan(req,schedules,matrix)
 
     def edit(self, stored, day_number, edit):

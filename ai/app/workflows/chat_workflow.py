@@ -61,11 +61,13 @@ class ChatWorkflow:
             intent='trip_planning'
         elif direct['status']=='answered':
             intent='general_chat'
+        elif not body.use_llm and pending==['duration_focus']:
+            intent='trip_planning'
         elif body.use_llm:
             from app.agents.chat_understanding import understand
             understanding=understand(body.message,conversation,has_trip)
             intent=body.intent or understanding.intent
-            if intent=='replanning' and not any(getattr(understanding.fields,k) for k in ('add_text','remove_text','replacement_query')) and any(getattr(understanding.fields,k) is not None for k in ('city','days','start_date','transport','daily_window','preferences','party_size','fill_day','max_daily_activity_minutes')):
+            if intent=='replanning' and not any(getattr(understanding.fields,k) for k in ('add_text','remove_text','replacement_query')) and any(getattr(understanding.fields,k) is not None for k in ('city','days','start_date','transport','daily_window','preferences','party_size','fill_day','max_daily_activity_minutes','activity_budget_mode','duration_focus','visit_duration_mode','meal_windows','meal_start_times')):
                 intent='trip_planning'
         elif body.intent is None and conversation.get('draft'):
             from app.modules.semantic_search.text_utils import folded

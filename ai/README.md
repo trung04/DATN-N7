@@ -2,6 +2,8 @@
 
 **Bàn giao Chatbot + AI Trip Planner:** [cách chạy riêng AI, ENV/API key, API request/response và nối backend/frontend](app/modules/trip_planner/README.md). Tích hợp mới dùng `POST /api/v1/chat` với `preview_only=true`, `use_llm=true`. Cấu hình chạy riêng: `ai/.env.example` và `ai/compose.ai.yml`; không chứa key thật hoặc giao diện demo mới.
 
+Cập nhật planner: phân bổ phút theo ưu tiên/BGE, bữa trưa/tối theo khung giờ, chợ đêm sau 18h, hoàng hôn theo ngày/tọa độ, và ngân sách tự khớp khung khách chọn thay vì trần ngầm 480 phút. Các field API mới và giới hạn tương thích được mô tả trong README bàn giao ở trên. Không thêm ENV hoặc dependency mới.
+
 So sánh Recommendation **TF-IDF, Semantic BGE, Content + Rating và cá nhân hóa + MMR**: [bộ test chung, chỉ số và cách chạy lại](evaluation/RECOMMENDATION.md). Các baseline gọi qua cùng API bằng `mode: "tfidf"` / `mode: "semantic"`; không thay mặc định `auto`.
 
 Tài liệu bàn giao **Recommendation tự động theo lịch sử**: [API, sự kiện hành vi và JSON trả về](app/modules/recommendation/README.md). Bỏ `mode` hoặc gửi `auto`: chưa có lịch sử dùng Content-Based + Bayesian Rating; có lịch sử dùng hồ sơ hành vi + Rating + MMR. [OpenAPI Recommendation](contracts/recommendation.openapi.json).

@@ -1,6 +1,8 @@
 import re
 from app.modules.semantic_search.text_utils import folded
 from .schemas import minutes
+from .meal_policy import meal_slots,visit_breaks,is_default_lunch_break
+from .time_suitability import suitable_intervals,sunset_minute,night_market
 
 WEEKDAYS = ("mon","tue","wed","thu","fri","sat","sun")
 DAY_LABELS = (("thu 2","thu hai","monday"),("thu 3","thu ba","tuesday"),
@@ -53,7 +55,9 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
     breaks = [(minutes(b.start),minutes(b.end)) for b in req.breaks]
     current,previous = begin,anchor
     activities = []
+    used_meals=set()
     distance,total_travel,total_seconds = 0.0,0,0.0
+    last_visit_limit=end
     for index in route:
         candidate = candidates[index]
         place = candidate["place"]
@@ -67,24 +71,37 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
         travel=math.ceil(travel)
         if req.max_leg_minutes is not None and travel > req.max_leg_minutes:
             return None
-        departure = advance(current,travel,breaks) if travel else current
+        movement_breaks=visit_breaks(req,breaks,'lunch') if place['place_type']=='Restaurant' else breaks
+        departure = advance(current,travel,movement_breaks) if travel else current
         arrival = departure+travel
-        duration = req.duration_overrides.get(place["place_id"],place["duration_minutes"] or (45 if place["place_type"]=="Restaurant" else 60))
+        duration = req.duration_overrides.get(place["place_id"],candidate.get('visit_minutes',place["duration_minutes"] or (45 if place["place_type"]=="Restaurant" else 60)))
         intervals,source = opening_for(place,day,req)
         available = intervals if intervals is not None else [(begin,end)]
-        visit = None
+        available=suitable_intervals(place,available,day)
+        sunset=sunset_minute(day,place['latitude'],place['longitude']) if candidate.get('sunset_visit') else None
+        visit = None;selected_meal=None
         for left,right in sorted(available):
             visit_window=req.visit_windows.get(place["place_id"])
             if visit_window:
                 left=max(left,minutes(visit_window.start))
                 right=min(right,minutes(visit_window.end))
-            start = advance(max(arrival,left,begin),duration,breaks)
-            if start+duration <= min(right,end):
-                visit = start
-                break
+            for meal_left,meal_right,meal in meal_slots(req,place,duration,begin,end):
+                if meal is not None and meal in used_meals:continue
+                start=advance(max(arrival,left,begin,meal_left),duration,visit_breaks(req,breaks,meal))
+                if sunset is not None:
+                    start=advance(max(start,sunset-20),duration,visit_breaks(req,breaks,meal))
+                    if start>sunset-10 or start+duration<sunset+10:continue
+                if start+duration<=min(right,end,meal_right):
+                    visit=start;selected_meal=meal;last_visit_limit=min(right,end,meal_right);break
+            if visit is not None:break
         if visit is None:
             return None
+        if selected_meal is not None:used_meals.add(selected_meal)
         notes = []
+        if night_market(place):notes.append('Chợ đêm chỉ xếp từ 18:00; vẫn cần khớp giờ mở cửa trong dữ liệu')
+        if sunset is not None:notes.append('Ngắm hoàng hôn theo giờ mặt trời lặn ước tính từ ngày/tọa độ; chưa xác minh hướng nhìn và thời tiết')
+        if candidate.get('duration_source') in ('focus_estimate','similarity_estimate'):
+            notes.append('Thời lượng là ước tính theo ưu tiên thời gian của bạn' if candidate['duration_source']=='focus_estimate' else 'Thời lượng là ước tính theo độ phù hợp nội dung với sở thích')
         if source == "unknown":
             notes.append("Chưa kiểm tra được giờ mở cửa; cần xác nhận trước khi đi")
         if not place["duration_minutes"] and place["place_id"] not in req.duration_overrides:
@@ -99,7 +116,11 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
             "arrival_time":stamp(day,arrival),"travel_time_from_previous":travel,"distance_from_previous_km":round(km,3),
             "waiting_minutes":visit-arrival+departure-current,"recommendation_score":candidate["score"],
             'travel_from_previous_seconds':seconds,'distance_from_previous_meters':round(km*1000,3),'order':len(activities)+1,
-            "opening_hours_checked":source!="unknown","opening_hours_source":source,"notes":notes})
+            "opening_hours_checked":source!="unknown","opening_hours_source":source,"notes":notes,
+            'duration_source':candidate.get('duration_source','explicit' if place['place_id'] in req.duration_overrides else 'catalog' if place['duration_minutes'] else 'type_estimate')})
+        activities[-1]['meal_slot']=selected_meal
+        activities[-1]['time_intent']='sunset' if sunset is not None else 'night_market' if night_market(place) else None
+        activities[-1]['estimated_sunset_time']=f'{sunset//60:02d}:{sunset%60:02d}' if sunset is not None else None
         distance += km
         total_travel += travel
         total_seconds += seconds
@@ -128,11 +149,23 @@ def schedule_route( route, day_number, req, candidates, matrix, anchor):
         return None
     total_visit=sum(a['duration_minutes'] for a in activities)
     total_break=sum(max(0,min(current,right)-max(begin,left)) for left,right in breaks)
-    active=current-begin-total_break if req.fill_day else current-begin
-    if active>req.max_daily_activity_minutes:return None
+    meal_pause=0
+    for left,right in breaks:
+        if is_default_lunch_break(req,(left,right)):
+            overlap=sum(max(0,min(right,minutes(a['end_time'][11:16]))-max(left,minutes(a['start_time'][11:16]))) for a in activities if a.get('meal_slot')=='lunch')
+            moving=sum(max(0,min(right,minutes(a['arrival_time'][11:16]))-max(left,minutes(a['departure_time'][11:16]))) for a in activities)
+            total_break-=overlap+moving;meal_pause+=overlap
+    active=current-begin-total_break-meal_pause if req.fill_day else current-begin
+    if active>req.activity_limit(day_number):return None
+    fillable_tail=0
+    if route:
+        cap=candidates[route[-1]].get('visit_cap',activities[-1]['duration_minutes'])
+        last_end=minutes(activities[-1]['end_time'][11:16])
+        fillable_tail=max(0,min(cap-activities[-1]['duration_minutes'],last_visit_limit-last_end,end-current))
     return {"day":day_number,"date":day.isoformat(),"window":window.model_dump(),"activities":activities,
+        'fillable_tail_minutes':fillable_tail,
         "return_leg":return_leg,"total_distance_km":round(distance,3),"total_travel_minutes":total_travel,
-        'total_visit_minutes':total_visit,'total_activity_minutes':active,'total_elapsed_minutes':current-begin,'total_break_minutes':total_break,
+        'total_visit_minutes':total_visit,'total_activity_minutes':active,'total_elapsed_minutes':current-begin,'total_break_minutes':total_break,'meal_pause_minutes':meal_pause,
         'total_distance_meters':round(distance*1000,3),'total_travel_seconds':total_seconds,
         "routing":{"source":matrix["source"],"estimated":matrix["estimated"],"transport":req.transport},
         "end_time":stamp(day,current),"validation":{"no_overlaps":True,"within_day_window":True,
@@ -146,6 +179,7 @@ def validate_stored_trip(rec,stored,trip_id):
     assumptions=[]
     places={r["id"]:json.loads(r["data"]) for r in rec.store.places()}
     for day in result["days"]:
+        used_meals=set()
         window=req.day_windows.get(day["day"],req.daily_window)
         previous=None
         for activity in day["activities"]:
@@ -160,7 +194,8 @@ def validate_stored_trip(rec,stored,trip_id):
             begin,end_min=start.hour*60+start.minute,end.hour*60+end.minute
             if begin<minutes(window.start) or end_min>minutes(window.end):
                 errors.append(f"Ngoài khung ngày: {pid}")
-            if any(begin<minutes(b.end) and end_min>minutes(b.start) for b in req.breaks):
+            allowed_breaks=visit_breaks(req,[(minutes(b.start),minutes(b.end)) for b in req.breaks],activity.get('meal_slot'))
+            if any(begin<right and end_min>left for left,right in allowed_breaks):
                 errors.append(f"Trùng giờ nghỉ: {pid}")
             visit_window=req.visit_windows.get(pid)
             if visit_window and (begin<minutes(visit_window.start) or end_min>minutes(visit_window.end)):
@@ -169,11 +204,21 @@ def validate_stored_trip(rec,stored,trip_id):
                 assumptions.append(f"Thời lượng tham quan ước tính: {pid}")
             if pid in places:
                 p=places[pid]
+                if p['place_type']=='Restaurant':
+                    slots=[name for left,right,name in meal_slots(req,p,activity['duration_minutes'],minutes(window.start),minutes(window.end)) if begin>=left and end_min<=right]
+                    if not slots:errors.append(f'Nhà hàng ngoài giờ bữa ăn đã thống nhất: {pid}')
+                    elif slots[0] in used_meals:errors.append(f'Trùng nhà hàng trong cùng một bữa: {pid}')
+                    else:used_meals.add(slots[0])
                 intervals,_=opening_for(p,start.date(),req)
                 if intervals is None:
                     unknown.append(pid)
                 elif not any(begin>=a and end_min<=b for a,b in intervals):
                     errors.append(f"Không còn khớp giờ mở cửa trong catalog: {pid}")
+                if not any(begin>=a and end_min<=b for a,b in suitable_intervals(p,[(0,1440)],start.date())):
+                    errors.append(f'Không phù hợp thời điểm tham quan: {pid}')
+                if activity.get('time_intent')=='sunset':
+                    setting=sunset_minute(start.date(),p['latitude'],p['longitude'])
+                    if setting is None or begin>setting-10 or end_min<setting+10:errors.append(f'Không bao phủ thời điểm hoàng hôn ước tính: {pid}')
                 if p["latitude"]!=activity["latitude"] or p["longitude"]!=activity["longitude"]:
                     errors.append(f"Tọa độ đã thay đổi, cần tính lại tuyến: {pid}")
             previous=end

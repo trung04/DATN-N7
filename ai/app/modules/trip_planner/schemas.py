@@ -35,6 +35,8 @@ class TripRequest(Contract):
     days: int = Field(ge=1, le=14)
     party_size: int = Field(1, ge=1, le=100)
     preferences: list[Text] | None = Field(None, max_length=30)
+    duration_focus: list[Text] | None = Field(None,max_length=10)
+    visit_duration_mode: Literal['fixed','adaptive'] = 'fixed'
     excluded_preferences: list[Text] = Field(default_factory=list, max_length=30)
     query: str | None = Field(None, min_length=1, max_length=2000)
     stops_per_day: int = Field(3, ge=1, le=30)
@@ -44,13 +46,17 @@ class TripRequest(Contract):
     daily_window: TimeWindow = Field(default_factory=lambda: TimeWindow(start="09:00", end="18:00"))
     day_windows: dict[int, TimeWindow] = Field(default_factory=dict, max_length=14)
     breaks: list[TimeWindow] = Field(default_factory=lambda: [TimeWindow(start="12:00", end="13:00")], max_length=5)
+    meal_windows: dict[Literal['lunch','dinner'],TimeWindow] = Field(default_factory=lambda:{'lunch':TimeWindow(start='11:30',end='13:30'),'dinner':TimeWindow(start='18:00',end='20:00')})
+    meal_start_times: dict[Literal['lunch','dinner'],str] = Field(default_factory=dict)
+    meal_break_is_rest: bool = False
     start_location: Coordinate | None = None
     end_location: Coordinate | None = None
     return_to_start: bool = False
     transport: Literal["driving", "walking", "cycling"] = "driving"
     allow_estimated_routes: bool = True
     routing_provider: Literal['configured','ors'] = 'configured'
-    max_daily_activity_minutes: int = Field(480,ge=30,le=480)
+    max_daily_activity_minutes: int = Field(480,ge=30,le=1440)
+    activity_budget_mode: Literal['auto','explicit'] = 'explicit'
     candidate_limit: int = Field(40,ge=10,le=80)
     distance_weight: float = Field(.3,ge=0,le=1)
     duration_weight: float = Field(.7,ge=0,le=1)
@@ -66,6 +72,11 @@ class TripRequest(Contract):
 
     @model_validator(mode="after")
     def constraints(self):
+        self.meal_windows={'lunch':TimeWindow(start='11:30',end='13:30'),'dinner':TimeWindow(start='18:00',end='20:00'),**self.meal_windows}
+        for value in self.meal_start_times.values():
+            if not __import__('re').fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',value):raise ValueError('Meal start time must use HH:MM')
+        if 'breaks' in self.model_fields_set and 'meal_break_is_rest' not in self.model_fields_set:
+            self.meal_break_is_rest=True
         try:
             self.start_date+timedelta(days=self.days-1)
         except OverflowError as exc:
@@ -93,6 +104,12 @@ class TripRequest(Contract):
 
     def stop_limit(self, day):
         return self.day_stop_limits.get(day,30 if self.fill_day else self.stops_per_day)
+
+    def activity_limit(self,day):
+        if self.activity_budget_mode=='explicit':return self.max_daily_activity_minutes
+        window=self.day_windows.get(day,self.daily_window)
+        start,end=minutes(window.start),minutes(window.end)
+        return max(0,end-start-sum(max(0,min(end,minutes(b.end))-max(start,minutes(b.start))) for b in self.breaks))
 
 
 class DayEdit(Contract):
@@ -146,6 +163,10 @@ class Activity(Contract):
     start_time: str
     end_time: str
     duration_minutes: int
+    duration_source: str | None = None
+    meal_slot: str | None = None
+    time_intent: str | None = None
+    estimated_sunset_time: str | None = None
     departure_time: str
     arrival_time: str
     travel_time_from_previous: int
@@ -192,6 +213,8 @@ class TripDay(Contract):
     total_distance_meters: float = 0
     total_travel_seconds: float = 0
     total_break_minutes: int = 0
+    meal_pause_minutes: int = 0
+    fillable_tail_minutes: int = 0
 
 
 class TripResponse(Contract):

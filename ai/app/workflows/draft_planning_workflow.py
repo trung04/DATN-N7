@@ -28,9 +28,18 @@ class DraftPlanningWorkflow:
         old=self.repo.get(draft_id,body.user_id) if draft_id else None
         context={**(old['request'] if old else {}),**conv.get('draft',{}),**body.context}
         context.pop('user_id',None)
-        extracted=RequirementExtractor(self.rec.store).extract(body.message,context,body.use_llm,fields_override=understanding.fields.model_dump(mode="json",exclude_none=True) if understanding else None)
+        overrides=understanding.fields.model_dump(mode='json',exclude_none=True) if understanding else None
+        if conv.get('pending_fields')==['duration_focus'] and 'duration_focus' not in (overrides or {}):
+            text=folded(body.message)
+            matched=[p for p in context.get('preferences',[]) if folded(p) in text]
+            automatic=any(s in text for s in ('tu phan bo','mac dinh','khong uu tien','bo qua','tuy ban'))
+            if automatic or matched:
+                overrides={**(overrides or {}),'duration_focus':[] if automatic else matched,'preferences':context.get('preferences',[])}
+        extracted=RequirementExtractor(self.rec.store).extract(body.message,context,body.use_llm,fields_override=overrides)
         response={'conversation_id':conv['conversation_id'],'trip':None,'extraction':extracted,'preview_only':True}
-        if understanding and understanding.clarification_required:
+        from app.modules.trip_planner.time_parser import parse_daily_window
+        recovered_window=bool(understanding and understanding.ask_fields==['daily_window'] and parse_daily_window(body.message))
+        if understanding and understanding.clarification_required and not recovered_window:
             conv['draft']=extracted['draft']
             conv['pending_fields']=understanding.ask_fields
             message=understanding.answer or check_inputs(body.message,extracted['draft'],conv) or 'Bạn làm rõ yêu cầu này giúp mình nhé?'
