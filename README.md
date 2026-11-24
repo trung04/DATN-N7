@@ -47,6 +47,8 @@ Frontend được build bằng Vite và phục vụ qua Nginx tại `http://loca
 
 ## Lưu trữ
 
+Chủ khách sạn đặt vị trí riêng tại **Khách sạn của tôi → Chi tiết / chỉnh sửa → Vị trí khách sạn** bằng cách chọn ghim trên bản đồ hoặc nhập vĩ độ/kinh độ. Cả hai tọa độ được lưu cùng nhau; xóa vị trí sẽ xóa cả hai. Bản đồ khách sạn và tìm **Gần tôi** chỉ dùng tọa độ của khách sạn, không lấy vị trí điểm tham quan từ `placeId`. Khách sạn chưa đặt vị trí vẫn tìm được theo thành phố/tên. Chạy migration `AddHotelCoordinates1794500013000` trước khi khởi động backend mới; dữ liệu cũ để trống tọa độ cho đến khi chủ khách sạn xác nhận.
+
 MinIO chạy mặc định cùng Compose, dùng volume `minio_data` tại `/data` để giữ bucket và file qua các lần khởi động lại. Cổng API trên host là `9002` để tránh trùng AI (`9000`); các container trong mạng Compose truy cập S3 qua `http://minio:9000`, region `us-east-1`. Đổi cổng bằng `MINIO_API_PORT` và `MINIO_CONSOLE_PORT` trong root `.env`.
 
 Đăng nhập Console tại `http://localhost:9001` bằng `MINIO_ROOT_USER` và `MINIO_ROOT_PASSWORD` trong root `.env`. Backend nhận ảnh khách sạn qua `POST /api/v1/hotels/:hotelId/images` (multipart, trường `file`) và lưu vào bucket riêng `hotel-images`, tự tạo khi upload đầu tiên. Credentials S3 chỉ nằm ở backend; frontend gửi file đến backend bằng cookie đăng nhập. Chủ khách sạn mở **Khách sạn của tôi → Chi tiết / chỉnh sửa → Ảnh khách sạn** để tải, xem và xóa ảnh; quản trị viên có cùng chức năng trong trang chi tiết hotel. Cần tạo hồ sơ khách sạn trước khi thêm ảnh. Xem [hướng dẫn upload ảnh khách sạn](be/README.md#hotel-image-upload).
@@ -89,3 +91,11 @@ Backend dùng Node.js 24. Trong `be/`: `npm ci`, `npm run lint`, `npm run build`
 AI: cài requirements.txt và requirements-dev.txt rồi từ `ai/` chạy `python -m unittest discover -s tests -q`. Xem [Recommendation](ai/README.md#recommendation), [search](ai/README.md#tim-dia-diem), [CLIP](ai/README.md#tim-anh), [trip planner](ai/README.md#lich-trinh). Hợp đồng [OpenAPI](ai/contracts/openapi.json); runtime tại `/openapi.json`.
 
 Root `.env` được bỏ khỏi Git index trong nhánh tích hợp, chỉ commit template placeholder. Việc này không xóa bí mật đã có trong lịch sử upstream; khóa từng chia sẻ cần được thay tại nơi cấp khóa.
+
+### Quản lý ảnh khách sạn và phòng
+
+Tìm địa chỉ khách sạn dùng `GET /api/v1/hotels/location-search?q=...` cho chủ khách sạn/quản trị viên. Chỉ gọi khi bấm tìm hoặc Enter; kết quả cần được chọn trước khi lưu tọa độ. Dữ liệu địa chỉ từ OpenStreetMap được ghi nguồn ngay trong form. Backend cache Redis 24 giờ, giới hạn toàn ứng dụng tối đa một yêu cầu mỗi 1,1 giây, không tự động thử lại. Dịch vụ công cộng chỉ phù hợp lưu lượng vừa phải; tuân thủ [chính sách Nominatim](https://operations.osmfoundation.org/policies/nominatim/): không autocomplete, không tra cứu hàng loạt, cần User-Agent nhận diện ứng dụng. Khi tăng lưu lượng, đổi `HOTEL_GEOCODER_ORIGIN` trong `be/.env` sang máy chủ Nominatim riêng/nhà cung cấp tương thích rồi khởi động lại backend; `HOTEL_GEOCODER_USER_AGENT` phải chứa thông tin nhận diện/liên hệ của ứng dụng.
+
+Chủ khách sạn có thể tải ảnh JPEG/PNG/WebP (tối đa 5 MiB), xóa ảnh và chọn ảnh đại diện tại trang sửa khách sạn hoặc sửa phòng. API ảnh phòng nằm dưới `/api/v1/rooms/:roomId/images`; danh sách/preview của chủ dùng `/api/v1/rooms/mine/:roomId/images`. Không cho sửa ảnh khi khách sạn chờ duyệt. Ảnh seed dùng chung chỉ được gỡ liên kết, không xóa object đang dùng chung.
+
+Giấy tờ pháp lý dùng `POST /api/v1/hotels/:hotelId/documents/upload` với multipart `files` (1–3 ảnh JPEG/PNG/WebP, mỗi ảnh ≤5 MiB) cùng loại, số và ngày giấy tờ. Một giấy tờ chứa tối đa 3 ảnh; `PATCH .../documents/:documentId/upload` sửa thông tin, giữ ảnh cũ khi không chọn file hoặc thay toàn bộ bằng 1–3 ảnh mới. Chỉ chủ sở hữu và quản trị viên được xem ảnh qua API có xác thực; chỉ sửa khi khách sạn là `DRAFT`/`REJECTED`. Ảnh được chuẩn hóa WebP trong MinIO, không lộ object key. Giới hạn proxy 16 MiB chứa cả batch. Migration `1794500014000-AddHotelDocumentFiles` thêm cột JSONB và ràng buộc tối đa 3 ảnh, giữ nguyên các liên kết giấy tờ cũ.

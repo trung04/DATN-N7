@@ -168,8 +168,8 @@ export const mock = {
     const email = maybeOtp === undefined ? pending.email : emailOrOtp
     const otp = maybeOtp ?? emailOrOtp
     assert(pending.email.toLowerCase() === email.toLowerCase(), 'OTP', 'Email khÃ´ng khá»›p yÃªu cáº§u xÃ¡c minh.')
-    assert(pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã demo đã hết hạn. Vui lòng đăng ký lại.')
-    assert(otp === '123456', 'OTP', 'Mã OTP demo không đúng.')
+    assert(pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã OTP đã hết hạn. Vui lòng đăng ký lại.')
+    assert(otp === '123456', 'OTP', 'Mã OTP không đúng.')
     const user = commit(data => {
       assert(!data.users.some(u => u.email.toLowerCase() === pending.email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
       const now = new Date().toISOString()
@@ -195,11 +195,11 @@ export const mock = {
     return { demoOtp: '123456' }
   },
   resetPassword: async (email: string, password: string, otp: string) => {
-    assert(otp === '123456', 'OTP', 'Mã OTP demo không đúng.')
+    assert(otp === '123456', 'OTP', 'Mã OTP không đúng.')
     const raw = sessionStorage.getItem('smarttravel.reset')
     assert(raw, 'OTP', 'Vui lòng yêu cầu mã đặt lại mật khẩu.')
     const pending = JSON.parse(raw) as { email: string; expiresAt: number }
-    assert(pending.email === email && pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã demo đã hết hạn.')
+    assert(pending.email === email && pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã OTP đã hết hạn.')
     const passwordHash = await hash(password)
     commit(data => { const user = data.users.find(u => u.email === email); assert(user, 'USER', 'Không tìm thấy tài khoản.'); user.passwordHash = passwordHash })
     sessionStorage.removeItem('smarttravel.reset')
@@ -251,7 +251,7 @@ export const mock = {
     assert(input.startDate <= input.endDate, 'DATE', 'Ngày kết thúc không hợp lệ.')
     assert(input.adults >= 1 && input.children >= 0 && input.budget > 0, 'INPUT', 'Kiểm tra số khách và ngân sách.')
     const days = nights(input.startDate, input.endDate) + 1
-    assert(days > 0 && days <= 10, 'DATE', 'Chuyến đi demo hỗ trợ từ 1 đến 10 ngày.')
+    assert(days > 0 && days <= 10, 'DATE', 'Chuyến đi hỗ trợ từ 1 đến 10 ngày.')
     const data = readData()
     const places = data.destinations.filter(d => d.city.toLowerCase().includes(input.city.toLowerCase()))
     assert(places.length, 'EMPTY', 'Chưa có dữ liệu địa điểm cho điểm đến này.')
@@ -294,10 +294,10 @@ export const mock = {
         remainingActivityBudget -= place.price * guests
       }
     }
-    assert(stops.length > 0, 'OPEN_HOURS', 'Không có địa điểm mở cửa trong khung giờ lịch trình demo.')
+    assert(stops.length > 0, 'OPEN_HOURS', 'Không có địa điểm mở cửa trong khung giờ lịch trình.')
     const costBreakdown = { lodging: lodgingCost, food: foodCost, activities: activityCost }
     const totalCost = costBreakdown.lodging + costBreakdown.food + costBreakdown.activities
-    return { trip, stops, activities, totalCost, costBreakdown, reasons, input, explanation: 'Lịch demo chọn địa điểm trong danh mục theo sở thích, ngân sách, giờ mở cửa và nhịp độ đã chọn. Khoảng nghỉ giữa các hoạt động chưa tính thời gian di chuyển. Lưu trú tạm tính 1.200.000 đ/đêm và ăn uống 250.000 đ/người/ngày.' }
+    return { trip, stops, activities, totalCost, costBreakdown, reasons, input, explanation: 'Lịch gợi ý chọn địa điểm trong danh mục theo sở thích, ngân sách, giờ mở cửa và nhịp độ đã chọn. Khoảng nghỉ giữa các hoạt động chưa tính thời gian di chuyển. Lưu trú tạm tính 1.200.000 đ/đêm và ăn uống 250.000 đ/người/ngày.' }
   },
   savePlannedTrip: async (userId: string, result: PlannerResult) => commit(data => {
     const trip = { ...result.trip, userId, status: 'SAVED' as const }

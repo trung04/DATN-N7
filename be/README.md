@@ -174,7 +174,20 @@ current owner's hotels in every workflow state. `ownerUserId` is not accepted
 when creating a hotel. Admin review requires `ADMIN`, and `reviewerUserId` is
 derived from the active session rather than the request body.
 
+### Hotel map coordinates
+
+Hotel create/update requests accept optional `latitude` and `longitude` numbers.
+Send both together (`-90..90`, `-180..180`), or send both as `null` to remove a
+position. Hotel responses include both fields. Editing follows the existing
+owner/admin authorization and pending-approval lock. A hotel's `placeId` is an
+association, and is never used as its map position. Existing records keep a null
+position until the owner confirms it; the migration does not copy attraction
+coordinates. Run migration `AddHotelCoordinates1794500013000` before deploying
+the new backend. Hotels without their own coordinates are excluded from nearby
+search, and the owner can set coordinates in the hotel editing form.
+
 ## Places API
+
 
 Place management is available at `/api/v1/places` with create, paginated list,
 detail, partial update, and delete operations. Coordinates are optional but

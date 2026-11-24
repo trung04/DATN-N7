@@ -8,6 +8,7 @@ export class HotelDocumentResponse {
   documentType: HotelDocumentType;
   documentNumber: string;
   fileUrl: string;
+  files: Array<{ id: string; url: string; contentType: string; byteSize: number; width: number; height: number }>;
   issuedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
@@ -23,6 +24,8 @@ export class HotelResponse {
   taxCode: string;
   description: string | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
   phoneNumber: string;
   email: string;
   starRating: number | null;

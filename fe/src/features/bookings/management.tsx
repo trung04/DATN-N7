@@ -1,3 +1,7 @@
+import { loadHotelOptions } from '@/services/api/management-options'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { readPage, readPageSize } from '@/lib/pagination'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,9 +11,8 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { api } from '@/services/api/client'
 import { currency, day, errorMessage } from '@/lib/utils'
-import type { BookingListQuery, ManagedBooking, ManagedBookingStatus, ManagedPaymentStatus, ManagedRefundStatus, ManagedSettlementStatus, PartnerHotelQuery } from '@/types/domain'
+import type { BookingListQuery, ManagedBooking, ManagedBookingStatus, ManagedPaymentStatus, ManagedRefundStatus, ManagedSettlementStatus } from '@/types/domain'
 
-const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' }
 const statuses: Array<['bookingStatus' | 'paymentStatus' | 'refundStatus' | 'settlementStatus', string, string[]]> = [
   ['bookingStatus', 'Booking', ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED']],
   ['paymentStatus', 'Thanh toán', ['PENDING', 'PAYMENT_PENDING', 'PAID', 'FAILED', 'EXPIRED']],
@@ -22,11 +25,12 @@ const parseStatus = <T extends string>(value: string | null): T | undefined => v
 export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'booking-hotels'], queryFn: () => admin ? api.adminHotels(hotelsQuery) : api.myHotels(hotelsQuery) })
-  const selectedHotelId = params.get('hotelId') || (admin ? '' : hotels.data?.data[0]?.id || '')
-  const page = Number(params.get('page') || 1)
+  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'booking-hotels'], queryFn: () => loadHotelOptions(admin) })
+  const selectedHotelId = params.get('hotelId') || (admin ? '' : hotels.data?.[0]?.id || '')
+  const page = readPage(params)
+  const size = readPageSize(params)
   const query = useMemo<BookingListQuery>(() => ({
-    page, limit: 20,
+    page, limit: size,
     sortBy: (params.get('sortBy') as BookingListQuery['sortBy'] | null) ?? 'createdAt',
     sortOrder: (params.get('sortOrder') as BookingListQuery['sortOrder'] | null) ?? 'DESC',
     ...(params.get('search') ? { search: params.get('search')! } : {}),
@@ -37,8 +41,9 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
     ...(parseStatus<ManagedSettlementStatus>(params.get('settlementStatus')) ? { settlementStatus: parseStatus<ManagedSettlementStatus>(params.get('settlementStatus')) } : {}),
     ...(params.get('createdFrom') ? { createdFrom: params.get('createdFrom')! } : {}),
     ...(params.get('createdTo') ? { createdTo: params.get('createdTo')! } : {}),
-  }), [page, params, selectedHotelId])
+  }), [page, size, params, selectedHotelId])
   const bookings = useQuery({ queryKey: ['managed-bookings', admin, query], queryFn: () => api.managedBookings(query), enabled: admin || Boolean(selectedHotelId) })
+  const pagination = usePagination(bookings.data?.meta.total)
   const [selectedId, setSelectedId] = useState('')
   const detail = useQuery({ queryKey: ['managed-booking', selectedId], queryFn: () => api.managedBooking(selectedId), enabled: Boolean(selectedId) })
   const [action, setAction] = useState<'refund' | null>(null)
@@ -54,7 +59,7 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
       if (value) next.set(key, value)
       else next.delete(key)
     }
-    next.set('page', '1')
+    if (!Object.hasOwn(values, 'page')) next.set('page', '1')
     setParams(next, { replace: true })
   }
   const refresh = async () => {
@@ -87,16 +92,16 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
   }
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
-  if (!admin && hotels.data.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi quản lý đặt phòng." />
+  if (!admin && hotels.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi quản lý đặt phòng." />
   if (bookings.isPending) return <LoadingState />
   if (bookings.isError) return <ErrorState message={errorMessage(bookings.error)} retry={() => { void bookings.refetch() }} />
 
-  const hotelName = (id: string) => hotels.data.data.find(hotel => hotel.id === id)?.name ?? id
+  const hotelName = (id: string) => hotels.data.find(hotel => hotel.id === id)?.name ?? id
   return <div>
     <PageHeader title={admin ? 'Quản lý đặt phòng' : 'Đặt phòng khách sạn'} description={admin ? 'Tra cứu booking toàn hệ thống, theo dõi thanh toán, hoàn tiền và quyết toán.' : 'Theo dõi booking, thanh toán và hủy tại khách sạn của bạn.'} />
     <Card className="mb-5 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
       <FormField label="Tìm booking hoặc khách"><div className="relative"><Search className="absolute left-3 top-3 text-slate-400" size={16} /><input className="pl-9" value={params.get('search') ?? ''} onChange={event => updateParams({ search: event.target.value || undefined })} placeholder="Mã booking, tên hoặc email" /></div></FormField>
-      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => updateParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Tất cả khách sạn' : 'Chọn khách sạn'}</option>{hotels.data.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
+      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => updateParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Tất cả khách sạn' : 'Chọn khách sạn'}</option>{hotels.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
       {statuses.map(([key, title, values]) => <FormField key={key} label={`Trạng thái ${title.toLocaleLowerCase('vi-VN')}`}><select value={params.get(key) ?? ''} onChange={event => updateParams({ [key]: event.target.value || undefined })}><option value="">Tất cả</option>{values.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}</select></FormField>)}
       <FormField label="Tạo từ"><input type="date" value={params.get('createdFrom') ?? ''} onChange={event => updateParams({ createdFrom: event.target.value || undefined })} /></FormField>
       <FormField label="Tạo đến"><input type="date" value={params.get('createdTo') ?? ''} onChange={event => updateParams({ createdTo: event.target.value || undefined })} /></FormField>
@@ -105,9 +110,10 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
     <Feedback message={notice} />
     {bookings.data.data.length ? <>
       <Card className="table-scroll mt-4"><table><thead><tr><th>Mã booking</th>{admin && <th>Khách sạn</th>}<th>Khách đặt</th><th>Ngày lưu trú</th><th>Ngày đặt</th><th>Tổng tiền</th><th>Booking</th><th>Thanh toán</th><th>Hoàn tiền</th><th>Chi tiết</th></tr></thead><tbody>{bookings.data.data.map(booking => <tr key={booking.id}><td className="font-mono text-sm">{booking.bookingCode}</td>{admin && <td>{hotelName(booking.hotelId)}</td>}<td><strong>{booking.guestName}</strong><span className="block text-xs text-slate-500">{booking.guestEmail}</span></td><td>{day(booking.checkInDate)} – {day(booking.checkOutDate)}</td><td>{day(booking.createdAt)}</td><td>{currency(booking.amount)}</td><td><StatusBadge status={booking.bookingStatus} /></td><td><StatusBadge status={booking.paymentStatus} /></td><td><StatusBadge status={booking.refundStatus} /></td><td><Button variant="secondary" size="sm" onClick={() => { setSelectedId(booking.id); setAction(null); setError(''); setNotice('') }}><Eye size={15} />Mở</Button></td></tr>)}</tbody></table></Card>
-      <div className="mt-4 flex items-center justify-between text-sm"><span>{bookings.data.meta.total} booking · trang {page}</span><div className="flex gap-2"><Button variant="secondary" disabled={page <= 1} onClick={() => updateParams({ page: String(page - 1) })}>Trước</Button><Button variant="secondary" disabled={page * 20 >= bookings.data.meta.total} onClick={() => updateParams({ page: String(page + 1) })}>Tiếp</Button></div></div>
+
     </> : <EmptyState title="Không có booking phù hợp" description="Thử đổi khách sạn, khoảng ngày hoặc bộ lọc trạng thái." />}
 
+    <Pagination page={page} total={bookings.data.meta.total} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
     <Dialog open={Boolean(selectedId)} onOpenChange={open => { if (!open) { setSelectedId(''); setAction(null); setError('') } }}><DialogContent title={detail.data ? `Booking ${detail.data.bookingCode}` : 'Chi tiết booking'}>
       {detail.isPending ? <LoadingState /> : detail.isError ? <ErrorState message={errorMessage(detail.error)} retry={() => { void detail.refetch() }} /> : detail.data ? <div className="grid max-h-[75vh] gap-4 overflow-y-auto pr-1">
         <div className="flex flex-wrap gap-2"><StatusBadge status={detail.data.bookingStatus} /><StatusBadge status={detail.data.paymentStatus} /><StatusBadge status={detail.data.refundStatus} /><StatusBadge status={detail.data.settlementStatus} /></div>

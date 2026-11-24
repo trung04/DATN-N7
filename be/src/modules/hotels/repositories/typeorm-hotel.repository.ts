@@ -28,13 +28,20 @@ export class TypeOrmHotelRepository implements HotelRepository {
     private readonly reviewRepository: Repository<HotelReviewHistoryEntity>,
   ) {}
 
+  async findIdsByOwner(ownerUserId: string): Promise<string[]> {
+    const hotels = await this.repository.find({
+      select: { id: true }, where: { ownerUserId }, order: { id: 'ASC' },
+    });
+    return hotels.map((hotel) => hotel.id);
+  }
+
   findById(id: string): Promise<HotelEntity | null> {
     return this.repository.findOne({
       where: { id },
       relations: { documents: true, images: { image: true } },
       order: {
         documents: { createdAt: 'ASC' },
-        images: { createdAt: 'ASC', id: 'ASC' },
+        images: { imageOrder: 'ASC', id: 'ASC' },
       },
     });
   }
@@ -87,7 +94,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
       relationLoadStrategy: 'query',
       order: {
         documents: { createdAt: 'ASC' },
-        images: { createdAt: 'ASC', id: 'ASC' },
+        images: { imageOrder: 'ASC', id: 'ASC' },
       },
     });
     const byId = new Map(detailed.map((hotel) => [hotel.id, hotel]));
@@ -128,7 +135,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
           relations: { documents: true, images: { image: true } },
           order: {
             documents: { createdAt: 'ASC' },
-            images: { createdAt: 'ASC', id: 'ASC' },
+            images: { imageOrder: 'ASC', id: 'ASC' },
           },
         }))!;
       });

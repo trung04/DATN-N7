@@ -61,6 +61,9 @@ export class ImageEntity {
   @Column({ name: 'image_url', type: 'text', nullable: true })
   imageUrl: string | null;
 
+  @Column({ name: 'fallback_url', type: 'text', nullable: true })
+  fallbackUrl: string | null;
+
   @Column({
     name: 'content_type',
     type: 'varchar',

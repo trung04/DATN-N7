@@ -1,31 +1,40 @@
+import { HotelDocuments } from '@/components/hotel-documents'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { readPage, readPageSize } from '@/lib/pagination'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useSearchParams, useParams, useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownUp, Plus, Trash2 } from 'lucide-react'
+import { ArrowDownUp, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { HotelImages } from '@/components/hotel-images'
+import { HotelLocationPicker } from '@/components/hotel-location-picker'
+import { hasValidCoordinates } from '@/lib/coordinates'
 import { api } from '@/services/api/client'
 import { day, errorMessage } from '@/lib/utils'
-import type { HotelDocumentType, PartnerHotel, PartnerHotelInput, PartnerHotelQuery, PartnerHotelStatus } from '@/types/domain'
+import type { PartnerHotel, PartnerHotelInput, PartnerHotelQuery, PartnerHotelStatus } from '@/types/domain'
 
 const statusLabel: Record<PartnerHotelStatus, string> = {
   DRAFT: 'Bản nháp', PENDING_APPROVAL: 'Chờ duyệt', ACTIVE: 'Đang hoạt động',
   REJECTED: 'Bị từ chối', INACTIVE: 'Ngừng hoạt động', SUSPENDED: 'Tạm đình chỉ',
 }
-const documentLabel: Record<HotelDocumentType, string> = {
-  BUSINESS_LICENSE: 'Giấy phép kinh doanh', HOTEL_LICENSE: 'Giấy phép hoạt động khách sạn',
-  OWNERSHIP_DOCUMENT: 'Giấy tờ sở hữu', TAX_DOCUMENT: 'Chứng từ thuế', OTHER: 'Khác',
-}
 const sortFields: PartnerHotelQuery['sortBy'][] = ['createdAt', 'name', 'status']
-const emptyHotel: PartnerHotelInput = { name: '', legalName: '', taxCode: '', description: '', address: '', phoneNumber: '', email: '', starRating: null, checkInTime: '14:00', checkOutTime: '12:00' }
+const emptyHotel: PartnerHotelInput = { latitude: null, longitude: null, name: '', legalName: '', taxCode: '', description: '', address: '', phoneNumber: '', email: '', starRating: null, checkInTime: '14:00', checkOutTime: '12:00' }
+
+type HotelFilters = {
+  search: string
+  status: PartnerHotelStatus | ''
+  sortBy: PartnerHotelQuery['sortBy']
+  sortOrder: PartnerHotelQuery['sortOrder']
+}
 
 function readQuery(params: URLSearchParams): PartnerHotelQuery {
   const status = params.get('status') as PartnerHotelStatus | null
   const sortBy = params.get('sortBy') as PartnerHotelQuery['sortBy'] | null
   const query: PartnerHotelQuery = {
-    page: Math.max(1, Number(params.get('page')) || 1), limit: 20,
+    page: readPage(params), limit: readPageSize(params),
     sortBy: sortFields.includes(sortBy as PartnerHotelQuery['sortBy']) ? sortBy as PartnerHotelQuery['sortBy'] : 'createdAt',
     sortOrder: params.get('sortOrder') === 'ASC' ? 'ASC' : 'DESC',
   }
@@ -36,36 +45,50 @@ function readQuery(params: URLSearchParams): PartnerHotelQuery {
 }
 function hotelInput(hotel?: PartnerHotel): PartnerHotelInput {
   if (!hotel) return { ...emptyHotel }
-  return { placeId: hotel.placeId, name: hotel.name, legalName: hotel.legalName, taxCode: hotel.taxCode, description: hotel.description, address: hotel.address, phoneNumber: hotel.phoneNumber, email: hotel.email, starRating: hotel.starRating, checkInTime: hotel.checkInTime.slice(0, 5), checkOutTime: hotel.checkOutTime.slice(0, 5) }
+  return { latitude: hotel.latitude ?? null, longitude: hotel.longitude ?? null, placeId: hotel.placeId, name: hotel.name, legalName: hotel.legalName, taxCode: hotel.taxCode, description: hotel.description, address: hotel.address, phoneNumber: hotel.phoneNumber, email: hotel.email, starRating: hotel.starRating, checkInTime: hotel.checkInTime.slice(0, 5), checkOutTime: hotel.checkOutTime.slice(0, 5) }
 }
 
 export function PartnerHotelsPage() {
   const [params, setParams] = useSearchParams()
   const query = useMemo(() => readQuery(params), [params])
+  const filterKey = JSON.stringify([query.search ?? '', query.status ?? '', query.sortBy, query.sortOrder])
+  const [filterDraft, setFilterDraft] = useState<{ source: string; values: HotelFilters } | null>(null)
+  const filters: HotelFilters = filterDraft?.source === filterKey ? filterDraft.values : {
+    search: query.search ?? '', status: query.status ?? '', sortBy: query.sortBy, sortOrder: query.sortOrder,
+  }
+  const changeFilters = (values: Partial<HotelFilters>) => setFilterDraft({ source: filterKey, values: { ...filters, ...values } })
   const hotels = useQuery({ queryKey: ['partner-hotels', query], queryFn: () => api.myHotels(query) })
   const data = hotels.data
-  const pageCount = Math.max(1, Math.ceil((data?.meta.total ?? 0) / query.limit))
-  const setFilter = (key: string, value: string, resetPage = true) => {
+  const pagination = usePagination(data?.meta.total)
+  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value); else next.delete(key)
-    if (resetPage) next.delete('page')
-    setParams(next, { replace: true })
+    const search = filters.search.trim()
+    if (search) next.set('q', search); else next.delete('q')
+    if (filters.status) next.set('status', filters.status); else next.delete('status')
+    next.set('sortBy', filters.sortBy)
+    next.set('sortOrder', filters.sortOrder)
+    next.delete('page')
+    setFilterDraft(null)
+    setParams(next)
   }
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
   return <div>
     <PageHeader title="Khách sạn của tôi" description="Tạo hồ sơ, bổ sung giấy tờ và theo dõi tiến trình xét duyệt." actions={<Button asChild><Link to="/partner/hotels/new"><Plus size={16} />Thêm khách sạn</Link></Button>} />
-    <div className="mb-5 grid gap-3 sm:grid-cols-3">
-      <FormField label="Tên hoặc địa chỉ"><input value={params.get('q') ?? ''} onChange={event => setFilter('q', event.target.value)} placeholder="Tìm khách sạn" /></FormField>
-      <FormField label="Trạng thái"><select value={params.get('status') ?? ''} onChange={event => setFilter('status', event.target.value)}><option value="">Tất cả trạng thái</option>{Object.entries(statusLabel).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></FormField>
-      <FormField label="Sắp xếp"><span className="relative block"><ArrowDownUp className="absolute left-3 top-3 text-slate-400" size={16} /><select className="!pl-9" value={`${query.sortBy}:${query.sortOrder}`} onChange={event => { const [field, order] = event.target.value.split(':'); const next = new URLSearchParams(params); next.set('sortBy', field ?? 'createdAt'); next.set('sortOrder', order ?? 'DESC'); next.delete('page'); setParams(next, { replace: true }) }}>{sortFields.map(field => <option key={field} value={`${field}:${query.sortOrder}`}>{({ createdAt: 'Ngày tạo', name: 'Tên khách sạn', status: 'Trạng thái' })[field]} · {query.sortOrder === 'DESC' ? 'giảm dần' : 'tăng dần'}</option>)}</select><button type="button" className="absolute right-3 top-2.5 text-xs font-semibold text-[#1E3A5F]" aria-label="Đổi chiều sắp xếp" onClick={() => setFilter('sortOrder', query.sortOrder === 'DESC' ? 'ASC' : 'DESC', false)}>Đổi chiều</button></span></FormField>
-    </div>
+    <form aria-label="Tìm kiếm khách sạn" onSubmit={applyFilters} className="mb-5 grid items-end gap-3 sm:grid-cols-3 xl:grid-cols-[1fr_1fr_1.3fr_auto]">
+      <FormField label="Tên hoặc địa chỉ"><input value={filters.search} onChange={event => changeFilters({ search: event.target.value })} placeholder="Tìm khách sạn" /></FormField>
+      <FormField label="Trạng thái"><select value={filters.status} onChange={event => changeFilters({ status: event.target.value as HotelFilters['status'] })}><option value="">Tất cả trạng thái</option>{Object.entries(statusLabel).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></FormField>
+      <FormField label="Sắp xếp"><span className="flex items-center gap-2"><span className="relative min-w-0 flex-1"><ArrowDownUp className="pointer-events-none absolute left-3 top-3 text-slate-400" size={16} /><select className="!pl-9" value={filters.sortBy} onChange={event => changeFilters({ sortBy: event.target.value as HotelFilters['sortBy'] })}>{sortFields.map(field => <option key={field} value={field}>{({ createdAt: 'Ngày tạo', name: 'Tên khách sạn', status: 'Trạng thái' })[field]} · {filters.sortOrder === 'DESC' ? 'giảm dần' : 'tăng dần'}</option>)}</select></span><Button type="button" variant="secondary" className="shrink-0" aria-label="Đổi chiều sắp xếp" onClick={() => changeFilters({ sortOrder: filters.sortOrder === 'DESC' ? 'ASC' : 'DESC' })}>Đổi chiều</Button></span></FormField>
+      <Button type="submit"><Search size={16} />Tìm kiếm</Button>
+    </form>
     {data?.data.length ? <>
-      <Card className="table-scroll"><table><thead><tr><th>Khách sạn</th><th>Địa chỉ</th><th>Trạng thái</th><th>Gửi duyệt</th><th>Phản hồi</th><th>Thao tác</th></tr></thead><tbody>{data.data.map(hotel => <tr key={hotel.id}>
-        <td className="font-semibold">{hotel.name}<span className="block text-xs font-normal text-slate-500">MST: {hotel.taxCode}</span></td><td>{hotel.address}</td><td><StatusBadge status={hotel.status} /><span className="sr-only">{statusLabel[hotel.status]}</span></td><td>{hotel.submittedAt ? day(hotel.submittedAt.slice(0, 10)) : 'Chưa gửi'}</td><td className="max-w-xs whitespace-normal text-sm">{hotel.rejectionReason || (hotel.reviewedAt ? `Cập nhật ${day(hotel.reviewedAt.slice(0, 10))}` : 'Chưa có phản hồi')}</td><td><Button asChild variant="secondary" size="sm"><Link to={`/partner/hotels/${hotel.id}/edit`}>Chi tiết / chỉnh sửa</Link></Button></td>
+      <Card className="relative table-scroll"><table><thead><tr><th>Khách sạn</th><th>Địa chỉ</th><th>Trạng thái</th><th>Gửi duyệt</th><th>Phản hồi</th><th>Thao tác</th></tr></thead><tbody>{data.data.map(hotel => <tr key={hotel.id}>
+        <td className="font-semibold">{hotel.name}<span className="block text-xs font-normal text-slate-500">MST: {hotel.taxCode}</span></td><td>{hotel.address}<span className="mt-1 block text-xs text-slate-500">{hasValidCoordinates(hotel.latitude, hotel.longitude) ? 'Đã có vị trí bản đồ' : 'Chưa đặt vị trí bản đồ'}</span></td><td><StatusBadge status={hotel.status} /><span className="sr-only">{statusLabel[hotel.status]}</span></td><td>{hotel.submittedAt ? day(hotel.submittedAt.slice(0, 10)) : 'Chưa gửi'}</td><td className="max-w-xs whitespace-normal text-sm">{hotel.rejectionReason || (hotel.reviewedAt ? `Cập nhật ${day(hotel.reviewedAt.slice(0, 10))}` : 'Chưa có phản hồi')}</td><td><Button asChild variant="secondary" size="sm"><Link to={`/partner/hotels/${hotel.id}/edit`}>Chi tiết / chỉnh sửa</Link></Button></td>
       </tr>)}</tbody></table></Card>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600"><span>{data.meta.total} khách sạn · Trang {query.page}/{pageCount}</span><div className="flex gap-2"><Button size="sm" variant="secondary" disabled={query.page <= 1} onClick={() => setFilter('page', String(query.page - 1), false)}>Trước</Button><Button size="sm" variant="secondary" disabled={query.page >= pageCount} onClick={() => setFilter('page', String(query.page + 1), false)}>Sau</Button></div></div>
+
     </> : <EmptyState title="Chưa có khách sạn phù hợp" description="Tạo hồ sơ khách sạn để bắt đầu quy trình xét duyệt." action={<Button asChild><Link to="/partner/hotels/new"><Plus size={16} />Tạo hồ sơ khách sạn</Link></Button>} />}
+    <Pagination page={query.page} total={data?.meta.total ?? 0} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
   </div>
 }
 
@@ -82,23 +105,19 @@ export function PartnerHotelFormPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [submitOpen, setSubmitOpen] = useState(false)
-  const [documentType, setDocumentType] = useState<HotelDocumentType>('BUSINESS_LICENSE')
-  const [documentNumber, setDocumentNumber] = useState('')
-  const [fileUrl, setFileUrl] = useState('')
-  const [issuedAt, setIssuedAt] = useState('')
-  const [expiresAt, setExpiresAt] = useState('')
-  const [documentBusy, setDocumentBusy] = useState(false)
+
 
   const status = hotel?.status ?? 'DRAFT'
   const isLocked = status === 'PENDING_APPROVAL'
   const canEditLegal = status !== 'ACTIVE'
-  const canEditDocuments = status === 'DRAFT' || status === 'REJECTED'
   const canSubmit = status === 'DRAFT' || status === 'REJECTED'
   const hasValidBusinessLicense = hotel?.documents.some(doc => doc.documentType === 'BUSINESS_LICENSE' && (!doc.expiresAt || doc.expiresAt >= new Date().toISOString().slice(0, 10))) ?? false
 
   const updateField = <K extends keyof PartnerHotelInput>(key: K, value: PartnerHotelInput[K]) => setDraft(current => ({ ...(current ?? form), [key]: value }))
   const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setSaving(true); setError(''); setMessage('')
+    event.preventDefault()
+    if (!(form.latitude == null && form.longitude == null) && !hasValidCoordinates(form.latitude, form.longitude)) { setError('Nhập đủ vĩ độ và kinh độ hợp lệ, hoặc xóa cả hai.'); return }
+    setSaving(true); setError(''); setMessage('')
     const payload: PartnerHotelInput = { ...form, placeId: form.placeId || null, description: form.description?.trim() || null, starRating: form.starRating || null, checkInTime: form.checkInTime?.slice(0, 5) ?? '14:00', checkOutTime: form.checkOutTime?.slice(0, 5) ?? '12:00' }
     try {
       if (isNew) {
@@ -107,33 +126,15 @@ export function PartnerHotelFormPage() {
         navigate(`/partner/hotels/${created.id}/edit`, { replace: true })
       } else {
         const updatePayload = hotel?.status === 'ACTIVE'
-          ? { placeId: payload.placeId, name: payload.name, description: payload.description, address: payload.address, phoneNumber: payload.phoneNumber, email: payload.email, starRating: payload.starRating, checkInTime: payload.checkInTime, checkOutTime: payload.checkOutTime }
+          ? { latitude: payload.latitude, longitude: payload.longitude, placeId: payload.placeId, name: payload.name, description: payload.description, address: payload.address, phoneNumber: payload.phoneNumber, email: payload.email, starRating: payload.starRating, checkInTime: payload.checkInTime, checkOutTime: payload.checkOutTime }
           : payload
         await api.updateHotel(id!, updatePayload)
         setDraft(null); setMessage('Đã lưu hồ sơ khách sạn.')
+        await queryClient.invalidateQueries({ queryKey: ['catalog'] })
         await Promise.all([queryClient.invalidateQueries({ queryKey: ['partner-hotel', id] }), queryClient.invalidateQueries({ queryKey: ['partner-hotels'] })])
       }
     } catch (cause) { setError(errorMessage(cause)) }
     finally { setSaving(false) }
-  }
-  const addDocument = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); if (!id) return
-    setDocumentBusy(true); setError(''); setMessage('')
-    try {
-      await api.addHotelDocument(id, { documentType, documentNumber, fileUrl, issuedAt: issuedAt || null, expiresAt: expiresAt || null })
-      setDocumentNumber(''); setFileUrl(''); setIssuedAt(''); setExpiresAt(''); setMessage('Đã thêm giấy tờ.')
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ['partner-hotel', id] }), queryClient.invalidateQueries({ queryKey: ['partner-hotels'] })])
-    } catch (cause) { setError(errorMessage(cause)) }
-    finally { setDocumentBusy(false) }
-  }
-  const deleteDocument = async (documentId: string) => {
-    if (!id) return
-    setError(''); setMessage('')
-    try {
-      await api.deleteHotelDocument(id, documentId)
-      setMessage('Đã xóa giấy tờ.')
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ['partner-hotel', id] }), queryClient.invalidateQueries({ queryKey: ['partner-hotels'] })])
-    } catch (cause) { setError(errorMessage(cause)) }
   }
   const submit = async () => {
     if (!id) return
@@ -158,16 +159,14 @@ export function PartnerHotelFormPage() {
       <FormField label="Địa chỉ"><input required maxLength={500} disabled={isLocked} value={form.address} onChange={event => updateField('address', event.target.value)} /></FormField><FormField label="Mô tả"><textarea maxLength={5000} disabled={isLocked} value={form.description ?? ''} onChange={event => updateField('description', event.target.value)} /></FormField>
       {status === 'ACTIVE' && <p className="text-xs text-slate-500">Backend khóa tên pháp lý và mã số thuế khi khách sạn đang hoạt động.</p>}
       <Feedback message={error} kind="error" /><Feedback message={message} />
+      <HotelLocationPicker latitude={form.latitude} longitude={form.longitude} address={form.address} disabled={isLocked} onChange={point => setDraft(current => ({ ...(current ?? form), ...point }))} />
       <div className="flex flex-wrap gap-2"><Button disabled={saving || isLocked}>{saving ? 'Đang lưu...' : isNew ? 'Tạo hồ sơ nháp' : 'Lưu thay đổi'}</Button><Button asChild type="button" variant="secondary"><Link to="/partner/hotels">Quay lại danh sách</Link></Button>{hotel && canSubmit && <Button type="button" variant="secondary" disabled={!hasValidBusinessLicense} onClick={() => setSubmitOpen(true)}>Gửi xét duyệt</Button>}</div>
       {hotel && canSubmit && !hasValidBusinessLicense && <p className="text-xs text-amber-800">Cần thêm giấy phép kinh doanh còn hiệu lực trước khi gửi duyệt.</p>}
     </form></Card>
 
     {!isNew && hotel && <div className="mt-5 max-w-4xl"><HotelImages key={hotel.id} hotel={hotel} /></div>}
 
-    {!isNew && hotel && <Card className="mt-5 max-w-4xl p-6"><h2 className="text-lg font-semibold">Giấy tờ pháp lý</h2>
-      {hotel.documents.length ? <div className="mt-4 grid gap-3">{hotel.documents.map(document => <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-4"><div className="min-w-0"><p className="font-medium">{documentLabel[document.documentType]} · {document.documentNumber}</p><a className="break-all text-sm text-[#1E3A5F] underline" href={document.fileUrl} target="_blank" rel="noreferrer">Mở giấy tờ</a><p className="mt-1 text-xs text-slate-500">Cấp: {document.issuedAt ? day(document.issuedAt) : '—'} · Hết hạn: {document.expiresAt ? day(document.expiresAt) : 'Không thời hạn'}</p></div>{canEditDocuments && <Button size="sm" variant="danger" aria-label={`Xóa ${documentLabel[document.documentType]}`} onClick={() => { void deleteDocument(document.id) }}><Trash2 size={15} />Xóa</Button>}</div>)}</div> : <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">Chưa có giấy tờ được khai báo.</p>}
-      {canEditDocuments && <form className="mt-5 grid gap-4 border-t border-slate-200 pt-5" onSubmit={addDocument}><h3 className="font-semibold">Thêm giấy tờ</h3><div className="grid gap-4 sm:grid-cols-2"><FormField label="Loại giấy tờ"><select value={documentType} onChange={event => setDocumentType(event.target.value as HotelDocumentType)}>{Object.entries(documentLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FormField><FormField label="Số giấy tờ"><input required maxLength={100} value={documentNumber} onChange={event => setDocumentNumber(event.target.value)} /></FormField><FormField label="URL giấy tờ"><input required type="url" maxLength={2048} value={fileUrl} onChange={event => setFileUrl(event.target.value)} placeholder="https://..." /></FormField><FormField label="Ngày cấp"><input type="date" value={issuedAt} onChange={event => setIssuedAt(event.target.value)} /></FormField><FormField label="Ngày hết hạn"><input type="date" min={issuedAt || undefined} value={expiresAt} onChange={event => setExpiresAt(event.target.value)} /></FormField></div><Button className="w-fit" disabled={documentBusy}>{documentBusy ? 'Đang thêm...' : 'Thêm giấy tờ'}</Button></form>}
-    </Card>}
+    {!isNew && hotel && <HotelDocuments key={hotel.id} hotel={hotel} />}
 
     <Dialog open={submitOpen} onOpenChange={setSubmitOpen}><DialogContent title="Gửi hồ sơ xét duyệt?" description="Sau khi gửi, bạn sẽ không thể chỉnh sửa hồ sơ hoặc giấy tờ cho đến khi có kết quả."><p className="text-sm text-slate-600">Hãy kiểm tra thông tin và giấy phép kinh doanh trước khi gửi.</p><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" disabled={saving} onClick={() => setSubmitOpen(false)}>Kiểm tra lại</Button><Button disabled={saving} onClick={() => { void submit() }}>{saving ? 'Đang gửi...' : 'Xác nhận gửi'}</Button></div></DialogContent></Dialog>
   </div>

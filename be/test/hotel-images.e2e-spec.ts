@@ -22,6 +22,7 @@ import { AccessSessionGuard } from '../src/modules/auth/guards/access-session.gu
 import { AuthService } from '../src/modules/auth/services/auth.service';
 import { RolesGuard } from '../src/modules/authorization/guards/roles.guard';
 import { UserRole } from '../src/modules/users/entities/user.entity';
+import { ImageStorageProvider } from '../src/modules/media/entities/image.entity';
 import { HotelImageStorageException } from '../src/modules/hotels/exceptions/hotel-image.exceptions';
 import type { CreateHotelImageData } from '../src/modules/hotels/interfaces/hotel-image.repository.interface';
 
@@ -77,7 +78,9 @@ describe('Hotel image uploads (HTTP)', () => {
                 deletedAt: null,
                 image: {
                   id: data.id,
+                  storageProvider: ImageStorageProvider.MINIO,
                   objectKey: data.objectKey,
+                  fallbackUrl: null,
                   contentType: data.contentType,
                   byteSize: data.byteSize,
                   width: data.width,
@@ -192,6 +195,38 @@ describe('Hotel image uploads (HTTP)', () => {
       .set('Cookie', 'login_access=owner')
       .attach('file', png, 'photo.png')
       .expect(400);
+  });
+  it('redirects to a safe original URL when MinIO cannot return an image', async () => {
+    status = HotelStatus.ACTIVE;
+    const imageId = '33333333-3333-4333-8333-333333333333';
+    records.set(
+      imageId,
+      Object.assign(new HotelImageEntity(), {
+        id: imageId,
+        hotelId,
+        imageId,
+        imageOrder: 1,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: null,
+        image: {
+          id: imageId,
+          storageProvider: ImageStorageProvider.MINIO,
+          objectKey: `hotels/${hotelId}/${imageId}.webp`,
+          fallbackUrl: '/images/hoi-an-lanterns.webp',
+          contentType: 'image/webp',
+          byteSize: 10,
+          width: 10,
+          height: 10,
+        },
+      }),
+    );
+    storage.get.mockRejectedValueOnce(new HotelImageStorageException());
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/hotels/${hotelId}/images/${imageId}/file`)
+      .expect(302)
+      .expect('Location', '/images/hoi-an-lanterns.webp');
   });
   it('rejects missing files, fake images, extra files and body fields', async () => {
     await upload().send({}).expect(400);

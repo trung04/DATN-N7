@@ -1,3 +1,7 @@
+import { loadHotelOptions } from '@/services/api/management-options'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { fetchAllPages, pageItems } from '@/lib/pagination'
 import { useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -7,9 +11,8 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader } from '@/components/common'
 import { api } from '@/services/api/client'
 import { errorMessage } from '@/lib/utils'
-import type { CancellationPolicy, PartnerHotelQuery } from '@/types/domain'
+import type { CancellationPolicy } from '@/types/domain'
 
-const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' }
 
 const cancellationText = (policy: Pick<CancellationPolicy, 'cancelHours' | 'penaltyPercent' | 'cancellationAllowed' | 'description'>) => {
   if (!policy.cancellationAllowed) return `Không hỗ trợ hủy. ${policy.description ?? ''}`.trim()
@@ -19,9 +22,10 @@ const cancellationText = (policy: Pick<CancellationPolicy, 'cancelHours' | 'pena
 export function CancellationPoliciesPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'policy-hotels'], queryFn: () => admin ? api.adminHotels(hotelsQuery) : api.myHotels(hotelsQuery) })
-  const selectedHotelId = params.get('hotelId') || hotels.data?.data[0]?.id || ''
-  const policies = useQuery({ queryKey: ['cancellation-policies', selectedHotelId], queryFn: () => api.cancellationPolicies(selectedHotelId), enabled: Boolean(selectedHotelId) })
+  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'policy-hotels'], queryFn: () => loadHotelOptions(admin) })
+  const selectedHotelId = params.get('hotelId') || hotels.data?.[0]?.id || ''
+  const policies = useQuery({ queryKey: ['cancellation-policies', selectedHotelId], queryFn: () => fetchAllPages(page => api.cancellationPolicies(selectedHotelId, page)), enabled: Boolean(selectedHotelId) })
+  const pagination = usePagination(policies.data?.length)
   const schedule = useQuery({ queryKey: ['cancellation-policy-schedule', selectedHotelId], queryFn: () => api.cancellationPolicySchedule(selectedHotelId), enabled: Boolean(selectedHotelId) })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CancellationPolicy | null>(null)
@@ -36,7 +40,7 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const selectHotel = (id: string) => { const next = new URLSearchParams(params); if (id) next.set('hotelId', id); else next.delete('hotelId'); setParams(next, { replace: true }) }
+  const selectHotel = (id: string) => { const next = new URLSearchParams(params); next.delete('page'); if (id) next.set('hotelId', id); else next.delete('hotelId'); setParams(next, { replace: true }) }
   const openCreate = () => { setEditing(null); setName(''); setCancelHours('24'); setPenaltyPercent('50'); setCancellationAllowed(true); setIsActive(true); setDescription(''); setError(''); setDialogOpen(true) }
   const openEdit = (policy: CancellationPolicy) => { setEditing(policy); setName(policy.name); setCancelHours(String(policy.cancelHours)); setPenaltyPercent(String(policy.penaltyPercent)); setCancellationAllowed(policy.cancellationAllowed); setIsActive(policy.isActive); setDescription(policy.description ?? ''); setError(''); setDialogOpen(true) }
   const refresh = async () => { await queryClient.invalidateQueries({ queryKey: ['cancellation-policies', selectedHotelId] }); await queryClient.invalidateQueries({ queryKey: ['cancellation-policy-schedule', selectedHotelId] }); await queryClient.invalidateQueries({ queryKey: ['catalog'] }) }
@@ -49,7 +53,7 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
     setBusy(true)
     try {
       const input = { hotelId: selectedHotelId, name: name.trim(), cancelHours: hours, penaltyPercent: cancellationAllowed ? penalty : 0, cancellationAllowed, isActive, description: description.trim() || null }
-      if (editing) { const { hotelId: _hotelId, ...update } = input; await api.updateCancellationPolicy(editing.id, update) }
+      if (editing) { await api.updateCancellationPolicy(editing.id, { name: input.name, cancelHours: input.cancelHours, penaltyPercent: input.penaltyPercent, cancellationAllowed: input.cancellationAllowed, isActive: input.isActive, description: input.description }) }
       else await api.createCancellationPolicy(input)
       await refresh(); setDialogOpen(false); setNotice('Đã lưu chính sách hủy.')
     } catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
@@ -58,20 +62,21 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
 
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
-  if (!hotels.data.data.length) return <EmptyState title="Chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi thiết lập chính sách hủy." />
+  if (!hotels.data.length) return <EmptyState title="Chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi thiết lập chính sách hủy." />
   if (policies.isPending || schedule.isPending) return <LoadingState />
   if (policies.isError) return <ErrorState message={errorMessage(policies.error)} retry={() => { void policies.refetch() }} />
   if (schedule.isError) return <ErrorState message={errorMessage(schedule.error)} retry={() => { void schedule.refetch() }} />
 
-  const activePolicy = policies.data.data.find(policy => policy.isActive)
+  const activePolicy = policies.data.find(policy => policy.isActive)
   return <div>
     <PageHeader title="Chính sách hủy" description="Mỗi khách sạn có một chính sách đang áp dụng. Mốc miễn phí được tính từ lúc khách đặt booking." actions={!activePolicy && <Button onClick={openCreate}><Plus size={16} />Thêm chính sách</Button>} />
-    <div className="mb-4 max-w-lg"><FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => selectHotel(event.target.value)}>{hotels.data.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></FormField></div>
+    <div className="mb-4 max-w-lg"><FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => selectHotel(event.target.value)}>{hotels.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></FormField></div>
     <p className={'mb-4 rounded-lg border p-3 text-sm ' + (schedule.data.complete ? 'border-emerald-100 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-950')}>
       {schedule.data.complete ? 'Chính sách đang hoạt động sẽ được lưu cùng booking mới.' : `Chưa thể nhận booking: ${schedule.data.issue}`}
     </p>
     <Feedback message={notice} />
-    {policies.data.data.length ? <Card className="mt-4 table-scroll"><table><thead><tr><th>Tên chính sách</th><th>Điều khoản</th><th>Trạng thái</th><th>Mô tả</th><th>Thao tác</th></tr></thead><tbody>{policies.data.data.map(policy => <tr key={policy.id}><td className="font-semibold">{policy.name}</td><td>{cancellationText(policy)}</td><td>{policy.isActive ? 'Đang áp dụng' : 'Đã tắt'}</td><td className="max-w-sm whitespace-normal">{policy.description || '—'}</td><td><div className="flex gap-3"><button className="font-semibold text-[#1E3A5F]" onClick={() => openEdit(policy)}>Chỉnh sửa</button><button className="text-red-700" aria-label={`Xóa ${policy.name}`} onClick={() => { setDeleting(policy); setError('') }}><Trash2 size={16} /></button></div></td></tr>)}</tbody></table></Card> : <EmptyState title="Chưa có chính sách hủy" description="Tạo chính sách để khách biết rõ quyền hủy và mức phí trước khi đặt." action={<Button onClick={openCreate}><Plus size={16} />Thêm chính sách</Button>} />}
+    {policies.data.length ? <Card className="mt-4 table-scroll"><table><thead><tr><th>Tên chính sách</th><th>Điều khoản</th><th>Trạng thái</th><th>Mô tả</th><th>Thao tác</th></tr></thead><tbody>{pageItems(policies.data, pagination.page, pagination.size).map(policy => <tr key={policy.id}><td className="font-semibold">{policy.name}</td><td>{cancellationText(policy)}</td><td>{policy.isActive ? 'Đang áp dụng' : 'Đã tắt'}</td><td className="max-w-sm whitespace-normal">{policy.description || '—'}</td><td><div className="flex gap-3"><button className="font-semibold text-[#1E3A5F]" onClick={() => openEdit(policy)}>Chỉnh sửa</button><button className="text-red-700" aria-label={`Xóa ${policy.name}`} onClick={() => { setDeleting(policy); setError('') }}><Trash2 size={16} /></button></div></td></tr>)}</tbody></table></Card> : <EmptyState title="Chưa có chính sách hủy" description="Tạo chính sách để khách biết rõ quyền hủy và mức phí trước khi đặt." action={<Button onClick={openCreate}><Plus size={16} />Thêm chính sách</Button>} />}
+    <Pagination page={pagination.page} total={policies.data.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent title={editing ? 'Sửa chính sách hủy' : 'Thêm chính sách hủy'}><form className="grid gap-4" onSubmit={save}>
       <FormField label="Tên chính sách"><input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></FormField>
       <FormField label="Số giờ được hủy miễn phí kể từ lúc đặt"><input required type="number" min="0" max="87600" value={cancelHours} onChange={event => setCancelHours(event.target.value)} /><span className="text-xs text-slate-500">Sau thời gian này, mức phí bên dưới được áp dụng.</span></FormField>

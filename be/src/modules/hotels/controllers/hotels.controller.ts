@@ -37,12 +37,13 @@ import {
 } from '../dtos/responses/hotel.response';
 import { HotelMapper } from '../mappers/hotel.mapper';
 import { HotelsService } from '../services/hotels.service';
+import { HotelDocumentsService } from '../services/hotel-documents.service';
 
 @ApiTags('Hotels')
 @Roles(UserRole.HOTEL_OWNER, UserRole.ADMIN)
 @Controller({ path: 'hotels', version: '1' })
 export class HotelsController {
-  constructor(private readonly hotelsService: HotelsService) {}
+  constructor(private readonly hotelsService: HotelsService, private readonly documentsService: HotelDocumentsService) {}
 
   @Post()
   @Roles(UserRole.HOTEL_OWNER)
@@ -146,7 +147,7 @@ export class HotelsController {
     @Param('documentId', new ParseUUIDPipe({ version: '4' }))
     documentId: string,
   ): Promise<void> {
-    await this.hotelsService.deleteDocument(hotelId, documentId, user);
+    await this.documentsService.remove(hotelId, documentId, user);
   }
 
   @Put(':hotelId/submit')

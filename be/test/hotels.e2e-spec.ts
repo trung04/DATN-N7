@@ -13,6 +13,7 @@ import {
   HotelStatus,
 } from '../src/modules/hotels/entities/hotel.entity';
 import { HotelsService } from '../src/modules/hotels/services/hotels.service';
+import { HotelDocumentsService } from '../src/modules/hotels/services/hotel-documents.service';
 import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
 import { UserRole } from '../src/modules/users/entities/user.entity';
 import type { NextFunction, Response } from 'express';
@@ -66,7 +67,7 @@ describe('Hotels API (e2e)', () => {
     jest.clearAllMocks();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [HotelsController, AdminHotelsController],
-      providers: [{ provide: HotelsService, useValue: service }],
+      providers: [{ provide: HotelsService, useValue: service }, { provide: HotelDocumentsService, useValue: { remove: (...args: unknown[]) => service.deleteDocument(...args) } }],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -94,7 +95,7 @@ describe('Hotels API (e2e)', () => {
   });
 
   it('creates a draft hotel and returns its location', async () => {
-    service.create.mockResolvedValue(entity());
+    service.create.mockResolvedValue(entity({ latitude: 16.0614, longitude: 108.2468 }));
 
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
@@ -103,6 +104,8 @@ describe('Hotels API (e2e)', () => {
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
         address: '1 Beach Road',
+        latitude: 16.0614,
+        longitude: 108.2468,
         phoneNumber: '0912345678',
         email: 'hotel@example.com',
         starRating: 4,
@@ -116,8 +119,18 @@ describe('Hotels API (e2e)', () => {
           id: hotelId,
           ownerUserId,
           status: HotelStatus.DRAFT,
+          latitude: 16.0614,
+          longitude: 108.2468,
         });
       });
+  });
+
+  it.each([{ latitude: 91, longitude: 108 }, { latitude: 16, longitude: 181 }, { latitude: '', longitude: 108 }])('rejects invalid hotel coordinates at the HTTP boundary: %j', async (point) => {
+    await request(app.getHttpServer()).post('/api/v1/hotels').send({
+      name: 'Hotel', legalName: 'Hotel', taxCode: 'TAX', address: 'Address',
+      phoneNumber: '0912345678', email: 'hotel@example.com', checkInTime: '14:00', checkOutTime: '12:00', ...point,
+    }).expect(400);
+    expect(service.create.mock.calls).toHaveLength(0);
   });
 
   it('does not allow callers to set the initial hotel status', async () => {

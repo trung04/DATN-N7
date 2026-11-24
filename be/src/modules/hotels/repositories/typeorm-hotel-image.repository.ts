@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { makeLodgingImagePrimary } from '../../media/reorder-lodging-images';
 import {
   ImageEntity,
   ImageStorageProvider,
@@ -57,14 +58,31 @@ export class TypeOrmHotelImageRepository implements HotelImageRepository {
   find(hotelId: string, id: string) {
     return this.repository.findOne({ where: { hotelId, id } });
   }
-  async delete(hotelId: string, id: string): Promise<void> {
+  async makePrimary(hotelId: string, id: string) {
+    return this.repository.manager.transaction(async (manager) => {
+      if (!(await makeLodgingImagePrimary(manager, 'hotel', hotelId, id)))
+        return null;
+      return manager
+        .getRepository(HotelImageEntity)
+        .findOne({ where: { hotelId, id } });
+    });
+  }
+  async delete(
+    hotelId: string,
+    id: string,
+    deleteOwnedImage: boolean,
+  ): Promise<void> {
     await this.repository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `hotel-images:${hotelId}`,
+      ]);
       const link = await manager
         .getRepository(HotelImageEntity)
         .findOne({ where: { hotelId, id } });
       if (!link) return;
       await manager.getRepository(HotelImageEntity).softDelete(link.id);
-      await manager.getRepository(ImageEntity).softDelete(link.imageId);
+      if (deleteOwnedImage)
+        await manager.getRepository(ImageEntity).softDelete(link.imageId);
     });
   }
 }

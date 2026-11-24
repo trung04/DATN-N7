@@ -49,9 +49,7 @@ export class CreatePlaceCatalogRelations1794500000500
         "deleted_at" timestamptz,
         CONSTRAINT "PK_place_topics_id" PRIMARY KEY ("id"),
         CONSTRAINT "FK_place_topics_place"
-          FOREIGN KEY ("place_id") REFERENCES "places"("id") ON DELETE RESTRICT,
-        CONSTRAINT "FK_place_topics_topic"
-          FOREIGN KEY ("topic_id") REFERENCES "topics"("id") ON DELETE RESTRICT
+          FOREIGN KEY ("place_id") REFERENCES "places"("id") ON DELETE RESTRICT
       );
       CREATE UNIQUE INDEX "UQ_place_topics_active"
         ON "place_topics" ("place_id", "topic_id") WHERE "deleted_at" IS NULL;

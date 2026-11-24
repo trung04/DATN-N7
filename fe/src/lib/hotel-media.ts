@@ -15,11 +15,11 @@ const hotelPhotos = [
 
 const roomPhotos = [
   'photo-1611892440504-42a792e24d32',
-  'photo-1618221195710-dd6b41faaea6',
   'photo-1590490360182-c33d57733427',
-  'photo-1595576508898-0ad5c879a061',
-  'photo-1616486338812-3dadae4b4ace',
-  'photo-1598928506311-c55ded91a20c',
+  'photo-1566665797739-1674de7a421a',
+  'photo-1582719478250-c89cae4dc85b',
+  'photo-1618773928121-c32242e63f39',
+  'photo-1631049307264-da0ec9d70304',
 ] as const
 
 const hotelPhotoById: Record<string, string> = {
@@ -31,6 +31,28 @@ const hotelPhotoById: Record<string, string> = {
   '9d3c308b-2055-447f-83b9-bb0587457495': hotelPhotos[5],
   'a642b565-c86b-459f-9b61-43e855224332': hotelPhotos[6],
   'e22c16d3-54d3-4da9-a791-0ac344140b78': hotelPhotos[7],
+  '71000000-0000-4000-8000-000000000001': hotelPhotos[0],
+  '71000000-0000-4000-8000-000000000002': hotelPhotos[3],
+  '71000000-0000-4000-8000-000000000003': hotelPhotos[2],
+  '71000000-0000-4000-8000-000000000004': hotelPhotos[5],
+}
+
+const demoHotelIds = [
+  '71000000-0000-4000-8000-000000000001',
+  '71000000-0000-4000-8000-000000000002',
+  '71000000-0000-4000-8000-000000000003',
+  '71000000-0000-4000-8000-000000000004',
+]
+
+const demoRoomPhotoByType: Record<string, string> = {
+  '71000000-0000-4000-8000-000000000001:deluxe king': roomPhotos[0],
+  '71000000-0000-4000-8000-000000000001:family sea view': roomPhotos[1],
+  '71000000-0000-4000-8000-000000000002:heritage double': roomPhotos[2],
+  '71000000-0000-4000-8000-000000000002:river suite': roomPhotos[3],
+  '71000000-0000-4000-8000-000000000003:river deluxe': roomPhotos[4],
+  '71000000-0000-4000-8000-000000000003:family suite': roomPhotos[5],
+  '71000000-0000-4000-8000-000000000004:pine double': roomPhotos[1],
+  '71000000-0000-4000-8000-000000000004:valley family cabin': roomPhotos[3],
 }
 
 function imageUrl(photoId: string, width: number) {
@@ -43,9 +65,12 @@ export function seededHotelPhoto(hotel: Hotel, width = 1400) {
 }
 
 export function seededRoomPhoto(hotelId: string, roomType: string) {
-  const hotelIndex = Object.keys(hotelPhotoById).indexOf(hotelId)
-  if (hotelIndex < 0) return undefined
   const normalizedType = roomType.toLocaleLowerCase('vi')
+  const demoPhoto = demoRoomPhotoByType[`${hotelId}:${normalizedType}`]
+  if (demoPhoto) return imageUrl(demoPhoto, 900)
+  const demoHotelIndex = demoHotelIds.indexOf(hotelId)
+  const hotelIndex = demoHotelIndex >= 0 ? demoHotelIndex : Object.keys(hotelPhotoById).indexOf(hotelId)
+  if (hotelIndex < 0) return undefined
   const typeIndex = normalizedType.includes('suite') || normalizedType.includes('vip')
     ? 2
     : normalizedType.includes('deluxe') || normalizedType.includes('gia đình') || normalizedType.includes('family')

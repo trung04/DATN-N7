@@ -43,7 +43,12 @@ export class TypeOrmRoomRepository implements RoomRepository {
     const room = await this.roomRepository.findOneBy({ id });
     if (!room) return null;
     const amenityIds = await this.findAmenityIds([id]);
-    return { room, amenityIds: amenityIds.get(id) ?? [] };
+    const imageIds = await this.findPrimaryImageIds([id]);
+    return {
+      room,
+      amenityIds: amenityIds.get(id) ?? [],
+      roomImageId: imageIds.get(id) ?? null,
+    };
   }
 
   findByIds(ids: string[]): Promise<RoomEntity[]> {
@@ -62,7 +67,12 @@ export class TypeOrmRoomRepository implements RoomRepository {
   }
 
   async findPage(options: FindRoomsOptions): Promise<RoomPage> {
+    if (options.hotelIds?.length === 0) return { items: [], total: 0 };
     const query = this.roomRepository.createQueryBuilder('room');
+
+    if (options.hotelIds) {
+      query.andWhere('room.hotelId IN (:...hotelIds)', { hotelIds: options.hotelIds });
+    }
 
     if (options.search) {
       const escapedSearch = options.search.replace(/[\\%_]/g, '\\$&');
@@ -103,10 +113,14 @@ export class TypeOrmRoomRepository implements RoomRepository {
     const amenityIdsByRoom = await this.findAmenityIds(
       rooms.map((room) => room.id),
     );
+    const imageIdsByRoom = await this.findPrimaryImageIds(
+      rooms.map((room) => room.id),
+    );
     return {
       items: rooms.map((room) => ({
         room,
         amenityIds: amenityIdsByRoom.get(room.id) ?? [],
+        roomImageId: imageIdsByRoom.get(room.id) ?? null,
       })),
       total,
     };
@@ -176,6 +190,21 @@ export class TypeOrmRoomRepository implements RoomRepository {
       result.set(link.roomId, ids);
     }
     return result;
+  }
+
+  private async findPrimaryImageIds(
+    roomIds: string[],
+  ): Promise<Map<string, string>> {
+    if (roomIds.length === 0) return new Map();
+    const rows = (await this.dataSource.query(
+      `SELECT DISTINCT ON (room_id)
+         room_id AS "roomId", id AS "roomImageId"
+       FROM room_images
+       WHERE room_id = ANY($1::uuid[]) AND deleted_at IS NULL
+       ORDER BY room_id, image_order ASC, id ASC`,
+      [roomIds],
+    )) as Array<{ roomId: string; roomImageId: string }>;
+    return new Map(rows.map((row) => [row.roomId, row.roomImageId]));
   }
 
   private async replaceAmenities(

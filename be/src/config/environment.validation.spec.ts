@@ -8,6 +8,13 @@ const database = {
 };
 
 describe('environment validation', () => {
+  it('validates hotel geocoding provider configuration without exposing values', () => {
+    expect(validateEnvironment(database).HOTEL_GEOCODER_ORIGIN).toBe('https://nominatim.openstreetmap.org');
+    for (const origin of ['http://example.org', 'https://user:secret@example.org', 'https://example.org/path', 'https://example.org?q=secret']) {
+      expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_ORIGIN: origin })).toThrow('HOTEL_GEOCODER_ORIGIN');
+    }
+    expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_USER_AGENT: 'bad\r\nheader' })).toThrow('HOTEL_GEOCODER_USER_AGENT');
+  });
   it('validates storage origins, bucket names and credential pairs', () => {
     const configured = {
       ...database,

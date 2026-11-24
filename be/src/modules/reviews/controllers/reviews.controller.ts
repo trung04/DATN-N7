@@ -7,7 +7,7 @@ import {
   Patch,
   Query,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Public } from '../../authorization/decorators/public.decorator';
 import { Roles } from '../../authorization/decorators/roles.decorator';
@@ -18,6 +18,7 @@ import { ModerateReviewRequest } from '../dtos/requests/moderate-review.request'
 import { ReviewListResponse, ReviewModerationHistoryResponse, ReviewResponse, ReviewSummaryResponse } from '../dtos/responses/review.response';
 import { ReviewMapper } from '../mappers/review.mapper';
 import { ReviewsService } from '../services/reviews.service';
+import { ReviewSummariesRequest } from '../dtos/requests/review-summaries.request';
 
 @ApiTags('Reviews')
 @Roles(UserRole.ADMIN, UserRole.HOTEL_OWNER)
@@ -47,6 +48,15 @@ export class ReviewsController {
     @Query('hotelId', new ParseUUIDPipe({ version: '4' })) hotelId: string,
   ): Promise<ReviewSummaryResponse> {
     return ReviewMapper.toSummaryResponse(await this.reviewsService.summary(hotelId, user));
+  }
+
+  @Get('summaries')
+  @Public()
+  @ApiOperation({ summary: 'Get published review ratings for up to 100 hotels' })
+  @ApiQuery({ name: 'hotelIds', type: String, description: 'Comma-separated unique hotel UUIDs (maximum 100)' })
+  @ApiOkResponse({ type: ReviewSummaryResponse, isArray: true })
+  async summaries(@Query() query: ReviewSummariesRequest): Promise<ReviewSummaryResponse[]> {
+    return this.reviewsService.publicSummaries(query.hotelIds);
   }
 
   @Get()

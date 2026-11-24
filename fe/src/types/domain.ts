@@ -45,13 +45,16 @@ export interface User { id: string; name: string; email: string; role: Role; pho
 export interface UserProfileInput { name: string; phone?: string | null; dateOfBirth?: string | null; gender?: AdminUserGender | null }
 export type PartnerHotelStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED' | 'INACTIVE' | 'SUSPENDED'
 export type HotelDocumentType = 'BUSINESS_LICENSE' | 'HOTEL_LICENSE' | 'OWNERSHIP_DOCUMENT' | 'TAX_DOCUMENT' | 'OTHER'
-export interface PartnerHotelDocument { id: string; documentType: HotelDocumentType; documentNumber: string; fileUrl: string; issuedAt: string | null; expiresAt: string | null; createdAt: string; updatedAt: string }
-export interface HotelImage { id: string; hotelId: string; url: string; previewUrl: string; contentType: string; byteSize: number; width: number; height: number; createdAt: string }
-export interface PartnerHotel { id: string; ownerUserId: string; placeId: string | null; name: string; legalName: string; taxCode: string; description: string | null; address: string; phoneNumber: string; email: string; starRating: number | null; checkInTime: string; checkOutTime: string; status: PartnerHotelStatus; submittedAt: string | null; reviewedAt: string | null; reviewedBy: string | null; rejectionReason: string | null; documents: PartnerHotelDocument[]; images: HotelImage[]; createdAt: string; updatedAt: string }
+export interface HotelDocumentFile { id: string; url: string; contentType: string; byteSize: number; width: number; height: number }
+export interface PartnerHotelDocument { id: string; documentType: HotelDocumentType; documentNumber: string; fileUrl: string; files?: HotelDocumentFile[]; issuedAt: string | null; expiresAt: string | null; createdAt: string; updatedAt: string }
+export interface HotelImage { illustrative?: boolean; id: string; hotelId: string; url: string; previewUrl: string; contentType: string | null; byteSize: number | null; width: number | null; height: number | null; createdAt: string }
+export interface RoomImage extends Omit<HotelImage, "hotelId"> { roomId: string; imageOrder: number; sourceUrl: string | null; attributionText: string | null; illustrative: boolean }
+export interface PartnerHotel { latitude?: number | null; longitude?: number | null; id: string; ownerUserId: string; placeId: string | null; name: string; legalName: string; taxCode: string; description: string | null; address: string; phoneNumber: string; email: string; starRating: number | null; checkInTime: string; checkOutTime: string; status: PartnerHotelStatus; submittedAt: string | null; reviewedAt: string | null; reviewedBy: string | null; rejectionReason: string | null; documents: PartnerHotelDocument[]; images: HotelImage[]; createdAt: string; updatedAt: string }
 export interface PartnerHotelPage { data: PartnerHotel[]; meta: { page: number; limit: number; total: number } }
 export interface PartnerHotelQuery { page: number; limit: number; search?: string; status?: PartnerHotelStatus; sortBy: 'createdAt' | 'name' | 'status'; sortOrder: 'ASC' | 'DESC' }
-export interface PartnerHotelInput { placeId?: string | null; name: string; legalName: string; taxCode: string; description?: string | null; address: string; phoneNumber: string; email: string; starRating?: number | null; checkInTime: string; checkOutTime: string }
+export interface PartnerHotelInput { latitude?: number | null; longitude?: number | null; placeId?: string | null; name: string; legalName: string; taxCode: string; description?: string | null; address: string; phoneNumber: string; email: string; starRating?: number | null; checkInTime: string; checkOutTime: string }
 export interface PartnerHotelDocumentInput { documentType: HotelDocumentType; documentNumber: string; fileUrl: string; issuedAt?: string | null; expiresAt?: string | null }
+export type HotelDocumentUploadInput = Omit<PartnerHotelDocumentInput, 'fileUrl'>
 export type AdminHotelReviewAction = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'REACTIVATED' | 'DEACTIVATED'
 export type AdminHotelReviewCommand = 'APPROVE' | 'REJECT' | 'SUSPEND' | 'REACTIVATE'
 export interface AdminHotelReviewHistory { id: string; hotelId: string; actorUserId: string; action: AdminHotelReviewAction; reason: string | null; createdAt: string }
@@ -109,7 +112,7 @@ export type PlaceAdminRequest = Omit<PlaceAdminInput, 'address' | 'description' 
   address: string | null; description: string | null; openingTime: string | null
 }
 export interface CancellationTerms { basis?: 'HOURS_AFTER_BOOKING' | 'HOURS_BEFORE_CHECK_IN'; freeForHoursAfterBooking?: number; freeUntilHours?: number; lateFeeRate: number; checkInHour?: number }
-export interface Hotel { id: string; name: string; city: string; area: string; address: string; description: string; stars: number; rating?: number; amenities: string[]; image?: string; partnerId: string; cancellationPolicy: string; cancellationTerms: CancellationTerms; placeId?: string; lat?: number; lng?: number }
+export interface Hotel { imageIllustrative?: boolean; id: string; name: string; city: string; area: string; address: string; description: string; stars: number; rating?: number; amenities: string[]; image?: string; partnerId: string; cancellationPolicy: string; cancellationTerms: CancellationTerms; placeId?: string; lat?: number; lng?: number }
 export interface RoomType { id: string; hotelId: string; name: string; description: string; capacity: number; area: number; bed: string; basePrice: number; amenities: string[]; image?: string; roomNumber?: string; operationalStatus?: RoomOperationalStatus }
 export interface RoomInventory { roomId: string; date: string; offered: number; price: number; revision: number }
 export interface Restaurant { id: string; name: string; city: string; area: string; cuisine: string; description: string; price: number; openingHours: string; rating?: number; image?: string }
