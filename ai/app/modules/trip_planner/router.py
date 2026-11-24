@@ -6,6 +6,8 @@ from .schemas import TripRequest, TripResponse, DayEdit, ExtractRequest, ChatReq
 from .itinerary_optimizer import PlanningEngine
 from app.database.repositories.trip_repository import TripRepository
 from .requirement_extractor import RequirementExtractor
+from .schemas import TripRequest as BaseTripRequest
+from pydantic import Field
 
 
 router=APIRouter(prefix="/api/v1",tags=["AI Trip Planner"],dependencies=[Depends(authorize)])
@@ -14,6 +16,35 @@ router=APIRouter(prefix="/api/v1",tags=["AI Trip Planner"],dependencies=[Depends
 def components(request: Request):
     rec=request.app.state.recommendation
     return rec,TripRepository(rec.store),PlanningEngine(rec)
+
+
+class PreviewRequest(BaseTripRequest):
+    routing_provider: str = Field(default='ors',pattern='^ors$')
+    allow_estimated_routes: bool = False
+
+
+@router.post('/trips/preview')
+def preview_trip(body:PreviewRequest,services=Depends(components)):
+    from app.workflows.draft_planning_workflow import DraftPlanningWorkflow
+    return DraftPlanningWorkflow(services[0]).create(body)
+
+
+@router.get('/trips/previews/{draft_id}')
+def preview_details(draft_id:Identifier,user_id:Identifier,services=Depends(components)):
+    from app.database.repositories.trip_draft_repository import TripDraftRepository
+    return TripDraftRepository(services[0].store).get(draft_id,user_id)
+
+
+@router.delete('/trips/previews/{draft_id}',status_code=204)
+def delete_preview(draft_id:Identifier,user_id:Identifier,services=Depends(components)):
+    from app.database.repositories.trip_draft_repository import TripDraftRepository
+    TripDraftRepository(services[0].store).delete(draft_id,user_id)
+
+
+@router.patch('/trips/previews/{draft_id}/days/{day_number}')
+def edit_preview(draft_id:Identifier,day_number:int,body:DayEdit,services=Depends(components)):
+    from app.workflows.draft_planning_workflow import DraftPlanningWorkflow
+    return DraftPlanningWorkflow(services[0]).edit(draft_id,body.user_id,day_number,body)
 
 
 @router.post("/trips/extract")

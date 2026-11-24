@@ -1,5 +1,7 @@
 # AI service in DATN-N7
 
+**Bàn giao Chatbot + AI Trip Planner:** [cách chạy riêng AI, ENV/API key, API request/response và nối backend/frontend](app/modules/trip_planner/README.md). Tích hợp mới dùng `POST /api/v1/chat` với `preview_only=true`, `use_llm=true`. Cấu hình chạy riêng: `ai/.env.example` và `ai/compose.ai.yml`; không chứa key thật hoặc giao diện demo mới.
+
 So sánh Recommendation **TF-IDF, Semantic BGE, Content + Rating và cá nhân hóa + MMR**: [bộ test chung, chỉ số và cách chạy lại](evaluation/RECOMMENDATION.md). Các baseline gọi qua cùng API bằng `mode: "tfidf"` / `mode: "semantic"`; không thay mặc định `auto`.
 
 Tài liệu bàn giao **Recommendation tự động theo lịch sử**: [API, sự kiện hành vi và JSON trả về](app/modules/recommendation/README.md). Bỏ `mode` hoặc gửi `auto`: chưa có lịch sử dùng Content-Based + Bayesian Rating; có lịch sử dùng hồ sơ hành vi + Rating + MMR. [OpenAPI Recommendation](contracts/recommendation.openapi.json).
@@ -13,7 +15,7 @@ Mã AI nằm trong `ai/`, cùng một Git với `be/` và `fe/`. Chạy Docker t
 - Backend gọi nội bộ: `http://ai:9000`, header `X-API-Key` dùng `AI_API_KEY` của backend (cùng `AI_SERVICE_API_KEY` trong root .env).
 - API AI dùng service key nội bộ. Backend chịu trách nhiệm xác thực người dùng và phân quyền trước khi gọi AI.
 
-- Recommendation hiện dùng [Content-based + Bayesian rating](#recommendation), không đọc tương tác hay dùng ItemKNN.
+- Recommendation mặc định chọn Content-based + Bayesian rating khi chưa có lịch sử; có lịch sử dùng hồ sơ hành vi + Rating + MMR. Không dùng ItemKNN. Chi tiết theo tài liệu bàn giao Recommendation ở trên.
 
 ## Mục lục
 

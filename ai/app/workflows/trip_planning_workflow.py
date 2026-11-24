@@ -9,6 +9,7 @@ from app.memory.conversation_store import ConversationStore
 from app.memory.trip_context import merge_context
 from .replanning_workflow import ReplanningWorkflow
 
+
 class TripPlanningWorkflow:
     def __init__(self,rec):
         self.rec=rec
@@ -21,13 +22,14 @@ class TripPlanningWorkflow:
         result=ToolRegistry(self.rec,request.user_id).execute("optimize_trip",{"request":request.model_dump(mode="json")})
         return self.repo.save(request,result)
 
-    def chat(self,body):
+    def chat(self,body,understanding=None):
         rec,repo,engine=self.rec,self.repo,self.engine
         conversation=self.conversations.get(body.conversation_id,body.user_id)
         trip_id=body.trip_id or conversation.get("trip_id")
         stored=repo.get(trip_id,body.user_id) if trip_id else None
         context=merge_context(conversation,body.context,stored)
-        extracted=RequirementExtractor(rec.store).extract(body.message,context,body.use_llm)
+        extracted=RequirementExtractor(rec.store).extract(body.message,context,body.use_llm,
+            fields_override=understanding.fields.model_dump(mode='json',exclude_none=True) if understanding else None)
         response={"conversation_id":conversation["conversation_id"],"extraction":extracted,"trip":None}
         if trip_id:
             conversation["trip_id"]=trip_id
@@ -37,7 +39,7 @@ class TripPlanningWorkflow:
             if body.expected_version is not None and body.expected_version!=stored["version"]:
                 raise Conflict("expected_version cũ; tải lại lịch trình")
             if not day or not fields.get("remove_text") or day>len(current["days"]):
-                response.update(status="needs_clarification",message="Hãy nêu ngày và tên địa điểm cần bỏ/thay; hoặc dùng PATCH /trips/{id}/days/{day} để sửa chính xác")
+                response.update(status="needs_clarification",message="Bạn muốn bỏ hoặc thay địa điểm nào, vào ngày mấy của chuyến đi?")
             else:
                 remove=folded(fields["remove_text"])
                 matches=[]
@@ -46,7 +48,7 @@ class TripPlanningWorkflow:
                     if remove in folded(p["name"]+" "+" ".join(p["categories"])):
                         matches.append(p["place_id"])
                 if len(matches)!=1:
-                    response.update(status="needs_clarification",message="Chưa xác định duy nhất địa điểm cần bỏ; hãy nêu tên đầy đủ hoặc dùng place_id qua API chỉnh ngày")
+                    response.update(status="needs_clarification",message="Mình chưa rõ bạn muốn bỏ điểm nào. Bạn cho mình tên đầy đủ nhé?")
                 else:
                     edit=DayEdit(user_id=body.user_id,expected_version=stored["version"],remove_place_ids=matches,
                         replacement_query=fields.get("replacement_query"))

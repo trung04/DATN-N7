@@ -3,7 +3,7 @@ from pydantic import Field
 from app.core.exceptions import Conflict
 from app.modules.recommendation.schemas import Contract,Identifier,RecommendationRequest
 from app.modules.semantic_search.schemas import PlaceSearchRequest
-from app.modules.trip_planner.schemas import TripRequest,RouteMatrixRequest
+from app.modules.trip_planner.schemas import TripRequest,RouteMatrixRequest,DayEdit
 from .semantic_search_tool import semantic_search
 from .recommendation_tool import recommend
 from .place_details_tool import place_details
@@ -21,12 +21,17 @@ class RoutingArguments(Contract):
     request: RouteMatrixRequest
 class OptimizationArguments(Contract):
     request: TripRequest
+class UpdateTripArguments(Contract):
+    draft_id: Identifier
+    day: int = Field(ge=1,le=14)
+    edit: DayEdit
 class ToolCall(Contract):
     name: str = Field(min_length=1,max_length=80)
     args: dict
 
 CONTRACTS={"semantic_search":SearchArguments,"recommend":RecommendationArguments,
-    "place_details":DetailsArguments,"route_matrix":RoutingArguments,"optimize_trip":OptimizationArguments}
+    "place_details":DetailsArguments,"route_matrix":RoutingArguments,"optimize_trip":OptimizationArguments,
+    "update_trip":UpdateTripArguments}
 
 
 class ToolRegistry:
@@ -37,6 +42,11 @@ class ToolRegistry:
         if name not in CONTRACTS:
             raise ValueError("Tool không được phép: "+name)
         parsed=CONTRACTS[name].model_validate(args)
+        if name=='update_trip':
+            if not self.user_id or parsed.edit.user_id!=self.user_id:
+                raise Conflict('Tool cannot change caller identity')
+            from app.workflows.draft_planning_workflow import DraftPlanningWorkflow
+            return DraftPlanningWorkflow(self.rec).edit(parsed.draft_id,self.user_id,parsed.day,parsed.edit)
         request=getattr(parsed,"request",None)
         if name in ("recommend","optimize_trip"):
             if not self.user_id or request.user_id!=self.user_id:

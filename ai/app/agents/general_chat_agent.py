@@ -8,7 +8,7 @@ from app.llm.client import GeminiClient
 from app.llm.prompts import GENERAL_SYSTEM
 
 class Answer(Contract):
-    answer: str = Field(min_length=1,max_length=10000)
+    answer: str = Field(min_length=1,max_length=700)
 
 def calculate(expression):
     if len(expression)>100:raise ValueError("Expression too long")
@@ -41,4 +41,4 @@ class GeneralChatAgent:
             return {"status":"answered","answer":"Chào bạn! Mình có thể giúp tìm địa điểm và lập lịch trình du lịch."}
         if use_llm:
             return {"status":"answered","answer":GeminiClient().generate(GENERAL_SYSTEM,message,Answer).answer}
-        return {"status":"needs_llm","answer":"Câu hỏi kiến thức tổng quát cần bật use_llm và cấu hình Gemini. Tìm địa điểm và lập lịch vẫn hoạt động không cần LLM."}
+        return {"status":"needs_llm","answer":"Mình chưa đủ thông tin để trả lời chắc chắn câu này."}
