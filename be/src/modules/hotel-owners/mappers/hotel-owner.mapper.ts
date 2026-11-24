@@ -2,7 +2,7 @@ import {
   HotelOwnerListResponse,
   HotelOwnerResponse,
 } from '../dtos/responses/hotel-owner.response';
-import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 
 export class HotelOwnerMapper {
   static toResponse(hotelOwner: HotelOwnerEntity): HotelOwnerResponse {

@@ -31,6 +31,13 @@ export class UpdateItineraryRequest {
   @IsOptional()
   @Transform(trim)
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  destinationCity?: string;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
   @MaxLength(5000)
   description?: string | null;
 

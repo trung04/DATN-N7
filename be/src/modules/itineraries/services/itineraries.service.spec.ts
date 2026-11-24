@@ -27,6 +27,7 @@ describe('ItinerariesService', () => {
     await service.create({
       touristUserId: '11111111-1111-4111-8111-111111111111',
       name: ' Central Vietnam ',
+      destinationCity: ' Central Vietnam ',
       startDate: '2026-12-01',
       endDate: '2026-12-05',
       timezone: 'Asia/Ho_Chi_Minh',
@@ -52,6 +53,7 @@ describe('ItinerariesService', () => {
       service.create({
         touristUserId: '11111111-1111-4111-8111-111111111111',
         name: 'Trip',
+        destinationCity: 'Hanoi',
         startDate: '2026-12-05',
         endDate: '2026-12-01',
         timezone: 'Asia/Ho_Chi_Minh',

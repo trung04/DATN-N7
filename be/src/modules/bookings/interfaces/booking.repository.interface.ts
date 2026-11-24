@@ -6,6 +6,7 @@ import {
   RefundStatus,
   SettlementStatus,
 } from '../entities/booking.entity';
+import type { BookingCancellationPolicySnapshot } from '../entities/booking.entity';
 import { BookingRoomEntity } from '../entities/booking-room.entity';
 
 export const BOOKING_REPOSITORY = Symbol('BOOKING_REPOSITORY');
@@ -68,27 +69,46 @@ export interface CreateBookingData {
   paymentStatus: PaymentStatus;
   settlementStatus: SettlementStatus;
   cancellationPolicyId: string | null;
+  cancellationPolicySnapshot: BookingCancellationPolicySnapshot;
   cancellationWindowSnapshot: number | null;
   cancellationFeeRateSnapshot: number | null;
   cancellationDescriptionSnapshot: string | null;
   refundStatus: RefundStatus;
+  refundRequestedAt: Date | null;
+  refundProcessingAt: Date | null;
+  refundAttempt: number;
+  refundFailureReason: string | null;
+  refundFailedAt: Date | null;
+  refundHandledBy: string | null;
 }
 
-export type CreateBookingRoomData = Pick<
-  BookingRoomEntity,
-  | 'roomId'
-  | 'roomNumberSnapshot'
-  | 'roomTypeSnapshot'
-  | 'maxOccupancySnapshot'
-  | 'pricePerNight'
-  | 'currency'
-  | 'numberOfNights'
-  | 'subtotal'
->;
+export interface CreateBookingRoomData {
+  roomId: string;
+  roomNumberSnapshot: string;
+  roomTypeSnapshot: string;
+  maxOccupancySnapshot: number;
+  adultCount: number;
+  maxAdultsSnapshot: number;
+  maxChildrenSnapshot: number;
+  adultAgeFromSnapshot: number;
+  freeChildMaxAgeSnapshot: number;
+  childSurchargePerNightSnapshot: number;
+  pricePerNight: number;
+  currency: string;
+  numberOfNights: number;
+  subtotal: number;
+  childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
+}
 
 export interface BookingRepository {
+  findUnavailableRoomIds(
+    hotelId: string | undefined,
+    checkInDate: string,
+    checkOutDate: string,
+  ): Promise<string[]>;
   findById(id: string): Promise<BookingEntity | null>;
   findByCode(bookingCode: string): Promise<BookingEntity | null>;
+  findBySePayOrderCode(orderCode: string): Promise<BookingEntity | null>;
   findByIdempotencyKey(
     key: string,
     requestHash: string,

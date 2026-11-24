@@ -1,6 +1,7 @@
 import { HotelDocumentEntity } from '../entities/hotel-document.entity';
 import { HotelReviewHistoryEntity } from '../entities/hotel-review-history.entity';
 import { HotelEntity } from '../entities/hotel.entity';
+import { toHotelImageResponse } from './hotel-image.mapper';
 import {
   HotelDocumentResponse,
   HotelListResponse,
@@ -19,6 +20,8 @@ export class HotelMapper {
       taxCode: hotel.taxCode,
       description: hotel.description,
       address: hotel.address,
+      latitude: hotel.latitude ?? null,
+      longitude: hotel.longitude ?? null,
       phoneNumber: hotel.phoneNumber,
       email: hotel.email,
       starRating: hotel.starRating,
@@ -32,6 +35,7 @@ export class HotelMapper {
       documents: (hotel.documents ?? []).map((document) =>
         this.toDocumentResponse(document),
       ),
+      images: (hotel.images ?? []).map(toHotelImageResponse),
       createdAt: hotel.createdAt.toISOString(),
       updatedAt: hotel.updatedAt.toISOString(),
     };
@@ -57,6 +61,11 @@ export class HotelMapper {
       documentType: document.documentType,
       documentNumber: document.documentNumber,
       fileUrl: document.fileUrl,
+      files: (document.files ?? []).map(file => ({
+        id: file.id,
+        url: `/api/v1/hotels/${document.hotelId}/documents/${document.id}/files/${file.id}`,
+        contentType: file.contentType, byteSize: file.byteSize, width: file.width, height: file.height,
+      })),
       issuedAt: document.issuedAt,
       expiresAt: document.expiresAt,
       createdAt: document.createdAt.toISOString(),

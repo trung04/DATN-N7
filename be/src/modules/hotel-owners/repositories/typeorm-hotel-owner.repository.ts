@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
-import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 import {
   HotelOwnerConflictException,
   HotelOwnerUserReferenceException,

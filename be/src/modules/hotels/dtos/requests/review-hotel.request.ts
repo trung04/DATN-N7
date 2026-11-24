@@ -3,7 +3,6 @@ import {
   IsEnum,
   IsNotEmpty,
   IsString,
-  IsUUID,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
@@ -19,9 +18,6 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class ReviewHotelRequest {
-  @IsUUID('4')
-  reviewerUserId: string;
-
   @IsEnum(HotelReviewCommand)
   action: HotelReviewCommand;
 

@@ -1,6 +1,8 @@
 import { HotelOwnersService } from '../../hotel-owners/services/hotel-owners.service';
 import { PlacesService } from '../../places/services/places.service';
 import { UsersService } from '../../users/services/users.service';
+import { UserRole } from '../../users/entities/user.entity';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { HotelReviewCommand } from '../dtos/requests/review-hotel.request';
 import {
   HotelDocumentEntity,
@@ -21,6 +23,7 @@ import { HotelsService } from './hotels.service';
 const hotelId = '11111111-1111-4111-8111-111111111111';
 const ownerUserId = '22222222-2222-4222-8222-222222222222';
 const reviewerUserId = '33333333-3333-4333-8333-333333333333';
+const ownerActor = { id: ownerUserId, role: UserRole.HOTEL_OWNER };
 
 const document = (
   overrides: Partial<HotelDocumentEntity> = {},
@@ -73,6 +76,7 @@ describe('HotelsService', () => {
 
   beforeEach(() => {
     repository = {
+      findIdsByOwner: jest.fn(),
       findById: jest.fn(),
       findByTaxCode: jest.fn(),
       findPage: jest.fn(),
@@ -100,8 +104,7 @@ describe('HotelsService', () => {
     repository.create.mockResolvedValue(saved);
 
     await expect(
-      service.create({
-        ownerUserId,
+      service.create(ownerUserId, {
         name: ' Sun Hotel ',
         legalName: ' Sun Hotel Company ',
         taxCode: ' tax001 ',
@@ -126,12 +129,54 @@ describe('HotelsService', () => {
     ]);
   });
 
+  it('stores a confirmed hotel position and supports zero coordinates', async () => {
+    repository.create.mockResolvedValue(hotel());
+    await service.create(ownerUserId, {
+      name: 'Hotel', legalName: 'Hotel', taxCode: 'TAX', address: 'Address',
+      phoneNumber: '0912345678', email: 'hotel@example.com', checkInTime: '14:00', checkOutTime: '12:00',
+      latitude: 0, longitude: 0,
+    });
+    expect(repository.create.mock.calls[0]).toEqual([expect.objectContaining({ latitude: 0, longitude: 0 })]);
+  });
+
+  it('updates and clears hotel coordinates without changing its linked place', async () => {
+    const existing = hotel({ status: HotelStatus.ACTIVE, placeId: hotelId });
+    repository.findById.mockResolvedValue(existing);
+    repository.save.mockImplementation(async (value) => value);
+    await service.update(hotelId, { latitude: 16.06, longitude: 108.24 }, ownerActor);
+    expect(existing).toMatchObject({ latitude: 16.06, longitude: 108.24, placeId: hotelId });
+    await service.update(hotelId, { latitude: null, longitude: null }, ownerActor);
+    expect(existing).toMatchObject({ latitude: null, longitude: null, placeId: hotelId });
+  });
+
+  it.each([
+    { latitude: 16 }, { longitude: 108 }, { latitude: null, longitude: 108 },
+    { latitude: 91, longitude: 108 }, { latitude: 16, longitude: -181 },
+    { latitude: Number.NaN, longitude: 108 }, { latitude: 16, longitude: Infinity },
+  ])('rejects invalid or incomplete coordinate updates: %j', async (input) => {
+    repository.findById.mockResolvedValue(hotel());
+    await expect(service.update(hotelId, input, ownerActor)).rejects.toMatchObject({ status: 400 });
+    expect(repository.save.mock.calls).toHaveLength(0);
+  });
+
+  it('does not let another owner change hotel coordinates', async () => {
+    repository.findById.mockResolvedValue(hotel());
+    await expect(service.update(hotelId, { latitude: 16, longitude: 108 }, { id: reviewerUserId, role: UserRole.HOTEL_OWNER })).rejects.toBeInstanceOf(AuthorizationDeniedException);
+    expect(repository.save.mock.calls).toHaveLength(0);
+  });
+
+  it('keeps coordinates locked while the hotel is pending approval', async () => {
+    repository.findById.mockResolvedValue(hotel({ status: HotelStatus.PENDING_APPROVAL }));
+    await expect(service.update(hotelId, { latitude: 16, longitude: 108 }, ownerActor)).rejects.toMatchObject({ code: 'HOTEL_UPDATE_LOCKED' });
+    expect(repository.save.mock.calls).toHaveLength(0);
+  });
+
   it('submits a hotel with a valid business license without rooms or policies', async () => {
     const existing = hotel({ documents: [document()] });
     repository.findById.mockResolvedValue(existing);
     repository.saveWithReview.mockImplementation(async (value) => value);
 
-    const submitted = await service.submit(hotelId);
+    const submitted = await service.submit(hotelId, ownerActor);
 
     expect(submitted.status).toBe(HotelStatus.PENDING_APPROVAL);
     expect(repository.saveWithReview.mock.calls[0]).toEqual([
@@ -146,7 +191,7 @@ describe('HotelsService', () => {
   it('does not submit a hotel without a business license', async () => {
     repository.findById.mockResolvedValue(hotel());
 
-    await expect(service.submit(hotelId)).rejects.toBeInstanceOf(
+    await expect(service.submit(hotelId, ownerActor)).rejects.toBeInstanceOf(
       HotelSubmissionInvalidException,
     );
   });
@@ -159,8 +204,7 @@ describe('HotelsService', () => {
     repository.findById.mockResolvedValue(pending);
     repository.saveWithReview.mockImplementation(async (value) => value);
 
-    const approved = await service.review(hotelId, {
-      reviewerUserId,
+    const approved = await service.review(hotelId, reviewerUserId, {
       action: HotelReviewCommand.APPROVE,
     });
 
@@ -178,8 +222,7 @@ describe('HotelsService', () => {
     );
 
     await expect(
-      service.review(hotelId, {
-        reviewerUserId,
+      service.review(hotelId, reviewerUserId, {
         action: HotelReviewCommand.APPROVE,
       }),
     ).rejects.toBeInstanceOf(InvalidHotelStatusTransitionException);
@@ -191,14 +234,18 @@ describe('HotelsService', () => {
     );
 
     await expect(
-      service.update(hotelId, { legalName: 'New Legal Name' }),
+      service.update(hotelId, { legalName: 'New Legal Name' }, ownerActor),
     ).rejects.toBeInstanceOf(HotelLegalInformationLockedException);
     await expect(
-      service.addDocument(hotelId, {
-        documentType: HotelDocumentType.OTHER,
-        documentNumber: 'OTHER-1',
-        fileUrl: 'https://files.example.com/other.pdf',
-      }),
+      service.addDocument(
+        hotelId,
+        {
+          documentType: HotelDocumentType.OTHER,
+          documentNumber: 'OTHER-1',
+          fileUrl: 'https://files.example.com/other.pdf',
+        },
+        ownerActor,
+      ),
     ).rejects.toBeInstanceOf(HotelDocumentLockedException);
   });
 
@@ -210,5 +257,21 @@ describe('HotelsService', () => {
     await expect(service.assertActive(hotelId)).rejects.toBeInstanceOf(
       HotelNotActiveException,
     );
+  });
+
+  it('does not let another hotel owner update the hotel', async () => {
+    repository.findById.mockResolvedValue(hotel());
+
+    await expect(
+      service.update(
+        hotelId,
+        { name: 'Unauthorized change' },
+        {
+          id: '99999999-9999-4999-8999-999999999999',
+          role: UserRole.HOTEL_OWNER,
+        },
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationDeniedException);
+    expect(repository.save.mock.calls).toHaveLength(0);
   });
 });

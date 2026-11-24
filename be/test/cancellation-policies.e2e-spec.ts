@@ -15,8 +15,12 @@ const entity = Object.assign(new CancellationPolicyEntity(), {
   id: policyId,
   hotelId,
   name: 'Flexible',
-  cancellationWindow: 2,
-  cancellationFeeRate: 10,
+  cancelHours: 24,
+  penaltyPercent: 10,
+  cancellationAllowed: true,
+  isActive: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
   description: 'Cancel up to two days before check-in.',
 });
 
@@ -55,8 +59,8 @@ describe('Cancellation Policies API (e2e)', () => {
       .send({
         hotelId,
         name: ' Flexible ',
-        cancellationWindow: 2,
-        cancellationFeeRate: 10,
+        cancelHours: 24,
+        penaltyPercent: 10,
       })
       .expect(201)
       .expect('Location', `/api/v1/cancellation-policies/${policyId}`)
@@ -65,8 +69,8 @@ describe('Cancellation Policies API (e2e)', () => {
           id: policyId,
           hotelId,
           name: 'Flexible',
-          cancellationWindow: 2,
-          cancellationFeeRate: 10,
+          cancelHours: 24,
+          penaltyPercent: 10,
         });
         expect(body).not.toHaveProperty('hotelOwnerUserId');
       });
@@ -87,10 +91,10 @@ describe('Cancellation Policies API (e2e)', () => {
       });
   });
 
-  it('rejects a fee rate above one hundred percent', async () => {
+  it('rejects a penalty above one hundred percent', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/cancellation-policies')
-      .send({ hotelId, name: 'Invalid fee', cancellationFeeRate: 100.01 })
+      .send({ hotelId, name: 'Invalid fee', cancelHours: 24, penaltyPercent: 100.01 })
       .expect(400)
       .expect(({ body }) => {
         expect(body.code).toBe('VALIDATION_FAILED');

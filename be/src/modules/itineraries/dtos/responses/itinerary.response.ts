@@ -4,6 +4,7 @@ export class ItineraryResponse {
   id: string;
   touristUserId: string;
   name: string;
+  destinationCity: string;
   description: string | null;
   startDate: string;
   endDate: string;

@@ -4,6 +4,7 @@ import { CreateUserRequest } from '../dtos/requests/create-user.request';
 import { ListUsersRequest } from '../dtos/requests/list-users.request';
 import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.request';
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
+import { UpdateMyProfileRequest } from '../dtos/requests/update-my-profile.request';
 import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
@@ -51,6 +52,7 @@ export class UsersService {
       status: input.status,
       role: UserRole.TOURIST,
       isEmailVerified: false,
+      isTwoFactorEnabled: false,
     });
   }
 
@@ -72,9 +74,9 @@ export class UsersService {
     username: string,
     password: string,
   ): Promise<UserEntity | null> {
-    const user = await this.repository.findByUsername(
-      this.normalizeUsername(username),
-    );
+    const normalized = this.normalizeUsername(username);
+    const user = await this.repository.findByUsername(normalized) ??
+      (normalized.includes('@') ? await this.repository.findByEmail(normalized) : null);
     if (
       !user?.passwordHash ||
       user.status !== UserStatus.ACTIVE ||
@@ -122,6 +124,7 @@ export class UsersService {
       status: UserStatus.ACTIVE,
       role: UserRole.TOURIST,
       isEmailVerified: true,
+      isTwoFactorEnabled: false,
     });
   }
 
@@ -129,6 +132,13 @@ export class UsersService {
     const user = await this.repository.findById(id);
     if (!user) throw new UserNotFoundException(id);
     return user;
+  }
+
+  async assignRole(id: string, role: UserRole): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (user.role === role) return user;
+    user.role = role;
+    return this.repository.save(user);
   }
 
   async update(id: string, input: UpdateUserRequest): Promise<UserEntity> {
@@ -168,7 +178,33 @@ export class UsersService {
       user.phoneNumber = this.normalizeNullable(input.phoneNumber);
     if (input.gender !== undefined) user.gender = input.gender;
     if (input.status !== undefined) user.status = input.status;
+    if (input.role !== undefined) user.role = input.role;
 
+    return this.repository.save(user);
+  }
+
+  async updateMyProfile(
+    id: string,
+    input: UpdateMyProfileRequest,
+  ): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (
+      input.displayName === undefined &&
+      input.phoneNumber === undefined &&
+      input.dateOfBirth === undefined &&
+      input.gender === undefined
+    ) {
+      throw new EmptyUserUpdateException();
+    }
+    if (input.displayName !== undefined)
+      user.displayName = this.normalizeNullable(input.displayName);
+    if (input.phoneNumber !== undefined)
+      user.phoneNumber = this.normalizeNullable(input.phoneNumber);
+    if (input.dateOfBirth !== undefined) {
+      this.assertDateOfBirth(input.dateOfBirth ?? undefined);
+      user.dateOfBirth = input.dateOfBirth;
+    }
+    if (input.gender !== undefined) user.gender = input.gender;
     return this.repository.save(user);
   }
 
@@ -179,6 +215,14 @@ export class UsersService {
     const user = await this.findById(id);
     user.passwordHash = await this.passwordHasher.hash(input.newPassword);
     await this.repository.save(user);
+  }
+
+  async verifyEmail(id: string): Promise<UserEntity> {
+    const user = await this.findById(id);
+    if (user.isEmailVerified && user.status === UserStatus.ACTIVE) return user;
+    user.isEmailVerified = true;
+    if (user.status === UserStatus.INACTIVE) user.status = UserStatus.ACTIVE;
+    return this.repository.save(user);
   }
 
   async delete(id: string): Promise<void> {
@@ -222,6 +266,7 @@ export class UsersService {
       input.dateOfBirth,
       input.gender,
       input.status,
+      input.role,
     ].every((value) => value === undefined);
   }
 

@@ -5,15 +5,30 @@ import { validateEnvironment } from '../config/environment.validation';
 import { AmenityEntity } from '../modules/amenities/entities/amenity.entity';
 import { RoomAmenityEntity } from '../modules/rooms/entities/room-amenity.entity';
 import { RoomEntity } from '../modules/rooms/entities/room.entity';
+import { RoomImageEntity } from '../modules/rooms/entities/room-image.entity';
+import { AdminEntity } from '../modules/users/entities/admin.entity';
+import { HotelOwnerEntity } from '../modules/users/entities/hotel-owner.entity';
+import { TopicEntity } from '../modules/users/entities/topic.entity';
+import { TouristEntity } from '../modules/users/entities/tourist.entity';
+import { TravelPreferenceTopicEntity } from '../modules/users/entities/travel-preference-topic.entity';
+import { TravelPreferenceEntity } from '../modules/users/entities/travel-preference.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
-import { HotelOwnerEntity } from '../modules/hotel-owners/entities/hotel-owner.entity';
+import { UserImageEntity } from '../modules/users/entities/user-image.entity';
+import { UserFavoriteEntity } from '../modules/users/entities/user-favorite.entity';
+import { ImageEntity } from '../modules/media/entities/image.entity';
 import { ItineraryEntity } from '../modules/itineraries/entities/itinerary.entity';
 import { StopoverEntity } from '../modules/stopovers/entities/stopover.entity';
 import { ActivityEntity } from '../modules/activities/entities/activity.entity';
+import { PlaceCategoryMappingEntity } from '../modules/places/entities/place-category-mapping.entity';
+import { PlaceCategoryEntity } from '../modules/places/entities/place-category.entity';
+import { PlaceImageEntity } from '../modules/places/entities/place-image.entity';
+import { PlaceTopicEntity } from '../modules/places/entities/place-topic.entity';
 import { PlaceEntity } from '../modules/places/entities/place.entity';
+import { ReferencePriceEntity } from '../modules/places/entities/reference-price.entity';
 import { CancellationPolicyEntity } from '../modules/cancellation-policies/entities/cancellation-policy.entity';
 import { BookingEntity } from '../modules/bookings/entities/booking.entity';
 import { BookingRoomEntity } from '../modules/bookings/entities/booking-room.entity';
+import { BookingRoomChildEntity } from '../modules/bookings/entities/booking-room-child.entity';
 import { BookingIdempotencyKeyEntity } from '../modules/bookings/entities/booking-idempotency-key.entity';
 import { HotelEntity } from '../modules/hotels/entities/hotel.entity';
 import { HotelDocumentEntity } from '../modules/hotels/entities/hotel-document.entity';
@@ -32,6 +47,47 @@ import { CompleteBookingStayDetails1793697300000 } from './migrations/1793697300
 import { AddBookingReservationExpiry1793697400000 } from './migrations/1793697400000-AddBookingReservationExpiry';
 import { CreateBookingIdempotencyKeys1793697500000 } from './migrations/1793697500000-CreateBookingIdempotencyKeys';
 import { CreateHotels1793697600000 } from './migrations/1793697600000-CreateHotels';
+import { AlignAuthenticationSchema1793898000000 } from './migrations/1793898000000-AlignAuthenticationSchema';
+import { AddHotelScopedAmenities1793898100000 } from './migrations/1793898100000-AddHotelScopedAmenities';
+import { AddCancellationPolicyRanges1793898200000 } from './migrations/1793898200000-AddCancellationPolicyRanges';
+import { ReviewEntity } from '../modules/reviews/entities/review.entity';
+import { ReviewModerationHistoryEntity } from '../modules/reviews/entities/review-moderation-history.entity';
+import { CreateReviews1793898300000 } from './migrations/1793898300000-CreateReviews';
+import { HotelImageEntity } from '../modules/hotels/entities/hotel-image.entity';
+import { CreateHotelImages1794400000000 } from './migrations/1794400000000-CreateHotelImages';
+import { AddUserTwoFactorFlag1794400001000 } from './migrations/1794400001000-AddUserTwoFactorFlag';
+import { AddHotelOwnerTimestamps1794400002000 } from './migrations/1794400002000-AddHotelOwnerTimestamps';
+import { ExpandPlaceCatalog1794500000000 } from './migrations/1794500000000-ExpandPlaceCatalog';
+import { CreatePlaceCatalogRelations1794500000500 } from './migrations/1794500000500-CreatePlaceCatalogRelations';
+import { BackfillPlaceCatalog1794500001000 } from './migrations/1794500001000-BackfillPlaceCatalog';
+import { NormalizeImages1794500002000 } from './migrations/1794500002000-NormalizeImages';
+import { AlignPlacesSchema1794400003000 } from './migrations/1794400003000-AlignPlacesSchema';
+import { RequireCancellationPolicySnapshot1794400004000 } from './migrations/1794400004000-RequireCancellationPolicySnapshot';
+import { UseHoursAfterBookingForCancellation1794400005000 } from './migrations/1794400005000-UseHoursAfterBookingForCancellation';
+import { SimplifyCancellationPolicies1794400006000 } from './migrations/1794400006000-SimplifyCancellationPolicies';
+import { CompleteManualBookingRefundWorkflow1794400007000 } from './migrations/1794400007000-CompleteManualBookingRefundWorkflow';
+import { UseSePayV2SandboxOrders1794400008000 } from './migrations/1794400008000-UseSePayV2SandboxOrders';
+import { NotificationEntity } from '../modules/notifications/entities/notification.entity';
+import { NotificationEmailDeliveryEntity } from '../modules/notifications/entities/notification-email-delivery.entity';
+import { CreateNotifications1794400009000 } from './migrations/1794400009000-CreateNotifications';
+import { CreateTravelPreferences1794500003000 } from './migrations/1794500003000-CreateTravelPreferences';
+import { AddTopicForeignKeyToPlaceTopics1794500003500 } from './migrations/1794500003500-AddTopicForeignKeyToPlaceTopics';
+import { AddItineraryDestinationCity1794500004000 } from './migrations/1794500004000-AddItineraryDestinationCity';
+import { CreateSettlementBatches1794500005000 } from './migrations/1794500005000-CreateSettlementBatches';
+import { SettlementBatchEntity } from '../modules/bookings/entities/settlement-batch.entity';
+import { SettlementItemEntity } from '../modules/bookings/entities/settlement-item.entity';
+import { SettlementBatchEventEntity } from '../modules/bookings/entities/settlement-batch-event.entity';
+import { CreateSettlementBatchEvents1794500006000 } from './migrations/1794500006000-CreateSettlementBatchEvents';
+import { CreateUserFavorites1794500007000 } from './migrations/1794500007000-CreateUserFavorites';
+import { AddCustomItineraryStopovers1794500008000 } from './migrations/1794500008000-AddCustomItineraryStopovers';
+import { RoomGuestPolicyEntity } from '../modules/rooms/entities/room-guest-policy.entity';
+import { AddRoomGuestPolicies1794500009000 } from './migrations/1794500009000-AddRoomGuestPolicies';
+import { CreateNotificationEmailOutbox1794500010000 } from './migrations/1794500010000-CreateNotificationEmailOutbox';
+import { AddSePaySandboxSettlementPayout1794500011000 } from './migrations/1794500011000-AddSePaySandboxSettlementPayout';
+import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015000-AddCancellationPolicyTiers';
+import { AddImageFallbackUrl1794500012000 } from './migrations/1794500012000-AddImageFallbackUrl';
+import { AddHotelCoordinates1794500013000 } from './migrations/1794500013000-AddHotelCoordinates';
+import { AddHotelDocumentFiles1794500014000 } from './migrations/1794500014000-AddHotelDocumentFiles';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -47,20 +103,44 @@ export default new DataSource({
   entities: [
     AmenityEntity,
     RoomEntity,
+    RoomImageEntity,
     RoomAmenityEntity,
+    RoomGuestPolicyEntity,
     UserEntity,
+    AdminEntity,
+    TouristEntity,
     HotelOwnerEntity,
+    TopicEntity,
+    TravelPreferenceEntity,
+    TravelPreferenceTopicEntity,
+    ImageEntity,
+    UserImageEntity,
+    UserFavoriteEntity,
     ItineraryEntity,
     StopoverEntity,
     ActivityEntity,
     PlaceEntity,
+    PlaceCategoryEntity,
+    PlaceCategoryMappingEntity,
+    PlaceTopicEntity,
+    PlaceImageEntity,
+    ReferencePriceEntity,
     CancellationPolicyEntity,
     BookingEntity,
     BookingRoomEntity,
+    BookingRoomChildEntity,
     BookingIdempotencyKeyEntity,
+    SettlementBatchEntity,
+    SettlementItemEntity,
+    SettlementBatchEventEntity,
     HotelEntity,
+    HotelImageEntity,
     HotelDocumentEntity,
     HotelReviewHistoryEntity,
+    ReviewEntity,
+    ReviewModerationHistoryEntity,
+    NotificationEntity,
+    NotificationEmailDeliveryEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -77,6 +157,38 @@ export default new DataSource({
     AddBookingReservationExpiry1793697400000,
     CreateBookingIdempotencyKeys1793697500000,
     CreateHotels1793697600000,
+    AlignAuthenticationSchema1793898000000,
+    AddHotelScopedAmenities1793898100000,
+    AddCancellationPolicyRanges1793898200000,
+    CreateReviews1793898300000,
+    CreateHotelImages1794400000000,
+    AddUserTwoFactorFlag1794400001000,
+    AddHotelOwnerTimestamps1794400002000,
+    ExpandPlaceCatalog1794500000000,
+    CreatePlaceCatalogRelations1794500000500,
+    BackfillPlaceCatalog1794500001000,
+    NormalizeImages1794500002000,
+    AlignPlacesSchema1794400003000,
+    RequireCancellationPolicySnapshot1794400004000,
+    UseHoursAfterBookingForCancellation1794400005000,
+    SimplifyCancellationPolicies1794400006000,
+    CompleteManualBookingRefundWorkflow1794400007000,
+    UseSePayV2SandboxOrders1794400008000,
+    CreateNotifications1794400009000,
+    CreateTravelPreferences1794500003000,
+    AddTopicForeignKeyToPlaceTopics1794500003500,
+    AddItineraryDestinationCity1794500004000,
+    CreateSettlementBatches1794500005000,
+    CreateSettlementBatchEvents1794500006000,
+    CreateUserFavorites1794500007000,
+    AddCustomItineraryStopovers1794500008000,
+    AddRoomGuestPolicies1794500009000,
+    CreateNotificationEmailOutbox1794500010000,
+    AddSePaySandboxSettlementPayout1794500011000,
+    AddCancellationPolicyTiers1794500015000,
+    AddImageFallbackUrl1794500012000,
+    AddHotelCoordinates1794500013000,
+    AddHotelDocumentFiles1794500014000,
   ],
   synchronize: false,
   logging: false,

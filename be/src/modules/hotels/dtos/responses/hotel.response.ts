@@ -1,12 +1,14 @@
 import { HotelDocumentType } from '../../entities/hotel-document.entity';
 import { HotelReviewAction } from '../../entities/hotel-review-history.entity';
 import { HotelStatus } from '../../entities/hotel.entity';
+import { HotelImageResponse } from './hotel-image.response';
 
 export class HotelDocumentResponse {
   id: string;
   documentType: HotelDocumentType;
   documentNumber: string;
   fileUrl: string;
+  files: Array<{ id: string; url: string; contentType: string; byteSize: number; width: number; height: number }>;
   issuedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
@@ -22,6 +24,8 @@ export class HotelResponse {
   taxCode: string;
   description: string | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
   phoneNumber: string;
   email: string;
   starRating: number | null;
@@ -33,6 +37,7 @@ export class HotelResponse {
   reviewedBy: string | null;
   rejectionReason: string | null;
   documents: HotelDocumentResponse[];
+  images: HotelImageResponse[];
   createdAt: string;
   updatedAt: string;
 }

@@ -54,8 +54,9 @@ With the backend running, interactive API documentation is available at:
 - OpenAPI JSON: `http://localhost:3000/api/docs-json`
 - OpenAPI YAML: `http://localhost:3000/api/docs-yaml`
 
-The opaque `login_access` cookie is documented. Existing management endpoints
-remain unauthenticated until their role and resource guards are implemented.
+The opaque `login_access` cookie is documented. Protected endpoints use this
+session cookie and return `401` for an invalid session or `403` when the active
+user lacks the required role or resource ownership.
 
 ## Authentication API
 
@@ -70,12 +71,17 @@ Google login starts at `GET /api/v1/auth/google/start` and returns through
 tokens are verified and discarded; only the Google subject is persisted.
 Existing password accounts with the same email are not merged automatically.
 
+Authorization is deny-by-default. Public reads are marked explicitly; admin
+management uses `ADMIN`, hotel management uses `HOTEL_OWNER`, and booking
+access is scoped to the booking tourist, the owning hotel account, or an
+administrator as appropriate. Caller-supplied owner, tourist, and reviewer
+identifiers are rejected in favor of the authenticated session identity.
+
 ## Amenities API
 
 The backend exposes amenity management at `/api/v1/amenities` with create,
-paginated list, detail, partial update, and delete operations. Write endpoints
-are currently unauthenticated because authorization guards have not yet been
-applied to them.
+paginated list, detail, partial update, and delete operations. Reads are public;
+write endpoints require `ADMIN`.
 
 Apply pending database migrations before using persistence-backed endpoints:
 
@@ -112,9 +118,10 @@ hashes; password hashes and Google account identifiers are never returned.
 
 List filters include `search`, `status`, `role`, `gender`, and
 `isEmailVerified`.
-Password reset uses `PUT /api/v1/users/:userId/password`. These management
-routes remain unauthenticated until role and resource authorization guards are
-applied.
+
+Password reset uses `PUT /api/v1/users/:userId/password`. User management routes
+require `ADMIN`; an administrator may also change a user's role through the
+user update endpoint.
 
 ## Hotel Owners API
 
@@ -125,8 +132,9 @@ one-to-one relationship with an existing user. User and hotel-owner deletion
 are independent soft-delete operations.
 
 Bank name, account number, and account holder are nullable. List queries support
-`search`, `userId`, `sortBy`, and `sortOrder`. These management routes remain
-unauthenticated until role and resource authorization guards are applied.
+`search`, `userId`, `sortBy`, and `sortOrder`. Creating, listing, or deleting
+profiles requires `ADMIN`; an owner may read and update only their own profile.
+Creating a profile promotes a non-admin user to `HOTEL_OWNER`.
 
 ## Itinerary Management API
 
@@ -160,12 +168,26 @@ reason, and every submission or review action is recorded in
 locked until a later legal-change workflow is implemented. Only `ACTIVE`
 hotels may receive new rooms, cancellation policies, or bookings.
 
-Authentication is implemented, but hotel authorization guards are not.
-Consequently `ownerUserId` and `reviewerUserId` remain explicit transitional
-inputs and these routes must not be exposed publicly until guards replace them
-with trusted identity context.
+Public hotel reads expose only `ACTIVE` hotels. Owner management endpoints use
+the authenticated `HOTEL_OWNER` identity, and `/api/v1/hotels/mine` lists the
+current owner's hotels in every workflow state. `ownerUserId` is not accepted
+when creating a hotel. Admin review requires `ADMIN`, and `reviewerUserId` is
+derived from the active session rather than the request body.
+
+### Hotel map coordinates
+
+Hotel create/update requests accept optional `latitude` and `longitude` numbers.
+Send both together (`-90..90`, `-180..180`), or send both as `null` to remove a
+position. Hotel responses include both fields. Editing follows the existing
+owner/admin authorization and pending-approval lock. A hotel's `placeId` is an
+association, and is never used as its map position. Existing records keep a null
+position until the owner confirms it; the migration does not copy attraction
+coordinates. Run migration `AddHotelCoordinates1794500013000` before deploying
+the new backend. Hotels without their own coordinates are excluded from nearby
+search, and the owner can set coordinates in the hotel editing form.
 
 ## Places API
+
 
 Place management is available at `/api/v1/places` with create, paginated list,
 detail, partial update, and delete operations. Coordinates are optional but
@@ -197,14 +219,15 @@ the constraint against historical data.
 Booking management is available at `/api/v1/bookings`. Creation initializes a
 unique booking code and pending booking/payment/settlement/refund states. Basic
 guest and booking status changes use `PATCH /api/v1/bookings/:bookingId`.
-Creation accepts `touristId`, one to ten `roomIds`, date-only `checkInDate` and
+Creation accepts one to ten `roomIds`, date-only `checkInDate` and
 `checkOutDate`, guest counts, and guest contact details. The backend verifies
 that rooms are operational, belong to one hotel, use one currency, have enough
 capacity, and are not reserved by another pending or confirmed booking for an
 overlapping stay. Room prices and descriptive values are snapshotted in
 `booking_rooms`; the number of nights, hotel, total amount, payable amount, and
-commission rate are server-managed. `touristId` remains caller-supplied until
-booking authorization uses the authenticated identity.
+commission rate are server-managed. `touristId` is derived from the authenticated
+session. Tourists can access only their own bookings; hotel owners may list or
+view bookings for hotels they own, while settlement and refund are admin-only.
 
 `POST /api/v1/bookings` requires an `Idempotency-Key` header containing a new
 UUID v4. Retrying the same normalized request with the same key returns the
@@ -215,39 +238,35 @@ restarts.
 
 Financial workflows use explicit endpoints:
 
-- `PUT /api/v1/bookings/:bookingId/payment/vnpay`
-- `GET /api/v1/payments/vnpay/ipn`
-- `GET /api/v1/payments/vnpay/return`
-- `PUT /api/v1/bookings/:bookingId/settlement`
-- `PUT /api/v1/bookings/:bookingId/refund`
+- PUT /api/v1/bookings/:bookingId/payment/sepay
+- POST /api/v1/payments/sepay/webhook
+- PUT /api/v1/bookings/:bookingId/settlement
+- PUT /api/v1/bookings/:bookingId/refund
+- PUT /api/v1/bookings/:bookingId/refund/sync
 
-The payment endpoint creates one signed VNPAY Sandbox payment URL and lets the
-customer choose a supported payment method on the VNPAY page.
-Only a checksum-valid VNPAY IPN with matching terminal, booking, and amount can
-change the booking to `PAID` and `CONFIRMED`; there is no public manual payment
-completion endpoint. The return endpoint verifies and displays status but does
-not mutate payment state. Refund requests call the VNPAY Sandbox refund API and
-each booking permits only one refund request.
+The payment endpoint creates a SePay API v2 Sandbox VA order and returns its
+QR, VA number, exact amount, and transfer code. SePay's authenticated bank
+webhook confirms the booking only after its code and amount match. Cancelling a
+paid booking submits the policy-calculated refund automatically. The sync
+endpoint refreshes the status from SePay; retries reuse the persisted
+idempotency key so a network timeout cannot cause a duplicate payout.
 
-Add the credentials issued by the VNPAY Sandbox developer portal to `be/.env`:
+Configure the Test mode API token, bank account UUID, and webhook authentication
+in be/.env:
 
-```dotenv
-VNPAY_TMN_CODE=your_sandbox_terminal_code
-VNPAY_HASH_SECRET=your_sandbox_hash_secret
-VNPAY_RETURN_URL=http://localhost:3000/api/v1/payments/vnpay/return
-VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-VNPAY_REFUND_URL=https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
-VNPAY_REFUND_CREATE_BY=system
-BOOKING_COMMISSION_RATE=15
-BOOKING_HOLD_MINUTES=15
-IDEMPOTENCY_KEY_TTL_HOURS=24
-```
+SEPAY_V2_BASE_URL=https://userapi-sandbox.sepay.vn/v2
+SEPAY_V2_API_TOKEN=your_test_mode_api_token
+SEPAY_V2_BANK_ACCOUNT_XID=your_test_bank_account_uuid
+SEPAY_V2_TERMINAL_ID=your_test_vcb_terminal_id
+SEPAY_WEBHOOK_AUTH_TYPE=HMAC_SHA256
+SEPAY_WEBHOOK_SECRET=your_webhook_hmac_secret
 
-Register the public HTTPS IPN URL
-`https://your-api-domain/api/v1/payments/vnpay/ipn` with VNPAY. A localhost or
-tailnet-only IPN address cannot be called by VNPAY; use a public test domain or
-HTTPS tunnel for end-to-end Sandbox testing. Secrets must never be committed.
-
+Set the webhook URL to https://your-public-host/api/v1/payments/sepay/webhook
+in SePay Test mode. The existing /api/v1/payments/sepay/ipn path is also kept
+as an alias for an already configured webhook. Select HMAC-SHA256 and use that webhook's secret in
+SEPAY_WEBHOOK_SECRET. The API v2 token and webhook secret are separate. The
+API base URL is restricted to Sandbox; Production is not enabled here. Never
+commit secrets.
 Settlement commission and partner receivable amounts are calculated by the
 service from the persisted commission rate. Bookings are not hard-deleted;
 cancellation is represented by the `CANCELLED` status. Cancellation-policy and
@@ -334,3 +353,39 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Hotel image upload
+
+Trong giao diện, chủ khách sạn vào **Khách sạn của tôi → Chi tiết / chỉnh sửa → Ảnh khách sạn**; quản trị viên vào trang chi tiết hotel. Tạo hồ sơ hotel trước khi thêm ảnh. Frontend phải dùng `VITE_DATA_MODE=api` và `VITE_API_BASE_URL=/api/v1` để phiên đăng nhập và upload cùng đi qua backend.
+
+`POST /api/v1/hotels/:hotelId/images` nhận **một file** qua `multipart/form-data`, tên trường `file`. Yêu cầu cookie `login_access`, vai trò `HOTEL_OWNER` sở hữu khách sạn hoặc `ADMIN`. Không cho thay đổi ảnh khi khách sạn đang `PENDING_APPROVAL`.
+
+Backend giới hạn 5 MiB/file, nhận JPEG/PNG/WebP một khung hình tối đa 20 megapixel. Nội dung được giải mã thực, kiểm tra MIME, tự xoay theo hướng ảnh và chuyển thành WebP (cạnh dài tối đa 2560 px), loại metadata gốc. Tên/object key do backend sinh; không nhận URL upload hoặc object key từ trình duyệt. Bucket không được cấp quyền public.
+
+Response `201` có `id`, `hotelId`, `url`, `previewUrl`, `contentType`, `byteSize`, `width`, `height`, `createdAt` và header `Location`. Hotel detail/list trả thêm `images` với cùng cấu trúc. `url` và `previewUrl` là đường dẫn tương đối theo origin API:
+
+- `GET /api/v1/hotels/:hotelId/images/:imageId/file`: đọc công khai qua backend khi hotel `ACTIVE`.
+- `GET /api/v1/hotels/mine/:hotelId/images/:imageId/file`: chủ khách sạn/admin xem trước bằng cookie đăng nhập, kể cả bản nháp.
+- `DELETE /api/v1/hotels/:hotelId/images/:imageId`: chủ khách sạn/admin xóa file và metadata, trả `204`.
+
+```powershell
+curl.exe -X POST "http://localhost:3000/api/v1/hotels/<hotel-id>/images" `
+  -b "login_access=<session-cookie>" `
+  -F "file=@C:/photos/hotel.jpg"
+```
+
+Trong frontend, dùng `FormData.append('file', file)` và `fetch(url, { method: 'POST', credentials: 'include', body: formData })`; để trình duyệt tự đặt `Content-Type` cùng multipart boundary. Nginx cho phép request 6 MiB để chứa file 5 MiB và multipart overhead.
+
+Compose truyền `S3_ENDPOINT=http://minio:9000`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` từ cấu hình MinIO. Khi chạy native, cấu hình các biến trong `be/.env` theo `.env.example`; endpoint mặc định `http://localhost:9002`. `S3_HOTEL_IMAGES_BUCKET` mặc định `hotel-images`. Cặp credentials phải đầy đủ khi cấu hình; nếu chưa cấu hình storage, upload trả `503`.
+
+Các migration mới gồm `CreateHotelImages1794400000000` tạo bảng `hotel_images`, `AddUserTwoFactorFlag1794400001000` bổ sung cột mà entity user đã sử dụng, và `AddHotelOwnerTimestamps1794400002000` bổ sung timestamp mà entity chủ hotel đã sử dụng. Hai migration sau khắc phục lỗi HTTP 500 khi đăng nhập/tạo hotel trên database khởi tạo từ bộ migration cũ; không bật `synchronize`.
+
+Trước khi chạy code mới trên database có sẵn, review và áp dụng migration bằng `npm run migration:show` rồi `npm run migration:run` từ `be/` với cấu hình database phù hợp. Với Docker production image, dùng:
+
+```powershell
+docker compose exec backend node node_modules/typeorm/cli.js migration:show -d dist/database/typeorm.datasource.js
+docker compose exec backend node node_modules/typeorm/cli.js migration:run -d dist/database/typeorm.datasource.js
+```
+
+Backup database có dữ liệu cần giữ trước khi chạy migration.
+
+Ảnh lỗi/giả MIME trả `400`, file vượt giới hạn trả `413`, thiếu session `401`, sai quyền `403`, hotel/image không tồn tại `404`, hotel đang chờ duyệt `409`, MinIO không sẵn sàng `503`. Nếu lưu metadata thất bại sau upload, backend cố gắng xóa file vừa tạo và ghi log object key nếu cleanup thất bại. Khi xóa ảnh, lỗi storage giữ metadata để có thể thử lại; nếu bước xóa metadata thất bại sau khi xóa file, gọi lại DELETE để hoàn tất.

@@ -1,0 +1,254 @@
+[
+  {
+    "cohort": "cold",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": 0.05029138491823945,
+    "paired_bootstrap_95_ci": [
+      -0.021454299616871522,
+      0.1351474074346066
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": 0.020080351421252758,
+    "paired_bootstrap_95_ci": [
+      -0.01136804099343842,
+      0.05484870487217419
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": -0.008962626860599322,
+    "paired_bootstrap_95_ci": [
+      -0.015854110356533165,
+      -0.0017480791382717363
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": -0.040922018452175864,
+    "paired_bootstrap_95_ci": [
+      -0.09295003279213963,
+      0.009029596668487419
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": -0.03901125109038455,
+    "paired_bootstrap_95_ci": [
+      -0.09324987465930995,
+      0.002658528310000898
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": 0.010487341549661423,
+    "paired_bootstrap_95_ci": [
+      0.006652133527277695,
+      0.014595373661229103
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": -0.14787128030157481,
+    "paired_bootstrap_95_ci": [
+      -0.19466941175067626,
+      -0.10348631586316492
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": -0.05590359730832955,
+    "paired_bootstrap_95_ci": [
+      -0.09786487397765417,
+      -0.022963421040905155
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "cold",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": 0.027273691844458544,
+    "paired_bootstrap_95_ci": [
+      0.021667473101706216,
+      0.03325100997707459
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": 0.05029138491823945,
+    "paired_bootstrap_95_ci": [
+      -0.021454299616871522,
+      0.1351474074346066
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": 0.020080351421252758,
+    "paired_bootstrap_95_ci": [
+      -0.01136804099343842,
+      0.05484870487217419
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "semantic",
+    "b": "tfidf",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": -0.008962626860599322,
+    "paired_bootstrap_95_ci": [
+      -0.015854110356533165,
+      -0.0017480791382717363
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": -0.040922018452175864,
+    "paired_bootstrap_95_ci": [
+      -0.09295003279213963,
+      0.009029596668487419
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": -0.03901125109038455,
+    "paired_bootstrap_95_ci": [
+      -0.09324987465930995,
+      0.002658528310000898
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "content_rating",
+    "b": "semantic",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": 0.010487341549661423,
+    "paired_bootstrap_95_ci": [
+      0.006652133527277695,
+      0.014595373661229103
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "ndcg",
+    "profiles": 22,
+    "mean_difference": -0.07373962821233415,
+    "paired_bootstrap_95_ci": [
+      -0.12258548553310882,
+      -0.02933772367461163
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "recall",
+    "profiles": 22,
+    "mean_difference": -0.02198110257339174,
+    "paired_bootstrap_95_ci": [
+      -0.05043228428294892,
+      0.00457330910435285
+    ],
+    "resamples": 2000,
+    "seed": 42
+  },
+  {
+    "cohort": "warm",
+    "a": "personalized_mmr",
+    "b": "content_rating",
+    "metric_at_10": "ild",
+    "profiles": 22,
+    "mean_difference": 0.012937427711005168,
+    "paired_bootstrap_95_ci": [
+      0.009079398323941716,
+      0.017219494895050015
+    ],
+    "resamples": 2000,
+    "seed": 42
+  }
+]

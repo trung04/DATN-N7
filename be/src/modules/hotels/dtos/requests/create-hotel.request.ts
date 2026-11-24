@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -16,9 +17,6 @@ const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class CreateHotelRequest {
-  @IsUUID('4')
-  ownerUserId: string;
-
   @IsOptional()
   @IsUUID('4')
   placeId?: string | null;
@@ -52,6 +50,18 @@ export class CreateHotelRequest {
   @IsNotEmpty()
   @MaxLength(500)
   address: string;
+
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 
   @Transform(trim)
   @Matches(/^\+?[0-9][0-9 .()-]{6,28}$/, {

@@ -29,8 +29,28 @@ export class EmptyPlaceUpdateException extends DomainException {
 export class CoordinatePairRequiredException extends DomainException {
   constructor() {
     super(
-      'Latitude and longitude must both be provided or both be null.',
+      'Latitude and longitude are required.',
       'PLACE_COORDINATE_PAIR_REQUIRED',
+      'validation',
+    );
+  }
+}
+
+export class InvalidPlaceCatalogValueException extends DomainException {
+  constructor(kind: 'category' | 'topic', values: string[]) {
+    super(
+      `Unknown place ${kind} value(s): ${values.join(', ')}.`,
+      'PLACE_CATALOG_VALUE_INVALID',
+      'validation',
+    );
+  }
+}
+
+export class InvalidPlacePriceException extends DomainException {
+  constructor() {
+    super(
+      'Maximum reference price must be greater than or equal to minimum price.',
+      'PLACE_REFERENCE_PRICE_INVALID',
       'validation',
     );
   }

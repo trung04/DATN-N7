@@ -3,33 +3,55 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CancellationPoliciesModule } from '../cancellation-policies/cancellation-policies.module';
 import { RoomsModule } from '../rooms/rooms.module';
 import { HotelsModule } from '../hotels/hotels.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { BookingsController } from './controllers/bookings.controller';
-import { VnpayCallbacksController } from './controllers/vnpay-callbacks.controller';
+import { SettlementsController } from './controllers/settlements.controller';
+import { SePayCallbacksController } from './controllers/sepay-callbacks.controller';
 import { BookingEntity } from './entities/booking.entity';
 import { BookingIdempotencyKeyEntity } from './entities/booking-idempotency-key.entity';
 import { BookingRoomEntity } from './entities/booking-room.entity';
+import { BookingRoomChildEntity } from './entities/booking-room-child.entity';
+import { SettlementBatchEntity } from './entities/settlement-batch.entity';
+import { SettlementItemEntity } from './entities/settlement-item.entity';
+import { SettlementBatchEventEntity } from './entities/settlement-batch-event.entity';
 import { RandomBookingCodeGenerator } from './integrations/code/random-booking-code.generator';
-import { SandboxVnpayGateway } from './integrations/vnpay/sandbox-vnpay.gateway';
+import { SePayV2ClientImpl } from './integrations/sepay/sepay-v2.client';
 import { BOOKING_CODE_GENERATOR } from './interfaces/booking-code-generator.interface';
 import { BOOKING_REPOSITORY } from './interfaces/booking.repository.interface';
-import { VNPAY_PAYMENT_GATEWAY } from './interfaces/vnpay-payment-gateway.interface';
+import { SEPAY_V2_CLIENT } from './interfaces/sepay-v2.interface';
 import { TypeOrmBookingRepository } from './repositories/typeorm-booking.repository';
+import { TypeOrmSettlementRepository } from './repositories/typeorm-settlement.repository';
 import { BookingsService } from './services/bookings.service';
+import { SettlementsService } from './services/settlements.service';
+import { SETTLEMENT_REPOSITORY } from './interfaces/settlement.repository.interface';
+import { SEPAY_BANKHUB_PAYOUT } from './interfaces/sepay-bankhub-payout.interface';
+import { SePayBankHubPayoutClientImpl } from './integrations/sepay/sepay-bankhub-payout.client';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       BookingEntity,
       BookingRoomEntity,
+      BookingRoomChildEntity,
       BookingIdempotencyKeyEntity,
+      SettlementBatchEntity,
+      SettlementItemEntity,
+      SettlementBatchEventEntity,
     ]),
     CancellationPoliciesModule,
     RoomsModule,
     HotelsModule,
+    NotificationsModule,
   ],
-  controllers: [BookingsController, VnpayCallbacksController],
+  controllers: [BookingsController, SePayCallbacksController, SettlementsController],
   providers: [
     BookingsService,
+    SettlementsService,
+    { provide: SETTLEMENT_REPOSITORY, useClass: TypeOrmSettlementRepository },
+    {
+      provide: SEPAY_BANKHUB_PAYOUT,
+      useClass: SePayBankHubPayoutClientImpl,
+    },
     {
       provide: BOOKING_REPOSITORY,
       useClass: TypeOrmBookingRepository,
@@ -39,8 +61,8 @@ import { BookingsService } from './services/bookings.service';
       useClass: RandomBookingCodeGenerator,
     },
     {
-      provide: VNPAY_PAYMENT_GATEWAY,
-      useClass: SandboxVnpayGateway,
+      provide: SEPAY_V2_CLIENT,
+      useClass: SePayV2ClientImpl,
     },
   ],
 })

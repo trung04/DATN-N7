@@ -1,0 +1,723 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Text place search API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/search/places": {
+      "post": {
+        "tags": [
+          "Semantic search",
+          "Text place search"
+        ],
+        "summary": "Search Places",
+        "operationId": "search_places_api_v1_search_places_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceSearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/embeddings/text": {
+      "post": {
+        "tags": [
+          "Semantic search",
+          "Text place search"
+        ],
+        "summary": "Embed Text",
+        "operationId": "embed_text_api_v1_embeddings_text_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextEmbeddingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextEmbeddingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/embeddings/batch": {
+      "post": {
+        "tags": [
+          "Semantic search",
+          "Text place search"
+        ],
+        "summary": "Embed Batch",
+        "operationId": "embed_batch_api_v1_embeddings_batch_post",
+        "parameters": [
+          {
+            "name": "x-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchEmbeddingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchEmbeddingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PlaceSearchRequest": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "hybrid",
+              "bge",
+              "bm25"
+            ],
+            "title": "Method",
+            "default": "hybrid"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/SearchFilters"
+          },
+          "infer_filters": {
+            "type": "boolean",
+            "title": "Infer Filters",
+            "default": true
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 10
+          },
+          "offset": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "default": 0
+          },
+          "min_similarity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": -1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Similarity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "PlaceSearchRequest"
+      },
+      "SearchFilters": {
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "place_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Hotel",
+                  "Restaurant",
+                  "Attraction"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Type"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "amenities": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Amenities"
+          },
+          "excluded_amenities": {
+            "items": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Excluded Amenities"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget"
+          },
+          "family_friendly": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Friendly"
+          },
+          "min_rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Rating"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 90.0,
+                "minimum": -90.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 180.0,
+                "minimum": -180.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "radius_km": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Km"
+          },
+          "exclude_place_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Exclude Place Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SearchFilters"
+      },
+      "PlaceSearchResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "parser": {
+            "type": "string",
+            "title": "Parser"
+          },
+          "inferred_filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inferred Filters"
+          },
+          "applied_filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Applied Filters"
+          },
+          "unsupported_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unsupported Requirements"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "retrieval": {
+            "type": "string",
+            "title": "Retrieval"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/PlaceSearchItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "query",
+          "parser",
+          "inferred_filters",
+          "applied_filters",
+          "unsupported_requirements",
+          "warnings",
+          "retrieval",
+          "model",
+          "total",
+          "offset",
+          "limit",
+          "results"
+        ],
+        "title": "PlaceSearchResponse"
+      },
+      "PlaceSearchItem": {
+        "properties": {
+          "place_id": {
+            "type": "string",
+            "title": "Place Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "place_type": {
+            "type": "string",
+            "title": "Place Type"
+          },
+          "city": {
+            "type": "string",
+            "title": "City"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "semantic_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Score"
+          },
+          "keyword_score": {
+            "type": "number",
+            "title": "Keyword Score"
+          },
+          "exact_name_match": {
+            "type": "boolean",
+            "title": "Exact Name Match"
+          },
+          "distance_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Km"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "place_id",
+          "name",
+          "place_type",
+          "city",
+          "score",
+          "semantic_score",
+          "keyword_score",
+          "exact_name_match",
+          "distance_km",
+          "image_url",
+          "reasons"
+        ],
+        "title": "PlaceSearchItem"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "TextEmbeddingRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Text",
+            "description": "Chuỗi văn bản cần được xử lý để tạo embedding. Chuỗi này không được rỗng."
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "TextEmbeddingRequest"
+      },
+      "TextEmbeddingResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "dimensions": {
+            "type": "integer",
+            "title": "Dimensions"
+          },
+          "embedding": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Embedding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "dimensions",
+          "embedding"
+        ],
+        "title": "TextEmbeddingResponse"
+      },
+      "BatchEmbeddingRequest": {
+        "properties": {
+          "text": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Text",
+            "description": "Danh sách các chuỗi văn bản cần được xử lý để tạo embedding. Danh sách này không được rỗng."
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "BatchEmbeddingRequest"
+      },
+      "BatchEmbeddingResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "dimensions": {
+            "type": "integer",
+            "title": "Dimensions"
+          },
+          "embeddings": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Embeddings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "dimensions",
+          "embeddings"
+        ],
+        "title": "BatchEmbeddingResponse"
+      }
+    }
+  }
+}

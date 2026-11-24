@@ -14,12 +14,15 @@ import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import type { CookieOptions, Request, Response } from 'express';
 import type { UserEntity } from '../../users/entities/user.entity';
+import { Public } from '../../authorization/decorators/public.decorator';
 import { UserResponse } from '../../users/dtos/responses/user.response';
 import { UserMapper } from '../../users/mappers/user.mapper';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { GoogleStartRequest } from '../dtos/requests/google-auth.request';
 import { LoginRequest } from '../dtos/requests/login.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
+import { EmailOtpRequest } from '../dtos/requests/email-otp.request';
+import { RequestPasswordResetRequest, ResetPasswordRequest } from '../dtos/requests/request-password-reset.request';
 import {
   AccountUnavailableException,
   GoogleAccountLinkRequiredException,
@@ -28,11 +31,7 @@ import {
   InvalidGoogleStateException,
   InvalidSessionException,
 } from '../exceptions/auth.exceptions';
-import {
-  ACCESS_COOKIE,
-  AccessSessionGuard,
-  REFRESH_COOKIE,
-} from '../guards/access-session.guard';
+import { ACCESS_COOKIE, REFRESH_COOKIE } from '../guards/access-session.guard';
 import { TrustedOriginGuard } from '../guards/trusted-origin.guard';
 import { AuthService } from '../services/auth.service';
 
@@ -45,16 +44,48 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @Public()
   async register(
     @Body() input: RegisterRequest,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<UserResponse> {
-    const user = await this.authService.register(input);
-    response.setHeader('Location', `/api/v1/users/${user.id}`);
-    return UserMapper.toResponse(user);
+  ): Promise<{ accepted: true }> {
+    await this.authService.register(input);
+    response.status(HttpStatus.ACCEPTED);
+    return { accepted: true };
+  }
+
+  @Post('verify-otp')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async verifyOtp(@Body() input: EmailOtpRequest): Promise<void> {
+    await this.authService.verifyEmail(input);
+  }
+
+  @Post('resend-otp')
+  @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  async resendOtp(@Body() input: RequestPasswordResetRequest): Promise<{ accepted: true }> {
+    await this.authService.resendVerification(input);
+    return { accepted: true };
+  }
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  async forgotPassword(@Body() input: RequestPasswordResetRequest): Promise<{ accepted: true }> {
+    await this.authService.requestPasswordReset(input);
+    return { accepted: true };
+  }
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resetPassword(@Body() input: ResetPasswordRequest): Promise<void> {
+    await this.authService.resetPassword(input);
   }
 
   @Post('login')
+  @Public()
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() input: LoginRequest,
@@ -66,6 +97,7 @@ export class AuthController {
   }
 
   @Get('google/start')
+  @Public()
   async googleStart(
     @Query() query: GoogleStartRequest,
     @Res() response: Response,
@@ -74,6 +106,7 @@ export class AuthController {
   }
 
   @Get('google/callback')
+  @Public()
   async googleCallback(
     @Query('code') code: unknown,
     @Query('state') state: unknown,
@@ -123,6 +156,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @UseGuards(TrustedOriginGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async refresh(
@@ -140,6 +174,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @Public()
   @UseGuards(TrustedOriginGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
@@ -154,7 +189,6 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(AccessSessionGuard)
   me(@CurrentUser() user: UserEntity): UserResponse {
     return UserMapper.toResponse(user);
   }

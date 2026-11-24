@@ -13,6 +13,9 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Public } from '../../authorization/decorators/public.decorator';
+import { Roles } from '../../authorization/decorators/roles.decorator';
+import { UserRole } from '../../users/entities/user.entity';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -32,6 +35,7 @@ import { PlaceMapper } from '../mappers/place.mapper';
 import { PlacesService } from '../services/places.service';
 
 @ApiTags('Places')
+@Roles(UserRole.ADMIN)
 @Controller({ path: 'places', version: '1' })
 export class PlacesController {
   constructor(private readonly placesService: PlacesService) {}
@@ -44,10 +48,13 @@ export class PlacesController {
   ): Promise<PlaceResponse> {
     const place = await this.placesService.create(input);
     response.setHeader('Location', `/api/v1/places/${place.id}`);
-    return PlaceMapper.toResponse(place);
+    return PlaceMapper.toResponse(
+      await this.placesService.findDetailsById(place.id),
+    );
   }
 
   @Get()
+  @Public()
   @ApiListOperation('List places', PlaceListResponse)
   async findPage(
     @Query() query: ListPlacesRequest,
@@ -61,12 +68,18 @@ export class PlacesController {
     );
   }
 
+  @Get('options')
+  async findCatalogOptions() {
+    return this.placesService.findCatalogOptions();
+  }
+
   @Get(':placeId')
+  @Public()
   @ApiDetailOperation('Get a place', PlaceResponse, 'placeId')
   async findById(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<PlaceResponse> {
-    return PlaceMapper.toResponse(await this.placesService.findById(id));
+    return PlaceMapper.toResponse(await this.placesService.findDetailsById(id));
   }
 
   @Patch(':placeId')
@@ -75,7 +88,10 @@ export class PlacesController {
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdatePlaceRequest,
   ): Promise<PlaceResponse> {
-    return PlaceMapper.toResponse(await this.placesService.update(id, input));
+    const place = await this.placesService.update(id, input);
+    return PlaceMapper.toResponse(
+      await this.placesService.findDetailsById(place.id),
+    );
   }
 
   @Delete(':placeId')

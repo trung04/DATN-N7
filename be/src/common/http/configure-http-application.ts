@@ -8,6 +8,10 @@ import cookieParser from 'cookie-parser';
 
 export function configureHttpApplication(app: INestApplication): void {
   app.use(cookieParser());
+  app.enableCors({
+    origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173',
+    credentials: true,
+  });
   app.setGlobalPrefix('api', {
     exclude: [{ path: '', method: RequestMethod.GET }],
   });

@@ -1,4 +1,8 @@
-import { PlaceEntity, PlaceStatus } from '../entities/place.entity';
+import {
+  PlaceEntity,
+  PlaceSourceType,
+  PlaceStatus,
+} from '../entities/place.entity';
 import {
   CoordinatePairRequiredException,
   EmptyPlaceUpdateException,
@@ -13,6 +17,7 @@ const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
     name: 'Hoan Kiem Lake',
     description: null,
     address: 'Hoan Kiem, Hanoi',
+    city: 'Hanoi',
     countryCode: 'VN',
     provinceCode: 'HN',
     timezone: 'Asia/Ho_Chi_Minh',
@@ -20,8 +25,22 @@ const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
     longitude: 105.8542,
     status: PlaceStatus.ACTIVE,
     averageRating: 0,
+    reviewCount: 0,
     externalProviderId: null,
-    openingTime: null,
+    openingHours: null,
+    estimatedVisitDurationMinutes: null,
+    amenities: [],
+    bestVisitTimes: [],
+    suitableFor: [],
+    contactPhone: null,
+    contactWebsite: null,
+    sourceType: PlaceSourceType.MANUAL,
+    sourceProvider: null,
+    sourceUrl: null,
+    attributionText: null,
+    licenseCode: null,
+    lastRefreshedAt: null,
+    catalogVersion: 1,
     ...overrides,
   });
 
@@ -36,6 +55,7 @@ describe('PlacesService', () => {
     savePlace = jest.fn();
     repository = {
       findById: jest.fn(),
+      findDetailsById: jest.fn(),
       findByExternalProviderId: jest.fn(),
       findPage: jest.fn(),
       create: createPlace,
@@ -76,11 +96,12 @@ describe('PlacesService', () => {
     );
   });
 
-  it('requires latitude and longitude as a pair when creating', async () => {
+  it('requires latitude and longitude when creating', async () => {
     await expect(
       service.create({
         name: 'Incomplete coordinates',
         latitude: 21.0285,
+        longitude: undefined as unknown as number,
         status: PlaceStatus.ACTIVE,
       }),
     ).rejects.toBeInstanceOf(CoordinatePairRequiredException);
@@ -93,6 +114,8 @@ describe('PlacesService', () => {
     await expect(
       service.create({
         name: 'Duplicate provider',
+        latitude: 21.0285,
+        longitude: 105.8542,
         externalProviderId: 'google-place-1',
         status: PlaceStatus.ACTIVE,
       }),
@@ -110,19 +133,17 @@ describe('PlacesService', () => {
     expect(savePlace).not.toHaveBeenCalled();
   });
 
-  it('allows both coordinates to be cleared together', async () => {
+  it('does not allow both coordinates to be cleared', async () => {
     const existing = place();
     repository.findById.mockResolvedValue(existing);
-    savePlace.mockImplementation(async (value) => value);
 
-    const updated = await service.update(existing.id, {
-      latitude: null,
-      longitude: null,
-    });
-
-    expect(updated.latitude).toBeNull();
-    expect(updated.longitude).toBeNull();
-    expect(savePlace).toHaveBeenCalledWith(existing);
+    await expect(
+      service.update(existing.id, {
+        latitude: null as unknown as number,
+        longitude: null as unknown as number,
+      }),
+    ).rejects.toBeInstanceOf(CoordinatePairRequiredException);
+    expect(savePlace).not.toHaveBeenCalled();
   });
 
   it('rejects an empty update', async () => {

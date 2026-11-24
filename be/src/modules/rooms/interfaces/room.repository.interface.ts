@@ -8,6 +8,7 @@ export type RoomSortField =
 export interface RoomWithAmenityIds {
   room: RoomEntity;
   amenityIds: string[];
+  roomImageId?: string | null;
 }
 
 export interface RoomPage {
@@ -20,6 +21,7 @@ export interface FindRoomsOptions {
   limit: number;
   search?: string;
   hotelId?: string;
+  hotelIds?: string[];
   roomType?: string;
   operationalStatus?: RoomOperationalStatus;
   sortBy: RoomSortField;
@@ -38,6 +40,7 @@ export interface CreateRoomData {
 }
 
 export interface RoomRepository {
+  findBookableByHotel(hotelId?: string): Promise<RoomEntity[]>;
   findById(id: string): Promise<RoomWithAmenityIds | null>;
   findByIds(ids: string[]): Promise<RoomEntity[]>;
   findByHotelAndNumber(
