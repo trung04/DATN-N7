@@ -1,0 +1,32 @@
+# From repository root:
+# docker compose --env-file ai/.env -f ai/compose.ai.yml up -d --build
+name: datn-n7-ai
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6335}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+  ai:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      RECOMMENDATION_API_KEY: ${RECOMMENDATION_API_KEY:?Set RECOMMENDATION_API_KEY in ai/.env}
+      RECOMMENDATION_DB_PATH: /app/data/recommendation.sqlite3
+      TRIP_ORS_CACHE_PATH: /app/data/route_matrix_cache.sqlite3
+    ports:
+      - "127.0.0.1:${AI_PORT:-9002}:9000"
+    volumes:
+      - ai_data:/app/data
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      - qdrant
+volumes:
+  qdrant_data:
+  ai_data:
+  hf_cache:

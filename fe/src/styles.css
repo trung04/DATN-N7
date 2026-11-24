@@ -25,6 +25,7 @@ td { font-size: 14px; }
 .itinerary-map-marker { display: grid; place-items: center; padding: 0; border: 2px solid white; border-radius: 999px; box-shadow: 0 2px 8px #0f172a55; cursor: pointer; }
 .itinerary-map-marker-place { width: 14px; height: 14px; background: #5D8BA5; }
 .itinerary-map-marker-stop { width: 34px; height: 34px; background: #1E3A5F; color: white; font-size: 13px; font-weight: 700; }
+.itinerary-map-user-location { width: 20px; height: 20px; border: 3px solid white; border-radius: 999px; background: #2563eb; box-shadow: 0 0 0 8px #2563eb33, 0 2px 8px #0f172a55; }
 .mapboxgl-ctrl-group { overflow: hidden; border-radius: 10px !important; box-shadow: 0 2px 8px #0f172a22 !important; }
 .mapboxgl-ctrl-attrib { font-size: 10px !important; }
 .tourist-shell { color: var(--ink); }
@@ -56,6 +57,19 @@ td { font-size: 14px; }
 button, a { -webkit-tap-highlight-color: transparent; }
 input, select, textarea { border-color: #d5dfe3; border-radius: 10px; }
 input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgb(23 107 112 / 12%); }
+label:has([role="alert"]) input,
+label:has([role="alert"]) select,
+label:has([role="alert"]) textarea,
+input[aria-invalid="true"] {
+  border-color: #ef4444 !important;
+}
+label:has([role="alert"]) input:focus,
+label:has([role="alert"]) select:focus,
+label:has([role="alert"]) textarea:focus,
+input[aria-invalid="true"]:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgb(239 68 68 / 15%) !important;
+}
 .home-hero { min-height: 440px; border-radius: 0 0 30px 30px; box-shadow: 0 22px 55px -30px rgb(16 44 59 / 45%); }
 .home-hero > img { transform: scale(1.015); transition: transform 900ms ease; }
 .home-hero:hover > img { transform: scale(1.045); }
@@ -63,6 +77,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .home-hero h1 { max-width: 720px; text-wrap: balance; }
 .home-hero h1 + p { color: rgb(255 255 255 / 86%); }
 .home-search { border-color: #e2e8e4; box-shadow: 0 18px 48px -24px rgb(16 44 59 / 38%); }
+.home-search label { color: var(--ink); }
+.home-search input { min-height: 46px; }
 .hotel-search-card input[type="checkbox"] { width: 15px; min-width: 15px; min-height: 15px; height: 15px; margin: 0; padding: 0; border-radius: 4px; accent-color: var(--brand); }
 .hotel-search-card summary::-webkit-details-marker { display: none; }
 .hotel-search-card summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; border-radius: 4px; }

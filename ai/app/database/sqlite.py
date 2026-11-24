@@ -4,8 +4,9 @@ from contextlib import contextmanager
 from .repositories.place_repository import PlaceRepository
 from .repositories.recommendation_repository import RecommendationRepository
 from .repositories.user_repository import UserRepository
+from .repositories.interaction_repository import InteractionRepository
 
-class Store(PlaceRepository, RecommendationRepository, UserRepository):
+class Store(PlaceRepository, RecommendationRepository, UserRepository, InteractionRepository):
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.path = str(path)
@@ -21,6 +22,11 @@ class Store(PlaceRepository, RecommendationRepository, UserRepository):
                 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, preferences TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS impressions (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, occurred_at TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS recommendation_interactions (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, place_id TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS recommendation_interactions_user_time
+                    ON recommendation_interactions(user_id,occurred_at,id);
             """)
 
     @contextmanager

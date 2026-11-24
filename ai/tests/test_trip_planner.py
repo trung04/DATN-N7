@@ -216,7 +216,7 @@ class PlannerTests(unittest.TestCase):
             response=self.client.post("/api/v1/trips/extract",json={"message":"Đi du lịch","use_llm":True})
             self.assertEqual(response.status_code,503)
         with patch("app.modules.trip_planner.requirement_extractor.RequirementExtractor.llm",return_value={"city":"Đà Nẵng","days":2,"start_date":"2026-11-02"}):
-            response=self.client.post("/api/v1/trips/extract",json={"message":"Du lịch","use_llm":True})
+            response=self.client.post("/api/v1/trips/extract",json={"message":"Du lịch ngày 02/11/2026","use_llm":True})
         self.assertFalse(response.json()["needs_clarification"])
 
 

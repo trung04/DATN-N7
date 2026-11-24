@@ -35,3 +35,23 @@ export class InvalidActivityTimeRangeException extends DomainException {
     );
   }
 }
+
+export class ActivityOutsideStopoverException extends DomainException {
+  constructor() {
+    super(
+      'Activity times must be within the parent stopover time range.',
+      'ACTIVITY_OUTSIDE_STOPOVER',
+      'validation',
+    );
+  }
+}
+
+export class ActivityScheduleConflictException extends DomainException {
+  constructor(conflictingActivityId: string) {
+    super(
+      `Activity schedule overlaps activity '${conflictingActivityId}'.`,
+      'ACTIVITY_SCHEDULE_CONFLICT',
+      'conflict',
+    );
+  }
+}

@@ -1,4 +1,4 @@
-"""Deterministic content + Bayesian rating ranking. No behavioral reads or writes."""
+"""Automatically use behavioral personalization when history exists; otherwise content + rating."""
 import json
 import logging
 import math
@@ -12,6 +12,7 @@ from .place_document import DOCUMENT_VERSION
 from .profiles import build_explicit_profile
 from .ranking import bayesian_quality
 from .schemas import RecommendationResponse
+from .personalized import build_personalized_profile, rerank_with_policy, rotate_recommendations, relevance_value
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,14 @@ def recommend_content_rating(service, request, *, now=None, log=True):
     config = service.config
     rows = service.store.places()
     profile = build_explicit_profile(service.embedding, request, service.store, config.max_interest_groups)
+    explicit_profile = profile
+    events = [e for e in service.store.interactions(request.user_id)
+              if datetime.fromisoformat(e['occurred_at']) <= now] if request.mode != 'content_rating' else []
+    personalized = request.mode == 'personalized_mmr' or (request.mode == 'auto' and bool(events))
+    effective_mode = 'personalized_mmr' if personalized else 'content_rating'
+    history_diagnostics, negative = {}, set()
+    if personalized:
+        profile, negative, history_diagnostics = build_personalized_profile(service, request, profile, rows, now, events=events)
     profile = profile if profile.queries else None
     priors = defaultdict(list)
     places = [(row, json.loads(row["data"])) for row in rows]
@@ -33,7 +42,7 @@ def recommend_content_rating(service, request, *, now=None, log=True):
              for key, values in priors.items()}
     candidates = []
     service_excluded = 0
-    excluded = set(request.exclude_place_ids)
+    excluded = set(request.exclude_place_ids) | negative
     for row, place in places:
         if not place["active"] or place["place_id"] in excluded:
             continue
@@ -63,8 +72,9 @@ def recommend_content_rating(service, request, *, now=None, log=True):
     if profile is not None and candidates:
         try:
             retrieved = set()
-            limit = max(1, math.ceil(config.candidate_limit / len(profile.queries)))
-            for vector in profile.queries:
+            queries=profile.queries + (explicit_profile.queries if personalized and request.diversity_policy=='guarded' else [])
+            limit = max(1, math.ceil(config.candidate_limit / len(queries)))
+            for vector in queries:
                 retrieved.update(service.content.candidates(vector, request, service.model, limit))
             retrieved.intersection_update(c["place"]["place_id"] for c in candidates)
             if not retrieved:
@@ -81,16 +91,23 @@ def recommend_content_rating(service, request, *, now=None, log=True):
             candidates = [c for c in candidates if c["place"]["place_id"] in pool]
 
     warnings = []
+    if personalized and not history_diagnostics.get('history_available'):
+        warnings.append('Chưa có vector hành vi tích cực hợp lệ; dùng sở thích/nhu cầu hiện có hoặc rating làm dự phòng, vẫn áp dụng MMR và loại điểm bị đánh giá thấp.')
     items = []
     missing_vectors = 0
     for candidate in candidates:
         place, row = candidate["place"], candidate["row"]
         content = profile.score(service._vector(row)) if profile is not None else None
+        intent=explicit_profile.score(service._vector(row)) if explicit_profile.queries and (request.preference_alpha>0 or request.query) else content
         if profile is not None and content is None:
             missing_vectors += 1
+            if personalized and request.diversity_policy=='guarded':continue
         parts = {"quality": (candidate["quality"], config.quality_weight)}
         if content is not None:
             parts["content"] = ((content + 1) / 2, config.content_weight)
+            if personalized and request.diversity_policy=='guarded':
+                weight=request.personalized_content_weight
+                parts={'content':((content+1)/2,weight),'quality':(candidate['quality'],1-weight)}
         total = sum(weight for _, weight in parts.values())
         weights = {key: weight / total for key, (_, weight) in parts.items()}
         score = sum(parts[key][0] * weight for key, weight in weights.items())
@@ -100,28 +117,52 @@ def recommend_content_rating(service, request, *, now=None, log=True):
         reasons.append("Điểm chất lượng Bayesian từ rating và số lượt đánh giá" if place["rating"] is not None
                        and place["review_count"] > 0 else "Chưa có đủ rating/lượt đánh giá; dùng mức chất lượng tham chiếu")
         item = {"place_id": place["place_id"], "name": place["name"], "place_type": place["place_type"],
-                "city": place["city"], "score": score, "content_score": content,
+                "city": place["city"], "score": score, "content_score": content, "intent_score": intent,
                 "quality_score": candidate["quality"], "distance_km": candidate["distance"],
                 "effective_weights": weights,
                 "image_url": place["image_url"], "rating": place["rating"],
                 "review_count": place["review_count"], "reasons": reasons}
         items.append((item, display_identity(place)))
     if missing_vectors:
-        warnings.append(f"{missing_vectors} ứng viên chưa có vector đúng phiên bản; chỉ dùng điểm rating cho các mục này.")
+        warnings.append(f"{missing_vectors} ứng viên chưa có vector đúng phiên bản; " +
+            ('bỏ khỏi danh sách đa dạng hóa an toàn.' if personalized and request.diversity_policy=='guarded' else 'chỉ dùng điểm rating cho các mục này.'))
     selected, identities = [], set()
     suppressed = 0
-    for item, identity in sorted(items, key=lambda pair: (-pair[0]["score"], pair[0]["place_id"])):
+    for item, identity in sorted(items, key=lambda pair: (
+            -relevance_value(pair[0]) if personalized and request.diversity_policy=='guarded' else -pair[0]['score'],
+            -pair[0]['score'],pair[0]['place_id'])):
         if identity in identities:
             suppressed += 1
             continue
         identities.add(identity)
-        if len(selected) < request.limit:
+        if len(selected) < (request.mmr_pool_size if personalized else request.limit):
             selected.append(item)
+    if personalized:
+        vectors = {c["place"]["place_id"]: service._vector(c["row"]) for c in candidates}
+        pool = selected
+        selected = rerank_with_policy(pool, vectors, request.limit, request)
+        if request.refresh_variety:
+            recent = service.store.recent_personalized(request.user_id, now.isoformat())
+            selected, rotation = rotate_recommendations(pool, selected, vectors, request, recent)
+            history_diagnostics.update(rotation)
+            if rotation.get('rotation_relevance_guard_blocked'):
+                warnings.append('Giữ danh sách phù hợp hiện tại vì các địa điểm mới sẽ làm giảm độ phù hợp vượt mức cho phép.')
+            if rotation['rotation_applied'] and rotation['fresh_count'] < rotation['rotation_target']:
+                warnings.append('Không đủ địa điểm mới phù hợp để đổi đủ 30% danh sách; một số kết quả được giữ lại.')
+        for item in selected:
+            item["reasons"].append('Cá nhân hóa từ hành vi + MMR' if history_diagnostics.get('history_available') else 'Đa dạng hóa kết quả bằng MMR')
     result = RecommendationResponse(
         request_id=str(uuid.uuid4()), user_id=request.user_id, total=len(selected),
-        strategy="content_rating" if profile is not None else "rating_fallback",
+        strategy=("personalized_mmr" if personalized else "content_rating") if profile is not None else ("rating_mmr_fallback" if personalized else "rating_fallback"),
         model_version=service.version, retrieval=retrieval, recommendations=selected,
-        warnings=warnings, diagnostics={"mode": "content_rating", "interest_groups": len(profile.groups) if profile else 0,
+        warnings=warnings, diagnostics={"mode": effective_mode, "requested_mode": request.mode,
+            "selection_reason": ('history_present' if events else 'no_history') if request.mode == 'auto' else 'explicit_mode',
+            "history_event_count": len(events), **history_diagnostics,
+            **({'diversity_policy':request.diversity_policy,'mmr_relevance_tolerance':request.mmr_relevance_tolerance,
+                'personalized_content_weight':request.personalized_content_weight} if personalized else {}),
+            **({"mmr_lambda": request.mmr_lambda, "mmr_pool_size": request.mmr_pool_size,
+                "mmr_relevance": "content + Bayesian rating", "similarity_scale": "[0,1]"} if personalized else {}),
+            "interest_groups": len(profile.groups) if profile else 0,
             "candidate_count": len(candidates),
             "service_only_excluded": service_excluded, "same_name_suppressed": suppressed,
             "document_version": DOCUMENT_VERSION, "score_is_probability": False,

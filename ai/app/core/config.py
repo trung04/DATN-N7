@@ -26,6 +26,12 @@ class Settings:
 
     @classmethod
     def from_env(cls):
+        backend=env('TRIP_BACKEND_URL')
+        if backend:
+            from urllib.parse import urlsplit
+            parsed=urlsplit(backend)
+            if parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('','/'):
+                raise ValueError('TRIP_BACKEND_URL must be an HTTP(S) origin without credentials')
         return cls(env("MODEL_NAME","BAAI/bge-m3"), env("QDRANT_URL","http://localhost:6333"),
             env("QDRANT_COLLECTION_NAME","documents_bge_m3"),env("RECOMMENDATION_COLLECTION","documents_bge_m3"),
             env("RECOMMENDATION_VECTOR_NAME","dense"),env("RECOMMENDATION_DB_PATH","data/recommendation.sqlite3"),
