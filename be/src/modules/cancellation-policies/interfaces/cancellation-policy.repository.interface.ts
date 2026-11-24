@@ -1,4 +1,5 @@
 import { CancellationPolicyEntity } from '../entities/cancellation-policy.entity';
+import type { CancellationPolicyTier } from '../entities/cancellation-policy.entity';
 
 export const CANCELLATION_POLICY_REPOSITORY = Symbol(
   'CANCELLATION_POLICY_REPOSITORY',
@@ -29,6 +30,7 @@ export interface CreateCancellationPolicyData {
   cancelHours: number;
   penaltyPercent: number;
   cancellationAllowed: boolean;
+  tiers?: CancellationPolicyTier[];
   description: string | null;
   isActive: boolean;
 }
@@ -39,6 +41,7 @@ export interface CancellationPolicyScheduleRule {
   cancelHours: number;
   penaltyPercent: number;
   cancellationAllowed: boolean;
+  tiers?: CancellationPolicyTier[];
   description: string | null;
 }
 

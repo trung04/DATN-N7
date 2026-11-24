@@ -79,6 +79,7 @@ export interface BookingCancellationPolicySnapshot {
   cancellationAllowed?: boolean;
   policyName?: string;
   policyDescription?: string | null;
+  inclusiveHourLimits?: true;
   timezone: 'Asia/Ho_Chi_Minh';
   checkInTime: string;
   rules: BookingCancellationRuleSnapshot[];

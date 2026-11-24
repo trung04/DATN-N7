@@ -132,6 +132,7 @@ export class BookingsService {
     const hotel = await this.hotelsService.assertActive(hotelId);
     const cancellationSchedule = await this.cancellationPoliciesService
       .getCompleteScheduleForBooking(hotelId, input.cancellationPolicyVersion);
+    const { tiers, ...cancellationPolicy } = cancellationSchedule.rules[0]!;
     const currency = rooms[0].currency;
     if (rooms.some((room) => room.hotelId !== hotelId)) {
       throw new BookingRoomsHotelMismatchException();
@@ -221,19 +222,29 @@ export class BookingsService {
         cancellationPolicySnapshot: {
           version: cancellationSchedule.version,
           basis: 'HOURS_AFTER_BOOKING',
-          cancelHours: cancellationSchedule.rules[0]!.cancelHours,
-          penaltyPercent: cancellationSchedule.rules[0]!.penaltyPercent,
-          cancellationAllowed: cancellationSchedule.rules[0]!.cancellationAllowed,
-          policyName: cancellationSchedule.rules[0]!.name,
-          policyDescription: cancellationSchedule.rules[0]!.description,
+          ...(tiers ? { inclusiveHourLimits: true as const } : {
+            cancelHours: cancellationPolicy.cancelHours,
+            penaltyPercent: cancellationPolicy.penaltyPercent,
+            cancellationAllowed: cancellationPolicy.cancellationAllowed,
+          }),
+          policyName: cancellationPolicy.name,
+          policyDescription: cancellationPolicy.description,
           timezone: 'Asia/Ho_Chi_Minh',
           checkInTime: hotel.checkInTime,
-          rules: cancellationSchedule.rules.map((rule) => ({
-            ...rule,
+          rules: tiers ? tiers.map((tier, index) => ({
+            id: `${cancellationPolicy.id}:${index}`,
+            name: cancellationPolicy.name,
+            minHoursAfterBooking: tiers[index - 1]?.upToHours ?? 0,
+            maxHoursAfterBooking: tier.upToHours,
+            cancellationAllowed: tier.feePercent !== null,
+            cancellationFeeRate: tier.feePercent,
+            description: null,
+          })) : [{
+            ...cancellationPolicy,
             minHoursAfterBooking: 0,
             maxHoursAfterBooking: null,
-            cancellationFeeRate: rule.penaltyPercent,
-          })),
+            cancellationFeeRate: cancellationPolicy.penaltyPercent,
+          }],
         },
         cancellationWindowSnapshot: null,
         cancellationFeeRateSnapshot: null,

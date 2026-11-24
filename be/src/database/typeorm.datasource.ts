@@ -84,6 +84,7 @@ import { RoomGuestPolicyEntity } from '../modules/rooms/entities/room-guest-poli
 import { AddRoomGuestPolicies1794500009000 } from './migrations/1794500009000-AddRoomGuestPolicies';
 import { CreateNotificationEmailOutbox1794500010000 } from './migrations/1794500010000-CreateNotificationEmailOutbox';
 import { AddSePaySandboxSettlementPayout1794500011000 } from './migrations/1794500011000-AddSePaySandboxSettlementPayout';
+import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015000-AddCancellationPolicyTiers';
 import { AddImageFallbackUrl1794500012000 } from './migrations/1794500012000-AddImageFallbackUrl';
 import { AddHotelCoordinates1794500013000 } from './migrations/1794500013000-AddHotelCoordinates';
 import { AddHotelDocumentFiles1794500014000 } from './migrations/1794500014000-AddHotelDocumentFiles';
@@ -184,6 +185,7 @@ export default new DataSource({
     AddRoomGuestPolicies1794500009000,
     CreateNotificationEmailOutbox1794500010000,
     AddSePaySandboxSettlementPayout1794500011000,
+    AddCancellationPolicyTiers1794500015000,
     AddImageFallbackUrl1794500012000,
     AddHotelCoordinates1794500013000,
     AddHotelDocumentFiles1794500014000,
