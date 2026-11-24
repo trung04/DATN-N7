@@ -54,6 +54,7 @@ export class HotelsService {
     ownerUserId: string,
     input: CreateHotelRequest,
   ): Promise<HotelEntity> {
+    this.assertCoordinates(input);
     await this.hotelOwnersService.findByUserId(ownerUserId);
     if (input.placeId) await this.placesService.findById(input.placeId);
 
@@ -70,6 +71,8 @@ export class HotelsService {
       taxCode,
       description: this.normalizeNullable(input.description),
       address: input.address.trim(),
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
       phoneNumber: input.phoneNumber.trim(),
       email: input.email.trim().toLowerCase(),
       starRating: input.starRating ?? null,
@@ -106,6 +109,10 @@ export class HotelsService {
     const scoped = Object.assign(new ListHotelsRequest(), input);
     scoped.ownerUserId = ownerUserId;
     return this.findPage(scoped);
+  }
+
+  findOwnedIds(ownerUserId: string): Promise<string[]> {
+    return this.repository.findIdsByOwner(ownerUserId);
   }
 
   async findById(id: string): Promise<HotelEntity> {
@@ -181,6 +188,7 @@ export class HotelsService {
       hotel.taxCode = taxCode;
     }
 
+    this.assertCoordinates(input);
     this.applyUpdate(hotel, input);
     return this.repository.save(hotel);
   }
@@ -409,6 +417,8 @@ export class HotelsService {
       hotel.description = this.normalizeNullable(input.description);
     }
     if (input.address !== undefined) hotel.address = input.address.trim();
+    if (input.latitude !== undefined) hotel.latitude = input.latitude;
+    if (input.longitude !== undefined) hotel.longitude = input.longitude;
     if (input.phoneNumber !== undefined) {
       hotel.phoneNumber = input.phoneNumber.trim();
     }
@@ -430,6 +440,8 @@ export class HotelsService {
       input.taxCode,
       input.description,
       input.address,
+      input.latitude,
+      input.longitude,
       input.phoneNumber,
       input.email,
       input.starRating,
@@ -440,6 +452,18 @@ export class HotelsService {
 
   private normalizeTaxCode(value: string): string {
     return value.trim().toUpperCase();
+  }
+
+  private assertCoordinates(input: { latitude?: number | null; longitude?: number | null }): void {
+    const { latitude, longitude } = input;
+    if (latitude === undefined && longitude === undefined) return;
+    if (latitude === null && longitude === null) return;
+    if (
+      typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+    ) {
+      throw new BadRequestException('Latitude and longitude must be provided together as valid coordinates, or both set to null.');
+    }
   }
 
   private normalizeNullable(value?: string | null): string | null {

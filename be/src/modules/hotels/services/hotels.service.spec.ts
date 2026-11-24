@@ -76,6 +76,7 @@ describe('HotelsService', () => {
 
   beforeEach(() => {
     repository = {
+      findIdsByOwner: jest.fn(),
       findById: jest.fn(),
       findByTaxCode: jest.fn(),
       findPage: jest.fn(),
@@ -126,6 +127,48 @@ describe('HotelsService', () => {
         email: 'hotel@example.com',
       }),
     ]);
+  });
+
+  it('stores a confirmed hotel position and supports zero coordinates', async () => {
+    repository.create.mockResolvedValue(hotel());
+    await service.create(ownerUserId, {
+      name: 'Hotel', legalName: 'Hotel', taxCode: 'TAX', address: 'Address',
+      phoneNumber: '0912345678', email: 'hotel@example.com', checkInTime: '14:00', checkOutTime: '12:00',
+      latitude: 0, longitude: 0,
+    });
+    expect(repository.create.mock.calls[0]).toEqual([expect.objectContaining({ latitude: 0, longitude: 0 })]);
+  });
+
+  it('updates and clears hotel coordinates without changing its linked place', async () => {
+    const existing = hotel({ status: HotelStatus.ACTIVE, placeId: hotelId });
+    repository.findById.mockResolvedValue(existing);
+    repository.save.mockImplementation(async (value) => value);
+    await service.update(hotelId, { latitude: 16.06, longitude: 108.24 }, ownerActor);
+    expect(existing).toMatchObject({ latitude: 16.06, longitude: 108.24, placeId: hotelId });
+    await service.update(hotelId, { latitude: null, longitude: null }, ownerActor);
+    expect(existing).toMatchObject({ latitude: null, longitude: null, placeId: hotelId });
+  });
+
+  it.each([
+    { latitude: 16 }, { longitude: 108 }, { latitude: null, longitude: 108 },
+    { latitude: 91, longitude: 108 }, { latitude: 16, longitude: -181 },
+    { latitude: Number.NaN, longitude: 108 }, { latitude: 16, longitude: Infinity },
+  ])('rejects invalid or incomplete coordinate updates: %j', async (input) => {
+    repository.findById.mockResolvedValue(hotel());
+    await expect(service.update(hotelId, input, ownerActor)).rejects.toMatchObject({ status: 400 });
+    expect(repository.save.mock.calls).toHaveLength(0);
+  });
+
+  it('does not let another owner change hotel coordinates', async () => {
+    repository.findById.mockResolvedValue(hotel());
+    await expect(service.update(hotelId, { latitude: 16, longitude: 108 }, { id: reviewerUserId, role: UserRole.HOTEL_OWNER })).rejects.toBeInstanceOf(AuthorizationDeniedException);
+    expect(repository.save.mock.calls).toHaveLength(0);
+  });
+
+  it('keeps coordinates locked while the hotel is pending approval', async () => {
+    repository.findById.mockResolvedValue(hotel({ status: HotelStatus.PENDING_APPROVAL }));
+    await expect(service.update(hotelId, { latitude: 16, longitude: 108 }, ownerActor)).rejects.toMatchObject({ code: 'HOTEL_UPDATE_LOCKED' });
+    expect(repository.save.mock.calls).toHaveLength(0);
   });
 
   it('submits a hotel with a valid business license without rooms or policies', async () => {

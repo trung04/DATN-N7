@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import sharp from 'sharp';
+import { normalizeLodgingImage } from '../../media/normalize-lodging-image';
 import { HotelsService } from './hotels.service';
 import { HOTEL_IMAGE_REPOSITORY } from '../interfaces/hotel-image.repository.interface';
 import type { HotelImageRepository } from '../interfaces/hotel-image.repository.interface';
@@ -10,11 +10,15 @@ import type { AuthorizationActor } from '../../authorization/interfaces/authoriz
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
 import { HotelStatus } from '../entities/hotel.entity';
+import { ImageStorageProvider } from '../../media/entities/image.entity';
 import { HotelUpdateLockedException } from '../exceptions/hotel.exceptions';
+import { safeImageFallbackUrl } from '../../media/safe-image-fallback';
 import {
   InvalidHotelImageException,
   HotelImageNotFoundException,
+  HotelImageStorageException,
 } from '../exceptions/hotel-image.exceptions';
+import type { HotelImageEntity } from '../entities/hotel-image.entity';
 
 export const HOTEL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export interface UploadedHotelImage {
@@ -22,6 +26,10 @@ export interface UploadedHotelImage {
   mimetype: string;
   size: number;
 }
+
+export type HotelImageReadResult =
+  | { kind: 'stored'; image: HotelImageEntity; data: Buffer }
+  | { kind: 'fallback'; image: HotelImageEntity; fallbackUrl: string };
 
 @Injectable()
 export class HotelImagesService {
@@ -49,34 +57,9 @@ export class HotelImagesService {
     actor: AuthorizationActor,
   ) {
     await this.assertCanManage(hotelId, actor);
-    if (!file?.buffer?.length || file.buffer.length > HOTEL_IMAGE_MAX_BYTES)
-      throw new InvalidHotelImageException();
-    let normalized: sharp.OutputInfo & { data: Buffer };
+    let normalized: Awaited<ReturnType<typeof normalizeLodgingImage>>;
     try {
-      const image = sharp(file.buffer, {
-        limitInputPixels: 20_000_000,
-        failOn: 'warning',
-      });
-      const metadata = await image.metadata();
-      const types: Record<string, string> = {
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        webp: 'image/webp',
-      };
-      if (
-        !metadata.format ||
-        types[metadata.format] !== file.mimetype ||
-        (metadata.pages ?? 1) !== 1
-      )
-        throw new Error('Invalid image');
-      const result = await image
-        .rotate()
-        .resize(2560, 2560, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 85 })
-        .toBuffer({ resolveWithObject: true });
-      normalized = { ...result.info, data: result.data };
-      if (normalized.size > HOTEL_IMAGE_MAX_BYTES)
-        throw new Error('Output image too large');
+      normalized = await normalizeLodgingImage(file);
     } catch {
       throw new InvalidHotelImageException();
     }
@@ -104,12 +87,40 @@ export class HotelImagesService {
       throw error;
     }
   }
-  async read(hotelId: string, imageId: string, actor?: AuthorizationActor) {
+  async read(
+    hotelId: string,
+    imageId: string,
+    actor?: AuthorizationActor,
+  ): Promise<HotelImageReadResult> {
     if (actor) await this.assertCanManage(hotelId, actor, false);
     else await this.hotels.assertActive(hotelId);
     const image = await this.repository.find(hotelId, imageId);
     if (!image) throw new HotelImageNotFoundException();
-    return { image, data: await this.storage.get(image.image.objectKey!) };
+    const media = image.image;
+    const fallbackUrl = safeImageFallbackUrl(
+      media.storageProvider === ImageStorageProvider.MINIO
+        ? media.fallbackUrl
+        : media.imageUrl,
+    );
+
+    if (
+      media.storageProvider === ImageStorageProvider.MINIO &&
+      media.objectKey
+    ) {
+      try {
+        return {
+          kind: 'stored',
+          image,
+          data: await this.storage.get(media.objectKey),
+        };
+      } catch (error) {
+        if (fallbackUrl) return { kind: 'fallback', image, fallbackUrl };
+        throw error;
+      }
+    }
+
+    if (fallbackUrl) return { kind: 'fallback', image, fallbackUrl };
+    throw new HotelImageStorageException();
   }
   async delete(
     hotelId: string,
@@ -119,8 +130,22 @@ export class HotelImagesService {
     await this.assertCanManage(hotelId, actor);
     const image = await this.repository.find(hotelId, imageId);
     if (!image) throw new HotelImageNotFoundException();
-    // Keep metadata if storage is unavailable, so a failed delete can be retried.
-    await this.storage.delete(image.image.objectKey!);
-    await this.repository.delete(hotelId, imageId);
+    const owned =
+      image.imageId === image.id &&
+      image.image.storageProvider === ImageStorageProvider.MINIO &&
+      !image.image.sourceProvider &&
+      image.image.objectKey === `hotels/${hotelId}/${imageId}.webp`;
+    if (owned) await this.storage.delete(image.image.objectKey!);
+    await this.repository.delete(hotelId, imageId, owned);
+  }
+  async makePrimary(
+    hotelId: string,
+    imageId: string,
+    actor: AuthorizationActor,
+  ) {
+    await this.assertCanManage(hotelId, actor);
+    const image = await this.repository.makePrimary(hotelId, imageId);
+    if (!image) throw new HotelImageNotFoundException();
+    return image;
   }
 }

@@ -48,6 +48,18 @@ export function validateEnvironment(input: Record<string, unknown>) {
   integer('REDIS_CONNECT_TIMEOUT_MS', 5000, 1, 120000);
   integer('CACHE_TTL_MS', 60000, 1, 86400000);
   integer('AI_TIMEOUT_MS', 15000, 1, 120000);
+  config.HOTEL_GEOCODER_ORIGIN ??= 'https://nominatim.openstreetmap.org';
+  try {
+    const url = new URL(String(config.HOTEL_GEOCODER_ORIGIN));
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('invalid');
+    config.HOTEL_GEOCODER_ORIGIN = url.origin;
+  } catch {
+    throw new Error('HOTEL_GEOCODER_ORIGIN must be an HTTPS origin without credentials, path or query');
+  }
+  config.HOTEL_GEOCODER_USER_AGENT ??= 'HanhTrinhViet/1.0 (+https://travellad.id.vn)';
+  if (typeof config.HOTEL_GEOCODER_USER_AGENT !== 'string' || config.HOTEL_GEOCODER_USER_AGENT.trim().length < 10 || /[\r\n]/.test(config.HOTEL_GEOCODER_USER_AGENT)) {
+    throw new Error('HOTEL_GEOCODER_USER_AGENT must identify the application');
+  }
   config.S3_ENDPOINT ??= 'http://localhost:9002';
   validateHttpOrigin(config, 'S3_ENDPOINT');
   const storageUrl = new URL(String(config.S3_ENDPOINT));

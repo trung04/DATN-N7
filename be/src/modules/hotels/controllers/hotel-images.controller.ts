@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Patch,
   Res,
   StreamableFile,
   UploadedFile,
@@ -30,7 +31,10 @@ import {
   HotelImagesService,
   HOTEL_IMAGE_MAX_BYTES,
 } from '../services/hotel-images.service';
-import type { UploadedHotelImage } from '../services/hotel-images.service';
+import type {
+  HotelImageReadResult,
+  UploadedHotelImage,
+} from '../services/hotel-images.service';
 import { HotelImageManagementGuard } from '../guards/hotel-image-management.guard';
 import { HotelImageResponse } from '../dtos/responses/hotel-image.response';
 import { toHotelImageResponse } from '../mappers/hotel-image.mapper';
@@ -94,7 +98,14 @@ export class HotelImagesController {
     @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    return this.file(await this.images.read(hotelId, imageId), response);
+    const result = await this.images.read(hotelId, imageId);
+    if (result.kind === 'fallback') {
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Cache-Control', 'private, no-store');
+      response.redirect(302, result.fallbackUrl);
+      return;
+    }
+    return this.file(result, response);
   }
 
   @Get('mine/:hotelId/images/:imageId/file')
@@ -105,7 +116,23 @@ export class HotelImagesController {
     @CurrentUser() user: UserEntity,
     @Res({ passthrough: true }) response: Response,
   ) {
-    return this.file(await this.images.read(hotelId, imageId, user), response);
+    const result = await this.images.read(hotelId, imageId, user);
+    if (result.kind === 'fallback') {
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Cache-Control', 'private, no-store');
+      response.redirect(302, result.fallbackUrl);
+      return;
+    }
+    return this.file(result, response);
+  }
+
+  @Patch(':hotelId/images/:imageId/primary')
+  async makePrimary(
+    @Param('hotelId', new ParseUUIDPipe({ version: '4' })) hotelId: string,
+    @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
+    @CurrentUser() user: UserEntity,
+  ) {
+    return toHotelImageResponse(await this.images.makePrimary(hotelId, imageId, user));
   }
 
   @Delete(':hotelId/images/:imageId')
@@ -119,7 +146,7 @@ export class HotelImagesController {
     await this.images.delete(hotelId, imageId, user);
   }
   private file(
-    result: Awaited<ReturnType<HotelImagesService['read']>>,
+    result: Extract<HotelImageReadResult, { kind: 'stored' }>,
     response: Response,
   ) {
     response.setHeader('X-Content-Type-Options', 'nosniff');

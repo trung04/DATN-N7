@@ -38,6 +38,11 @@ export function HotelImages({ hotel }: { hotel: PartnerHotel }) {
     } catch (cause) { setError(errorMessage(cause)) }
     finally { setBusy(false) }
   }
+  const primary = async (imageId: string) => {
+    setBusy(true); setError(''); setMessage('')
+    try { await api.primaryHotelImage(hotel.id, imageId); await refresh(); setMessage('Đã chọn ảnh đại diện.') }
+    catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
+  }
   const remove = async () => {
     if (!deleteId) return
     setBusy(true); setError(''); setMessage('')
@@ -54,14 +59,14 @@ export function HotelImages({ hotel }: { hotel: PartnerHotel }) {
     <p className="mt-2 text-sm text-slate-500">JPEG, PNG hoặc WebP, tối đa 5 MiB mỗi ảnh.</p>
     {images.length ? <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{images.map((image, index) => <figure key={image.id} className="overflow-hidden rounded-lg border border-slate-200">
       <a href={apiAssetUrl(image.previewUrl)} target="_blank" rel="noreferrer"><img src={apiAssetUrl(image.previewUrl)} alt={`${hotel.name} — ảnh ${index + 1}`} className="aspect-video w-full object-cover" loading="lazy" /></a>
-      <figcaption className="flex items-center justify-between gap-2 p-3"><span className="text-xs text-slate-500">{image.width} × {image.height}</span><Button type="button" size="sm" variant="danger" disabled={locked || busy} aria-label={`Xóa ảnh ${index + 1}`} onClick={() => { setError(''); setDeleteId(image.id) }}><Trash2 size={15} />Xóa</Button></figcaption>
+      <figcaption className="flex items-center justify-between gap-2 p-3"><span className="text-xs text-slate-500">{image.width != null && image.height != null ? `${image.width} × ${image.height}` : 'Ảnh khách sạn'}</span><Button type="button" size="sm" variant="danger" disabled={locked || busy} aria-label={`Xóa ảnh ${index + 1}`} onClick={() => { setError(''); setDeleteId(image.id) }}><Trash2 size={15} />Xóa</Button>{index === 0 ? <span className="text-xs">Ảnh đại diện</span> : <Button type="button" size="sm" variant="secondary" disabled={locked || busy} onClick={() => { void primary(image.id) }}>Đặt làm ảnh đại diện</Button>}</figcaption>
     </figure>)}</div> : <p className="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-500">Chưa có ảnh khách sạn.</p>}
     {locked ? <p className="mt-4 text-sm text-amber-800">Ảnh tạm khóa trong khi hồ sơ chờ duyệt.</p> : <form className="mt-5 grid gap-3 border-t border-slate-200 pt-5" onSubmit={upload}>
       <FormField label="Chọn ảnh khách sạn"><input ref={input} type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event => { setFile(event.target.files?.[0] ?? null); setError(''); setMessage('') }} /></FormField>
       <Button className="w-fit" disabled={!file || busy}><Upload size={16} />{busy ? 'Đang xử lý…' : 'Tải ảnh lên'}</Button>
     </form>}
     <div className="mt-3" aria-live="polite"><Feedback message={error} kind="error" /><Feedback message={message} /></div>
-    <Dialog open={Boolean(deleteId)} onOpenChange={open => { if (!open && !busy) setDeleteId(null) }}><DialogContent title="Xóa ảnh khách sạn?" description="Ảnh sẽ được xóa khỏi khách sạn và kho lưu trữ.">
+    <Dialog open={Boolean(deleteId)} onOpenChange={open => { if (!open && !busy) setDeleteId(null) }}><DialogContent title="Xóa ảnh khách sạn?" description="Ảnh sẽ được gỡ khỏi khách sạn.">
       <Feedback message={error} kind="error" />
       <div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={busy} onClick={() => setDeleteId(null)}>Hủy</Button><Button type="button" variant="danger" disabled={busy || locked} onClick={() => { void remove() }}>{busy ? 'Đang xóa…' : 'Xóa ảnh'}</Button></div>
     </DialogContent></Dialog>

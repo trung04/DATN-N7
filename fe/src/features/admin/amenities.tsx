@@ -10,7 +10,7 @@ import type { AmenityOption } from '@/types/domain'
 
 export function AdminAmenitiesPage() {
   const queryClient = useQueryClient()
-  const amenities = useQuery({ queryKey: ['admin-amenities'], queryFn: api.amenities })
+  const amenities = useQuery({ queryKey: ['admin-amenities'], queryFn: () => api.amenities() })
   const [editing, setEditing] = useState<AmenityOption | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [deleting, setDeleting] = useState<AmenityOption | null>(null)

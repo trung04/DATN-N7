@@ -9,16 +9,30 @@ import { RoomEntity } from './entities/room.entity';
 import { ROOM_REPOSITORY } from './interfaces/room.repository.interface';
 import { TypeOrmRoomRepository } from './repositories/typeorm-room.repository';
 import { RoomsService } from './services/rooms.service';
+import { RoomImagesController } from './controllers/room-images.controller';
+import { RoomImagesService } from './services/room-images.service';
+import { RoomImageEntity } from './entities/room-image.entity';
+import { ROOM_IMAGE_REPOSITORY } from './interfaces/room-image.repository.interface';
+import { TypeOrmRoomImageRepository } from './repositories/typeorm-room-image.repository';
+import { RoomImageManagementGuard } from './guards/room-image-management.guard';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RoomEntity, RoomAmenityEntity, RoomGuestPolicyEntity]),
+    TypeOrmModule.forFeature([
+      RoomEntity,
+      RoomAmenityEntity,
+      RoomGuestPolicyEntity,
+      RoomImageEntity,
+    ]),
     AmenitiesModule,
     HotelsModule,
   ],
-  controllers: [RoomsController],
+  controllers: [RoomsController, RoomImagesController],
   providers: [
     RoomsService,
+    RoomImagesService,
+    RoomImageManagementGuard,
+    { provide: ROOM_IMAGE_REPOSITORY, useClass: TypeOrmRoomImageRepository },
     {
       provide: ROOM_REPOSITORY,
       useClass: TypeOrmRoomRepository,

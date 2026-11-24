@@ -1,3 +1,6 @@
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { pageItems } from '@/lib/pagination'
 import { useQuery } from '@tanstack/react-query'
 import { Banknote, CalendarDays, ReceiptText } from 'lucide-react'
 import { Card, EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from '@/components/common'
@@ -13,10 +16,11 @@ export function PartnerSettlementsPage() {
     queryFn: () => api.partnerSettlementBatches(),
   })
 
+  const pagination = usePagination(query.data?.length)
   if (query.isPending) return <LoadingState />
   if (query.isError) return <ErrorState message={errorMessage(query.error)} retry={() => { void query.refetch() }} />
 
-  const batches = query.data
+  const batches = pageItems(query.data, pagination.page, pagination.size)
 
   return <div>
     <PageHeader title="Đối soát và chi trả" description="Theo dõi bảng kê, khoản thực nhận và trạng thái xử lý của các booking tại khách sạn của bạn." />
@@ -51,5 +55,6 @@ export function PartnerSettlementsPage() {
         {batch.providerTransferId && <p className="mt-3 break-all text-xs text-slate-500">Mã giao dịch nhà cung cấp: {batch.providerTransferId}</p>}
       </details>)}
     </Card>}
+    <Pagination page={pagination.page} total={query.data.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
   </div>
 }

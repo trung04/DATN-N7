@@ -1,3 +1,7 @@
+import { loadHotelOptions } from '@/services/api/management-options'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { pageItems } from '@/lib/pagination'
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -5,9 +9,8 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { Card, EmptyState, ErrorState, FormField, LoadingState, PageHeader } from '@/components/common'
 import { api } from '@/services/api/client'
 import { errorMessage } from '@/lib/utils'
-import type { PartnerHotelQuery, ReportGroupBy, ReportQuery } from '@/types/domain'
+import type { ReportGroupBy, ReportQuery } from '@/types/domain'
 
-const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' }
 const groups: Array<[ReportGroupBy, string]> = [['day', 'Theo ngày'], ['week', 'Theo tuần'], ['month', 'Theo tháng']]
 const bookingStatuses = ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'] as const
 const statusNames: Record<string, string> = { PENDING: 'Chờ xử lý', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất' }
@@ -25,12 +28,12 @@ export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams()
   const hotels = useQuery({
     queryKey: [admin ? 'admin' : 'partner', 'report-hotels'],
-    queryFn: () => admin ? api.adminHotels(hotelsQuery) : api.myHotels(hotelsQuery),
+    queryFn: () => loadHotelOptions(admin),
   })
   const now = new Date()
   const from = params.get('from') ?? localDate(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = params.get('to') ?? localDate(now)
-  const selectedHotelId = params.get('hotelId') ?? (admin ? '' : hotels.data?.data[0]?.id ?? '')
+  const selectedHotelId = params.get('hotelId') ?? (admin ? '' : hotels.data?.[0]?.id ?? '')
   const groupBy = (params.get('groupBy') as ReportGroupBy | null) ?? 'day'
   const validRange = from <= to
   const query = useMemo<ReportQuery>(() => ({
@@ -41,21 +44,24 @@ export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
   const summary = useQuery({ queryKey: ['reports-summary', admin, query], queryFn: () => api.reportSummary(query), enabled })
   const timeseries = useQuery({ queryKey: ['reports-timeseries', admin, query], queryFn: () => api.reportTimeseries(query), enabled })
 
+  const pagination = usePagination(summary.data?.hotels.length)
+
   const changeParams = (values: Record<string, string | undefined>) => {
     const next = new URLSearchParams(params)
-    for (const [key, value] of Object.entries(values)) value ? next.set(key, value) : next.delete(key)
+    next.delete('page')
+    for (const [key, value] of Object.entries(values)) { if (value) next.set(key, value); else next.delete(key) }
     setParams(next, { replace: true })
   }
 
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
-  if (!admin && hotels.data.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn để xem báo cáo đặt phòng và thanh toán." />
+  if (!admin && hotels.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn để xem báo cáo đặt phòng và thanh toán." />
   if (!validRange) return <div><PageHeader title={admin ? 'Báo cáo hệ thống' : 'Báo cáo khách sạn'} /><p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p></div>
   if (summary.isPending || timeseries.isPending) return <LoadingState />
   if (summary.isError) return <ErrorState message={errorMessage(summary.error)} retry={() => { void summary.refetch() }} />
   if (timeseries.isError) return <ErrorState message={errorMessage(timeseries.error)} retry={() => { void timeseries.refetch() }} />
 
-  const hotelRows = summary.data.hotels
+  const hotelRows = pageItems(summary.data.hotels, pagination.page, pagination.size)
   const currencyRows = summary.data.financialByCurrency
   const trendCurrencies = [...new Set(timeseries.data.financialTrend.map(point => point.currency))]
   const financialByCurrency = (currency: string) => {
@@ -72,7 +78,7 @@ export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
     <Card className="mb-5 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
       <FormField label="Từ ngày"><input type="date" value={from} onChange={event => changeParams({ from: event.target.value || undefined })} /></FormField>
       <FormField label="Đến ngày"><input type="date" value={to} onChange={event => changeParams({ to: event.target.value || undefined })} /></FormField>
-      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => changeParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Toàn hệ thống' : 'Chọn khách sạn'}</option>{hotels.data.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
+      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => changeParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Toàn hệ thống' : 'Chọn khách sạn'}</option>{hotels.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
       <FormField label="Nhóm biểu đồ"><select value={groupBy} onChange={event => changeParams({ groupBy: event.target.value })}>{groups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FormField>
     </Card>
 
@@ -102,6 +108,7 @@ export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
     </div>
 
     <Card className="table-scroll p-5"><h2 className="mb-4 font-semibold">Tổng hợp theo khách sạn và tiền tệ</h2>{hotelRows.length ? <table><thead><tr><th>Khách sạn</th><th>Tiền tệ</th><th>Booking tạo</th><th>Đã thanh toán</th><th>Chờ đối soát</th><th>Đã hoàn</th><th>Đã trả chủ KS</th></tr></thead><tbody>{hotelRows.map(row => <tr key={`${row.hotelId}-${row.currency}`}><td>{row.hotelName}</td><td>{row.currency}</td><td>{row.bookingCount}</td><td>{money(row.paidAmount, row.currency)}</td><td>{money(row.pendingSettlementAmount, row.currency)}</td><td>{money(row.refundAmount, row.currency)}</td><td>{money(row.partnerReceivableAmount, row.currency)}</td></tr>)}</tbody></table> : <EmptyState title="Chưa có dữ liệu" description="Không có booking thuộc bộ lọc đã chọn." />}</Card>
+    <Pagination page={pagination.page} total={summary.data.hotels.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
   </div>
 }
 

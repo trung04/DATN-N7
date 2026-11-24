@@ -12,6 +12,7 @@ import { errorMessage } from '@/lib/utils'
 import { useSession } from '@/stores/session'
 import type { Role } from '@/types/domain'
 import { cn } from '@/lib/cn'
+import { loginDestination } from '@/lib/auth-navigation'
 import { clearOtpResendCooldown, formatOtpCountdown, startOtpResendCooldown, useOtpResendCooldown } from './otp-cooldown'
 
 function GoogleIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
@@ -50,7 +51,6 @@ function PasswordRequirements({ password }: { password?: string }) {
 const loginSchema = z.object({ username: z.string().min(1, 'Nhập tên đăng nhập hoặc email.'), password: z.string().min(1, 'Nhập mật khẩu.') })
 const registerSchema = z.object({ name: z.string().min(2, 'Tên cần ít nhất 2 ký tự.'), username: z.string().min(3, 'Tên đăng nhập cần ít nhất 3 ký tự.').max(50).regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, 'Chỉ dùng chữ thường, số, dấu chấm, gạch dưới hoặc gạch ngang.'), email: z.email('Email không hợp lệ.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
 const resetSchema = z.object({ otp: z.string().length(6, 'OTP gồm 6 chữ số.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
-const authDestination = (role: string) => role === 'admin' ? '/admin' : role === 'partner' ? '/partner' : '/'
 const loginPathByRole: Record<Role, string> = { tourist: '/dang-nhap', partner: '/chu-khach-san/dang-nhap', admin: '/admin/dang-nhap' }
 const roleLabel: Record<Role, string> = { tourist: 'du khách', partner: 'chủ khách sạn', admin: 'quản trị viên' }
 const loginPortals: Array<{ role: Role; path: string; label: string }> = [
@@ -102,7 +102,8 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
         }
         login(user)
         const target = params.get('returnTo')
-        navigate(target?.startsWith('/') && !target.startsWith('//') ? target : authDestination(user.role), { replace: true })
+        const safeTarget = target?.startsWith('/') && !target.startsWith('//') ? target : undefined
+        navigate(loginDestination(user.role, safeTarget), { replace: true })
       } catch (error) { setMessage(errorMessage(error)) }
     })}>
       <FormField label="Tên đăng nhập hoặc email" error={errors.username?.message}><input autoComplete="username" aria-invalid={Boolean(errors.username)} {...register('username')} /></FormField>

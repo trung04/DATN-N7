@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -49,6 +50,18 @@ export class CreateHotelRequest {
   @IsNotEmpty()
   @MaxLength(500)
   address: string;
+
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 
   @Transform(trim)
   @Matches(/^\+?[0-9][0-9 .()-]{6,28}$/, {

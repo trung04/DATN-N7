@@ -14,5 +14,13 @@ export interface CreateHotelImageData {
 export interface HotelImageRepository {
   create(data: CreateHotelImageData): Promise<HotelImageEntity>;
   find(hotelId: string, imageId: string): Promise<HotelImageEntity | null>;
-  delete(hotelId: string, imageId: string): Promise<void>;
+  delete(
+    hotelId: string,
+    imageId: string,
+    deleteOwnedImage: boolean,
+  ): Promise<void>;
+  makePrimary(
+    hotelId: string,
+    imageId: string,
+  ): Promise<HotelImageEntity | null>;
 }
