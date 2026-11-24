@@ -8,7 +8,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { HotelDocumentEntity } from './hotel-document.entity';
-import { HotelImageEntity } from './hotel-image.entity';
 
 export enum HotelStatus {
   DRAFT = 'DRAFT',
@@ -49,12 +48,6 @@ export class HotelEntity {
   @Column({ type: 'varchar', length: 500 })
   address: string;
 
-  @Column({ type: 'double precision', nullable: true })
-  latitude: number | null;
-
-  @Column({ type: 'double precision', nullable: true })
-  longitude: number | null;
-
   @Column({ name: 'phone_number', type: 'varchar', length: 30 })
   phoneNumber: string;
 
@@ -93,7 +86,4 @@ export class HotelEntity {
 
   @OneToMany(() => HotelDocumentEntity, (document) => document.hotel)
   documents: HotelDocumentEntity[];
-
-  @OneToMany(() => HotelImageEntity, (image) => image.hotel)
-  images: HotelImageEntity[];
 }

@@ -106,12 +106,6 @@ export class BookingCapacityExceededException extends DomainException {
   }
 }
 
-export class BookingGuestAllocationException extends DomainException {
-  constructor(message: string) {
-    super(message, 'BOOKING_GUEST_ALLOCATION_INVALID', 'validation');
-  }
-}
-
 export class BookingRoomUnavailableException extends DomainException {
   constructor(roomId: string) {
     super(
@@ -192,32 +186,52 @@ export class BookingPaymentAlreadyInitializedException extends DomainException {
   }
 }
 
-export class SePayCurrencyNotSupportedException extends DomainException {
+export class VnpayCurrencyNotSupportedException extends DomainException {
   constructor() {
     super(
-      'SePay Sandbox payments require VND currency.',
-      'SEPAY_CURRENCY_NOT_SUPPORTED',
+      'VNPAY Sandbox payments require VND currency.',
+      'VNPAY_CURRENCY_NOT_SUPPORTED',
       'validation',
     );
   }
 }
 
-export class SePayAmountNotSupportedException extends DomainException {
+export class VnpayAmountNotSupportedException extends DomainException {
   constructor() {
     super(
-      'SePay Sandbox payments require a whole-number amount greater than zero VND.',
-      'SEPAY_AMOUNT_NOT_SUPPORTED',
+      'VNPAY Sandbox payments require a whole-number amount of at least 5,000 VND.',
+      'VNPAY_AMOUNT_NOT_SUPPORTED',
       'validation',
     );
   }
 }
 
-export class SePayNotConfiguredException extends DomainException {
+export class VnpayNotConfiguredException extends DomainException {
   constructor() {
     super(
-      'SePay Sandbox is not configured.',
-      'SEPAY_NOT_CONFIGURED',
+      'VNPAY Sandbox is not configured.',
+      'VNPAY_NOT_CONFIGURED',
       'service_unavailable',
+    );
+  }
+}
+
+export class VnpayUnavailableException extends DomainException {
+  constructor() {
+    super(
+      'VNPAY Sandbox is temporarily unavailable.',
+      'VNPAY_UNAVAILABLE',
+      'service_unavailable',
+    );
+  }
+}
+
+export class VnpayInvalidResponseException extends DomainException {
+  constructor() {
+    super(
+      'VNPAY Sandbox returned an invalid response.',
+      'VNPAY_INVALID_RESPONSE',
+      'bad_gateway',
     );
   }
 }
@@ -285,12 +299,6 @@ export class BookingActionNotAllowedException extends DomainException {
       'BOOKING_ACTION_NOT_ALLOWED',
       'conflict',
     );
-  }
-}
-
-export class BookingCancellationNotAllowedException extends DomainException {
-  constructor(reason: string) {
-    super(reason, 'BOOKING_CANCELLATION_NOT_ALLOWED', 'conflict');
   }
 }
 

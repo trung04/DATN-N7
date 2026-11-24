@@ -3,11 +3,9 @@ import {
   BookingResponse,
 } from '../dtos/responses/booking.response';
 import { BookingEntity } from '../entities/booking.entity';
-import { assessCancellation } from '../services/cancellation-assessment';
 
 export class BookingMapper {
   static toResponse(booking: BookingEntity): BookingResponse {
-    const cancellation = assessCancellation(booking);
     return {
       id: booking.id,
       hotelId: booking.hotelId,
@@ -46,22 +44,12 @@ export class BookingMapper {
       bankAccountHolderSnapshot: booking.bankAccountHolderSnapshot,
       settledAt: booking.settledAt?.toISOString() ?? null,
       cancellationPolicyId: booking.cancellationPolicyId,
-      cancellationPolicySnapshot: booking.cancellationPolicySnapshot,
-      cancellationAllowedNow: cancellation.allowed,
-      cancellationUnavailableReason: cancellation.reason,
-      cancellationFeeAmountNow: cancellation.feeAmount,
       cancellationWindowSnapshot: booking.cancellationWindowSnapshot,
       cancellationFeeRateSnapshot: booking.cancellationFeeRateSnapshot,
       cancellationDescriptionSnapshot: booking.cancellationDescriptionSnapshot,
-      cancellationFeeAmount: booking.cancellationFeeAmount,
       refundAmount: booking.refundAmount,
       refundReason: booking.refundReason,
       refundStatus: booking.refundStatus,
-      refundRequestedAt: booking.refundRequestedAt?.toISOString() ?? null,
-      refundProcessingAt: booking.refundProcessingAt?.toISOString() ?? null,
-      refundAttempt: booking.refundAttempt ?? 0,
-      refundFailureReason: booking.refundFailureReason,
-      refundFailedAt: booking.refundFailedAt?.toISOString() ?? null,
       refundedAt: booking.refundedAt?.toISOString() ?? null,
       refundTransactionId: booking.refundTransactionId,
       roomItems: (booking.roomItems ?? []).map((item) => ({
@@ -70,16 +58,6 @@ export class BookingMapper {
         roomNumberSnapshot: item.roomNumberSnapshot,
         roomTypeSnapshot: item.roomTypeSnapshot,
         maxOccupancySnapshot: item.maxOccupancySnapshot,
-        adultCount: item.adultCount,
-        maxAdultsSnapshot: item.maxAdultsSnapshot,
-        maxChildrenSnapshot: item.maxChildrenSnapshot,
-        adultAgeFromSnapshot: item.adultAgeFromSnapshot,
-        freeChildMaxAgeSnapshot: item.freeChildMaxAgeSnapshot,
-        childSurchargePerNightSnapshot: item.childSurchargePerNightSnapshot,
-        childGuests: (item.childGuests ?? []).map((child) => ({
-          ageAtCheckIn: child.ageAtCheckIn,
-          surchargePerNightSnapshot: child.surchargePerNightSnapshot,
-        })),
         pricePerNight: item.pricePerNight,
         currency: item.currency,
         numberOfNights: item.numberOfNights,

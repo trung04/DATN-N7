@@ -5,5 +5,5 @@ export class GoogleStartRequest {
   @IsString()
   @MaxLength(1000)
   @Matches(/^\/(?!\/)/, { message: 'returnTo must be a local path' })
-  returnTo?: string = '/';
+  returnTo?: string;
 }

@@ -1,17 +1,10 @@
-import { BadRequestException, Inject, Injectable, Optional } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Inject, Injectable } from '@nestjs/common';
 import { AmenitiesService } from '../../amenities/services/amenities.service';
 import { HotelsService } from '../../hotels/services/hotels.service';
-import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
-import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
-import { UserRole } from '../../users/entities/user.entity';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
 import { RoomEntity } from '../entities/room.entity';
-import { RoomGuestPolicyEntity } from '../entities/room-guest-policy.entity';
-import { UpsertRoomGuestPolicyRequest } from '../dtos/requests/upsert-room-guest-policy.request';
 import {
   EmptyRoomUpdateException,
   RoomNotFoundException,
@@ -31,26 +24,16 @@ export class RoomsService {
     private readonly repository: RoomRepository,
     private readonly amenitiesService: AmenitiesService,
     private readonly hotelsService: HotelsService,
-    @Optional()
-    @InjectRepository(RoomGuestPolicyEntity)
-    private readonly guestPolicyRepository?: Repository<RoomGuestPolicyEntity>,
   ) {}
 
-  async create(
-    input: CreateRoomRequest,
-    actor: AuthorizationActor,
-  ): Promise<RoomWithAmenities> {
-    await this.hotelsService.assertManagedBy(input.hotelId, actor);
+  async create(input: CreateRoomRequest): Promise<RoomWithAmenities> {
     await this.hotelsService.assertActive(input.hotelId);
     const roomNumber = this.normalizeRoomNumber(input.roomNumber);
     if (await this.repository.findByHotelAndNumber(input.hotelId, roomNumber)) {
       throw new RoomNumberConflictException(input.hotelId, roomNumber);
     }
 
-    const amenities = await this.amenitiesService.findByIdsForHotel(
-      input.amenityIds,
-      input.hotelId,
-    );
+    const amenities = await this.amenitiesService.findByIds(input.amenityIds);
     const result = await this.repository.create(
       {
         hotelId: input.hotelId,
@@ -64,113 +47,15 @@ export class RoomsService {
       },
       input.amenityIds,
     );
-    await this.ensureDefaultGuestPolicy(result.room);
     return { room: result.room, amenities };
   }
 
-  async listGuestPolicies(
-    hotelId?: string,
-    hotelIds?: string[],
-  ): Promise<RoomGuestPolicyEntity[]> {
-    const requestedHotelIds = hotelId ? [hotelId] : hotelIds ?? [];
-    if (requestedHotelIds.length === 0) return [];
-    return this.requireGuestPolicyRepository().find({
-      where: { hotelId: In(requestedHotelIds) },
-      order: { roomType: 'ASC' },
-    });
-  }
-
-  async saveGuestPolicy(
-    input: UpsertRoomGuestPolicyRequest,
-    actor: AuthorizationActor,
-  ): Promise<RoomGuestPolicyEntity> {
-    await this.hotelsService.assertManagedBy(input.hotelId, actor);
-    await this.hotelsService.assertActive(input.hotelId);
-    const roomType = this.normalizeRoomType(input.roomType);
-    const repository = this.requireGuestPolicyRepository();
-    const roomTypes = (await repository.manager.query(
-      `SELECT max(max_occupancy) AS "maxOccupancy" FROM rooms
-       WHERE hotel_id = $1::uuid AND deleted_at IS NULL
-         AND lower(btrim(room_type)) = lower(btrim($2))`,
-      [input.hotelId, roomType],
-    )) as Array<{ maxOccupancy: number | string | null }>;
-    const maximumOccupancy = Number(roomTypes[0]?.maxOccupancy ?? 0);
-    if (!maximumOccupancy) {
-      throw new BadRequestException('Room type must exist in this hotel before its guest policy can be configured.');
-    }
-    if (input.maxAdults > maximumOccupancy) {
-      throw new BadRequestException(`Maximum adults cannot exceed this room type's largest room capacity (${maximumOccupancy}).`);
-    }
-    if (input.freeChildMaxAge >= 12) {
-      throw new BadRequestException('Children aged 12 and above must be counted as adults.');
-    }
-    const current = await repository
-      .createQueryBuilder('policy')
-      .where('policy.hotelId = :hotelId', { hotelId: input.hotelId })
-      .andWhere('LOWER(BTRIM(policy.roomType)) = LOWER(BTRIM(:roomType))', { roomType })
-      .getOne();
-    const policy = current ?? repository.create({ hotelId: input.hotelId, roomType });
-    policy.roomType = roomType;
-    policy.maxAdults = input.maxAdults;
-    policy.maxChildren = input.maxChildren;
-    policy.adultAgeFrom = 12;
-    policy.freeChildMaxAge = input.freeChildMaxAge;
-    policy.childSurchargePerNight = input.childSurchargePerNight;
-    return repository.save(policy);
-  }
-
-  private async ensureDefaultGuestPolicy(room: RoomEntity): Promise<void> {
-    if (!this.guestPolicyRepository) return;
-    const current = await this.guestPolicyRepository
-      .createQueryBuilder('policy')
-      .where('policy.hotelId = :hotelId', { hotelId: room.hotelId })
-      .andWhere('LOWER(BTRIM(policy.roomType)) = LOWER(BTRIM(:roomType))', {
-        roomType: room.roomType,
-      })
-      .getOne();
-    if (current) return;
-    await this.guestPolicyRepository.save(
-      this.guestPolicyRepository.create({
-        hotelId: room.hotelId,
-        roomType: this.normalizeRoomType(room.roomType),
-        maxAdults: room.maxOccupancy,
-        maxChildren: room.maxOccupancy,
-        adultAgeFrom: 12,
-        freeChildMaxAge: 11,
-        childSurchargePerNight: 0,
-      }),
-    );
-  }
-
-  private requireGuestPolicyRepository(): Repository<RoomGuestPolicyEntity> {
-    if (!this.guestPolicyRepository) {
-      throw new Error('Room guest policy repository is not configured.');
-    }
-    return this.guestPolicyRepository;
-  }
-
-  private normalizeRoomType(roomType: string): string {
-    return roomType.trim().replace(/\s+/g, ' ');
-  }
-
-  async findManagedPage(input: ListRoomsRequest, actor: AuthorizationActor): Promise<RoomResultPage> {
-    if (actor.role !== UserRole.HOTEL_OWNER && actor.role !== UserRole.ADMIN) {
-      throw new AuthorizationDeniedException();
-    }
-    if (input.hotelId) await this.hotelsService.assertManagedBy(input.hotelId, actor);
-    const hotelIds = actor.role === UserRole.HOTEL_OWNER
-      ? await this.hotelsService.findOwnedIds(actor.id)
-      : undefined;
-    return this.findPage(input, hotelIds);
-  }
-
-  async findPage(input: ListRoomsRequest, hotelIds?: string[]): Promise<RoomResultPage> {
+  async findPage(input: ListRoomsRequest): Promise<RoomResultPage> {
     const page = await this.repository.findPage({
       page: input.page,
       limit: input.limit,
       search: input.search,
       hotelId: input.hotelId,
-      hotelIds,
       roomType: input.roomType,
       operationalStatus: input.operationalStatus,
       sortBy: input.sortBy,
@@ -188,7 +73,6 @@ export class RoomsService {
       items: page.items.map((item) => ({
         room: item.room,
         amenities: item.amenityIds.map((id) => amenitiesById.get(id)!),
-        roomImageId: item.roomImageId ?? null,
       })),
       total: page.total,
     };
@@ -200,11 +84,7 @@ export class RoomsService {
     const amenities = await this.amenitiesService.findExistingByIds(
       result.amenityIds,
     );
-    return {
-      room: result.room,
-      amenities,
-      roomImageId: result.roomImageId ?? null,
-    };
+    return { room: result.room, amenities };
   }
 
   async findEntitiesByIds(ids: string[]): Promise<RoomEntity[]> {
@@ -217,24 +97,17 @@ export class RoomsService {
     return uniqueIds.map((id) => roomsById.get(id)!);
   }
 
-  findBookableByHotel(hotelId?: string): Promise<RoomEntity[]> {
-    return this.repository.findBookableByHotel(hotelId);
-  }
-
   async update(
     id: string,
     input: UpdateRoomRequest,
-    actor: AuthorizationActor,
   ): Promise<RoomWithAmenities> {
     if (this.isEmptyUpdate(input)) throw new EmptyRoomUpdateException();
 
     const current = await this.repository.findById(id);
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
-    await this.hotelsService.assertManagedBy(room.hotelId, actor);
     const hotelId = input.hotelId ?? room.hotelId;
     if (hotelId !== room.hotelId) {
-      await this.hotelsService.assertManagedBy(hotelId, actor);
       await this.hotelsService.assertActive(hotelId);
     }
     const roomNumber =
@@ -253,20 +126,18 @@ export class RoomsService {
     }
 
     const targetAmenityIds = input.amenityIds ?? current.amenityIds;
-    const amenities = await this.amenitiesService.findByIdsForHotel(
-      targetAmenityIds,
-      hotelId,
-    );
+    const amenities =
+      input.amenityIds === undefined
+        ? await this.amenitiesService.findExistingByIds(targetAmenityIds)
+        : await this.amenitiesService.findByIds(targetAmenityIds);
     this.applyUpdate(room, input, hotelId, roomNumber);
     const saved = await this.repository.save(room, input.amenityIds);
-    await this.ensureDefaultGuestPolicy(saved.room);
     return { room: saved.room, amenities };
   }
 
-  async delete(id: string, actor: AuthorizationActor): Promise<void> {
+  async delete(id: string): Promise<void> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
-    await this.hotelsService.assertManagedBy(result.room.hotelId, actor);
     await this.repository.delete(result.room);
   }
 

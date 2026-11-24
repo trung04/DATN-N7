@@ -16,7 +16,6 @@ export class RoomResponse {
   description: string | null;
   operationalStatus: RoomOperationalStatus;
   roomType: string;
-  imageUrl: string | null;
   amenities: RoomAmenityResponse[];
   createdAt: string;
   updatedAt: string;

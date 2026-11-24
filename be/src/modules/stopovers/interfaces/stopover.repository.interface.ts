@@ -20,11 +20,7 @@ export interface StopoverPage {
 
 export interface CreateStopoverData {
   itineraryId: string;
-  placeId: string | null;
-  customName: string | null;
-  customAddress: string | null;
-  latitude: number | null;
-  longitude: number | null;
+  placeId: string;
   stopOrder: number;
   arrivalTime: Date;
   departureTime: Date;
@@ -37,12 +33,10 @@ export interface StopoverRepository {
     id: string,
     itineraryId: string,
   ): Promise<StopoverEntity | null>;
-  findByItineraryId(itineraryId: string): Promise<StopoverEntity[]>;
-  hasActivitiesOutsideRange(
-    stopoverId: string,
-    arrivalTime: Date,
-    departureTime: Date,
-  ): Promise<boolean>;
+  findByItineraryAndOrder(
+    itineraryId: string,
+    stopOrder: number,
+  ): Promise<StopoverEntity | null>;
   findPage(options: FindStopoversOptions): Promise<StopoverPage>;
   create(data: CreateStopoverData): Promise<StopoverEntity>;
   save(stopover: StopoverEntity): Promise<StopoverEntity>;

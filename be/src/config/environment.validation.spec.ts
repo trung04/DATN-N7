@@ -8,35 +8,6 @@ const database = {
 };
 
 describe('environment validation', () => {
-  it('validates hotel geocoding provider configuration without exposing values', () => {
-    expect(validateEnvironment(database).HOTEL_GEOCODER_ORIGIN).toBe('https://nominatim.openstreetmap.org');
-    for (const origin of ['http://example.org', 'https://user:secret@example.org', 'https://example.org/path', 'https://example.org?q=secret']) {
-      expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_ORIGIN: origin })).toThrow('HOTEL_GEOCODER_ORIGIN');
-    }
-    expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_USER_AGENT: 'bad\r\nheader' })).toThrow('HOTEL_GEOCODER_USER_AGENT');
-  });
-  it('validates storage origins, bucket names and credential pairs', () => {
-    const configured = {
-      ...database,
-      S3_ACCESS_KEY: 'test-key',
-      S3_SECRET_KEY: 'test-secret',
-    };
-    expect(validateEnvironment(configured).S3_HOTEL_IMAGES_BUCKET).toBe(
-      'hotel-images',
-    );
-    for (const [key, value] of [
-      ['S3_ENDPOINT', 'http://user:secret@localhost:9002'],
-      ['S3_ENDPOINT', 'ftp://localhost'],
-      ['S3_HOTEL_IMAGES_BUCKET', '../bucket'],
-      ['S3_HOTEL_IMAGES_BUCKET', 'UPPER'],
-      ['S3_REGION', ''],
-      ['S3_SECRET_KEY', ''],
-    ]) {
-      expect(() =>
-        validateEnvironment({ ...configured, [key]: value }),
-      ).toThrow(key);
-    }
-  });
   it('normalizes ports, TTL and TLS flags without changing credentials', () => {
     const result = validateEnvironment({
       ...database,
@@ -54,30 +25,9 @@ describe('environment validation', () => {
     expect(result.BOOKING_HOLD_MINUTES).toBe(15);
     expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
     expect(result.DATABASE_PASSWORD).toBe(database.DATABASE_PASSWORD);
-    expect(result.SEPAY_V2_BASE_URL).toBe(
-      'https://userapi-sandbox.sepay.vn/v2',
+    expect(result.VNPAY_PAYMENT_URL).toBe(
+      'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
     );
-  });
-
-  it('accepts POSTGRES aliases used by the deployment configuration', () => {
-    const result = validateEnvironment({
-      POSTGRES_HOST: 'database.internal',
-      POSTGRES_PORT: '5433',
-      POSTGRES_NAME: 'tourism_test',
-      POSTGRES_USER: 'test',
-      POSTGRES_PASSWORD: 'test-only-secret',
-      POSTGRES_SSL: 'false',
-      POSTGRES_POOL_SIZE: '12',
-      POSTGRES_CONNECT_TIMEOUT_MS: '10000',
-    });
-
-    expect(result.DATABASE_HOST).toBe('database.internal');
-    expect(result.DATABASE_PORT).toBe(5433);
-    expect(result.DATABASE_NAME).toBe('tourism_test');
-    expect(result.DATABASE_USER).toBe('test');
-    expect(result.DATABASE_SSL).toBe(false);
-    expect(result.DATABASE_POOL_SIZE).toBe(12);
-    expect(result.DATABASE_CONNECT_TIMEOUT_MS).toBe(10000);
   });
 
   it.each([
@@ -92,10 +42,6 @@ describe('environment validation', () => {
     ['DATABASE_SSL', '1'],
     ['REDIS_HOST', ''],
     ['DATABASE_PASSWORD', ''],
-    ['AI_BASE_URL', 'file:///tmp/test'],
-    ['AI_BASE_URL', 'http://user:secret@ai:9000'],
-    ['AI_BASE_URL', 'http://ai:9000/path'],
-    ['AI_TIMEOUT_MS', '0'],
     ['BOOKING_COMMISSION_RATE', '101'],
     ['BOOKING_HOLD_MINUTES', '0'],
     ['IDEMPOTENCY_KEY_TTL_HOURS', '169'],
@@ -107,23 +53,6 @@ describe('environment validation', () => {
 
   it('fails on missing database credentials', () => {
     expect(() => validateEnvironment({})).toThrow('DATABASE_HOST is required');
-  });
-
-  it('accepts AI, authentication and booking settings together', () => {
-    const result = validateEnvironment({
-      ...database,
-      AI_BASE_URL: 'http://ai:9000/',
-      AI_API_KEY: 'test-only',
-      AUTH_ACCESS_TTL_MS: '120000',
-      AUTH_REFRESH_TTL_MS: '7200000',
-      BOOKING_COMMISSION_RATE: '12.5',
-    });
-    expect(result.AI_BASE_URL).toBe('http://ai:9000');
-    expect(result.AI_API_KEY).toBe('test-only');
-    expect(result.AI_TIMEOUT_MS).toBe(15000);
-    expect(result.AUTH_ACCESS_TTL_MS).toBe(120000);
-    expect(result.AUTH_REFRESH_TTL_MS).toBe(7200000);
-    expect(result.BOOKING_COMMISSION_RATE).toBe(12.5);
   });
 
   it('requires refresh lifetime to exceed access lifetime', () => {
@@ -145,30 +74,29 @@ describe('environment validation', () => {
     ).toThrow('FRONTEND_ORIGIN');
   });
 
-  it('accepts a complete SePay API v2 Sandbox configuration', () => {
+  it('accepts a complete VNPAY Sandbox configuration', () => {
     const result = validateEnvironment({
       ...database,
-      SEPAY_V2_API_TOKEN: 'test-only-sepay-token',
-      SEPAY_V2_BANK_ACCOUNT_XID: 'f9e8d7c6-b5a4-4210-8edc-ba0987654321',
-      SEPAY_WEBHOOK_SECRET: 'test-only-webhook-secret',
+      VNPAY_TMN_CODE: 'SANDBOX01',
+      VNPAY_HASH_SECRET: 'test-only-vnpay-secret',
+      VNPAY_RETURN_URL: 'http://localhost:3000/api/v1/payments/vnpay/return',
     });
-    expect(result.SEPAY_V2_BASE_URL).toBe('https://userapi-sandbox.sepay.vn/v2');
-    expect(result.SEPAY_WEBHOOK_AUTH_TYPE).toBe('HMAC_SHA256');
+    expect(result.VNPAY_TMN_CODE).toBe('SANDBOX01');
   });
 
-  it('rejects incomplete SePay API v2 account configuration', () => {
+  it('rejects a partial VNPAY configuration', () => {
     expect(() =>
-      validateEnvironment({ ...database, SEPAY_V2_API_TOKEN: 'test-only-token' }),
-    ).toThrow('SEPAY_V2_API_TOKEN and SEPAY_V2_BANK_ACCOUNT_XID');
+      validateEnvironment({ ...database, VNPAY_TMN_CODE: 'SANDBOX01' }),
+    ).toThrow('VNPAY_HASH_SECRET');
   });
 
-  it('rejects a production SePay API URL in the Sandbox configuration', () => {
+  it('rejects a production VNPAY payment URL', () => {
     expect(() =>
       validateEnvironment({
         ...database,
-        SEPAY_V2_BASE_URL: 'https://userapi.sepay.vn/v2',
+        VNPAY_PAYMENT_URL: 'https://pay.vnpay.vn/paymentv2/vpcpay.html',
       }),
-    ).toThrow('SEPAY_V2_BASE_URL');
+    ).toThrow('VNPAY_PAYMENT_URL');
   });
 
   it('rejects a partial Google configuration', () => {
@@ -186,4 +114,5 @@ describe('environment validation', () => {
     });
     expect(result.GOOGLE_CLIENT_ID).toBe('client-id');
   });
+
 });

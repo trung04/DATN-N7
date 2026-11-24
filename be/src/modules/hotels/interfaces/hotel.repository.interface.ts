@@ -36,8 +36,6 @@ export interface CreateHotelData {
   taxCode: string;
   description: string | null;
   address: string;
-  latitude: number | null;
-  longitude: number | null;
   phoneNumber: string;
   email: string;
   starRating: number | null;
@@ -63,7 +61,6 @@ export interface CreateHotelReviewData {
 }
 
 export interface HotelRepository {
-  findIdsByOwner(ownerUserId: string): Promise<string[]>;
   findById(id: string): Promise<HotelEntity | null>;
   findByTaxCode(taxCode: string): Promise<HotelEntity | null>;
   findPage(options: FindHotelsOptions): Promise<HotelPage>;

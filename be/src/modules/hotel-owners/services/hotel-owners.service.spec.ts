@@ -1,5 +1,5 @@
 import { UsersService } from '../../users/services/users.service';
-import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
 import {
   EmptyHotelOwnerUpdateException,
   HotelOwnerConflictException,
@@ -23,7 +23,7 @@ const hotelOwner = (
 
 describe('HotelOwnersService', () => {
   let repository: jest.Mocked<HotelOwnerRepository>;
-  let usersService: jest.Mocked<Pick<UsersService, 'findById' | 'assignRole'>>;
+  let usersService: jest.Mocked<Pick<UsersService, 'findById'>>;
   let service: HotelOwnersService;
   let createHotelOwner: jest.MockedFunction<HotelOwnerRepository['create']>;
   let saveHotelOwner: jest.MockedFunction<HotelOwnerRepository['save']>;
@@ -38,7 +38,7 @@ describe('HotelOwnersService', () => {
       save: saveHotelOwner,
       delete: jest.fn(),
     };
-    usersService = { findById: jest.fn(), assignRole: jest.fn() };
+    usersService = { findById: jest.fn() };
     service = new HotelOwnersService(
       repository,
       usersService as unknown as UsersService,
@@ -67,7 +67,6 @@ describe('HotelOwnersService', () => {
       bankAccountNumber: '123456789',
       bankAccountHolder: 'NGUYEN VAN A',
     });
-    expect(usersService.assignRole).toHaveBeenCalledWith(userId, 'HOTEL_OWNER');
   });
 
   it('rejects a second owner profile for the same user', async () => {

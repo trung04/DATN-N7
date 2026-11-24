@@ -11,23 +11,18 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Length,
   Matches,
   Max,
   MaxLength,
   Min,
-  ValidateNested,
 } from 'class-validator';
-import { RoomGuestAllocationRequest } from './room-guest-allocation.request';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class CreateBookingRequest {
-  @IsString()
-  @Length(64, 64)
-  @Matches(/^[a-f0-9]{64}$/)
-  cancellationPolicyVersion: string;
+  @IsUUID('4')
+  touristId: string;
 
   @IsArray()
   @ArrayMinSize(1)
@@ -60,14 +55,6 @@ export class CreateBookingRequest {
   @Max(100)
   childCount = 0;
 
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(10)
-  @ArrayUnique((allocation: RoomGuestAllocationRequest) => allocation.roomId)
-  @ValidateNested({ each: true })
-  @Type(() => RoomGuestAllocationRequest)
-  roomGuests?: RoomGuestAllocationRequest[];
-
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
@@ -91,4 +78,7 @@ export class CreateBookingRequest {
   @MaxLength(5000)
   specialRequests?: string | null;
 
+  @IsOptional()
+  @IsUUID('4')
+  cancellationPolicyId?: string | null;
 }

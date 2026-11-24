@@ -34,7 +34,10 @@ export interface ActivityRepository {
     id: string,
     stopoverId: string,
   ): Promise<ActivityEntity | null>;
-  findByStopoverId(stopoverId: string): Promise<ActivityEntity[]>;
+  findByStopoverAndOrder(
+    stopoverId: string,
+    activityOrder: number,
+  ): Promise<ActivityEntity | null>;
   findPage(options: FindActivitiesOptions): Promise<ActivityPage>;
   create(data: CreateActivityData): Promise<ActivityEntity>;
   save(activity: ActivityEntity): Promise<ActivityEntity>;

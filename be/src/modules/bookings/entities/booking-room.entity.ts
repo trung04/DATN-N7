@@ -5,12 +5,10 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
-  OneToMany,
   PrimaryGeneratedColumn,
   ValueTransformer,
 } from 'typeorm';
 import { BookingEntity } from './booking.entity';
-import { BookingRoomChildEntity } from './booking-room-child.entity';
 
 const decimalTransformer: ValueTransformer = {
   to: (value: number) => value,
@@ -40,31 +38,6 @@ export class BookingRoomEntity {
 
   @Column({ name: 'max_occupancy_snapshot', type: 'integer' })
   maxOccupancySnapshot: number;
-
-  @Column({ name: 'adult_count', type: 'integer', nullable: true })
-  adultCount: number | null;
-
-  @Column({ name: 'max_adults_snapshot', type: 'integer', nullable: true })
-  maxAdultsSnapshot: number | null;
-
-  @Column({ name: 'max_children_snapshot', type: 'integer', nullable: true })
-  maxChildrenSnapshot: number | null;
-
-  @Column({ name: 'adult_age_from_snapshot', type: 'integer', nullable: true })
-  adultAgeFromSnapshot: number | null;
-
-  @Column({ name: 'free_child_max_age_snapshot', type: 'integer', nullable: true })
-  freeChildMaxAgeSnapshot: number | null;
-
-  @Column({
-    name: 'child_surcharge_per_night_snapshot',
-    type: 'numeric',
-    precision: 12,
-    scale: 2,
-    transformer: decimalTransformer,
-    nullable: true,
-  })
-  childSurchargePerNightSnapshot: number | null;
 
   @Column({
     name: 'price_per_night',
@@ -97,7 +70,4 @@ export class BookingRoomEntity {
   })
   @JoinColumn({ name: 'booking_id' })
   booking: BookingEntity;
-
-  @OneToMany(() => BookingRoomChildEntity, (child) => child.bookingRoom)
-  childGuests: BookingRoomChildEntity[];
 }

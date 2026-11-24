@@ -10,7 +10,6 @@ export class ItineraryMapper {
       id: entity.id,
       touristUserId: entity.touristUserId,
       name: entity.name,
-      destinationCity: entity.destinationCity,
       description: entity.description,
       startDate: entity.startDate,
       endDate: entity.endDate,

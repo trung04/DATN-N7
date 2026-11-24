@@ -28,20 +28,8 @@ export class StopoverEntity {
   @Column({ name: 'itinerary_id', type: 'uuid' })
   itineraryId: string;
 
-  @Column({ name: 'place_id', type: 'uuid', nullable: true })
-  placeId: string | null;
-
-  @Column({ name: 'custom_name', type: 'varchar', length: 200, nullable: true })
-  customName: string | null;
-
-  @Column({ name: 'custom_address', type: 'text', nullable: true })
-  customAddress: string | null;
-
-  @Column({ type: 'double precision', nullable: true })
-  latitude: number | null;
-
-  @Column({ type: 'double precision', nullable: true })
-  longitude: number | null;
+  @Column({ name: 'place_id', type: 'uuid' })
+  placeId: string;
 
   @Column({ name: 'stop_order', type: 'integer' })
   stopOrder: number;

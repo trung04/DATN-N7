@@ -13,9 +13,6 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Public } from '../../authorization/decorators/public.decorator';
-import { Roles } from '../../authorization/decorators/roles.decorator';
-import { UserRole } from '../../users/entities/user.entity';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -35,7 +32,6 @@ import { AmenityMapper } from '../mappers/amenity.mapper';
 import { AmenitiesService } from '../services/amenities.service';
 
 @ApiTags('Amenities')
-@Roles(UserRole.ADMIN)
 @Controller({ path: 'amenities', version: '1' })
 export class AmenitiesController {
   constructor(private readonly amenitiesService: AmenitiesService) {}
@@ -52,7 +48,6 @@ export class AmenitiesController {
   }
 
   @Get()
-  @Public()
   @ApiListOperation('List amenities', AmenityListResponse)
   async findPage(
     @Query() query: ListAmenitiesRequest,
@@ -67,7 +62,6 @@ export class AmenitiesController {
   }
 
   @Get(':amenityId')
-  @Public()
   @ApiDetailOperation('Get an amenity', AmenityResponse, 'amenityId')
   async findById(
     @Param('amenityId', new ParseUUIDPipe({ version: '4' })) id: string,

@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { CancellationPolicyEntity } from '../entities/cancellation-policy.entity';
-import {
-  CancellationPolicyActiveConflictException,
-  CancellationPolicyNameConflictException,
-} from '../exceptions/cancellation-policy.exceptions';
+import { CancellationPolicyNameConflictException } from '../exceptions/cancellation-policy.exceptions';
 import type {
   CancellationPolicyPage,
   CancellationPolicyRepository,
@@ -35,14 +32,6 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
       .getOne();
   }
 
-  findAllByHotel(hotelId: string): Promise<CancellationPolicyEntity[]> {
-    return this.repository.find({ where: { hotelId } });
-  }
-
-  findActiveByHotel(hotelId: string): Promise<CancellationPolicyEntity | null> {
-    return this.repository.findOneBy({ hotelId, isActive: true });
-  }
-
   async findPage(
     options: FindCancellationPoliciesOptions,
   ): Promise<CancellationPolicyPage> {
@@ -67,8 +56,8 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
       string
     > = {
       name: 'policy.name',
-      cancelHours: 'policy.cancelHours',
-      penaltyPercent: 'policy.penaltyPercent',
+      cancellationWindow: 'policy.cancellationWindow',
+      cancellationFeeRate: 'policy.cancellationFeeRate',
     };
 
     const [items, total] = await query
@@ -86,7 +75,7 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
     try {
       return await this.repository.save(this.repository.create(data));
     } catch (error) {
-      this.rethrowConflict(error, data.hotelId, data.name);
+      this.rethrowNameConflict(error, data.hotelId, data.name);
     }
   }
 
@@ -96,7 +85,7 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
     try {
       return await this.repository.save(policy);
     } catch (error) {
-      this.rethrowConflict(error, policy.hotelId, policy.name);
+      this.rethrowNameConflict(error, policy.hotelId, policy.name);
     }
   }
 
@@ -104,7 +93,7 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
     await this.repository.remove(policy);
   }
 
-  private rethrowConflict(
+  private rethrowNameConflict(
     error: unknown,
     hotelId: string,
     name: string,
@@ -113,10 +102,6 @@ export class TypeOrmCancellationPolicyRepository implements CancellationPolicyRe
       error instanceof QueryFailedError &&
       (error.driverError as { code?: string }).code === '23505'
     ) {
-      const constraint = (error.driverError as { constraint?: string }).constraint;
-      if (constraint === 'UQ_cancellation_policies_one_active_per_hotel') {
-        throw new CancellationPolicyActiveConflictException(hotelId);
-      }
       throw new CancellationPolicyNameConflictException(hotelId, name);
     }
     throw error;

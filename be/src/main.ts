@@ -7,7 +7,6 @@ import { configureOpenApi } from './common/openapi/configure-openapi';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
-    rawBody: true,
   });
   configureHttpApplication(app);
   app.enableCors({

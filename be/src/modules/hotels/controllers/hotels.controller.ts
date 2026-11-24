@@ -14,10 +14,6 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Public } from '../../authorization/decorators/public.decorator';
-import { Roles } from '../../authorization/decorators/roles.decorator';
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import { UserEntity, UserRole } from '../../users/entities/user.entity';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -37,100 +33,62 @@ import {
 } from '../dtos/responses/hotel.response';
 import { HotelMapper } from '../mappers/hotel.mapper';
 import { HotelsService } from '../services/hotels.service';
-import { HotelDocumentsService } from '../services/hotel-documents.service';
 
 @ApiTags('Hotels')
-@Roles(UserRole.HOTEL_OWNER, UserRole.ADMIN)
 @Controller({ path: 'hotels', version: '1' })
 export class HotelsController {
-  constructor(private readonly hotelsService: HotelsService, private readonly documentsService: HotelDocumentsService) {}
+  constructor(private readonly hotelsService: HotelsService) {}
 
   @Post()
-  @Roles(UserRole.HOTEL_OWNER)
   @ApiCreateOperation('Create a draft hotel', HotelResponse)
   async create(
-    @CurrentUser() user: UserEntity,
     @Body() input: CreateHotelRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<HotelResponse> {
-    const hotel = await this.hotelsService.create(user.id, input);
+    const hotel = await this.hotelsService.create(input);
     response.setHeader('Location', `/api/v1/hotels/${hotel.id}`);
     return HotelMapper.toResponse(hotel);
   }
 
   @Get()
-  @Public()
   @ApiListOperation('List hotels', HotelListResponse)
   async findPage(
     @Query() query: ListHotelsRequest,
   ): Promise<HotelListResponse> {
-    const page = await this.hotelsService.findPublicPage(query);
+    const page = await this.hotelsService.findPage(query);
     return HotelMapper.toListResponse(
       page.items,
       query.page,
       query.limit,
       page.total,
-    );
-  }
-
-  @Get('mine')
-  @Roles(UserRole.HOTEL_OWNER)
-  @ApiListOperation('List the current owner hotels', HotelListResponse)
-  async findMine(
-    @CurrentUser() user: UserEntity,
-    @Query() query: ListHotelsRequest,
-  ): Promise<HotelListResponse> {
-    const page = await this.hotelsService.findOwnedPage(query, user.id);
-    return HotelMapper.toListResponse(
-      page.items,
-      query.page,
-      query.limit,
-      page.total,
-    );
-  }
-
-  @Get('mine/:hotelId')
-  @Roles(UserRole.HOTEL_OWNER)
-  @ApiDetailOperation('Get a current owner hotel', HotelResponse, 'hotelId')
-  async findMineById(
-    @CurrentUser() user: UserEntity,
-    @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(
-      await this.hotelsService.assertManagedBy(id, user),
     );
   }
 
   @Get(':hotelId')
-  @Public()
   @ApiDetailOperation('Get a hotel', HotelResponse, 'hotelId')
   async findById(
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(await this.hotelsService.findPublicById(id));
+    return HotelMapper.toResponse(await this.hotelsService.findById(id));
   }
 
   @Patch(':hotelId')
   @ApiUpdateOperation('Update a hotel', HotelResponse, 'hotelId')
   async update(
-    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdateHotelRequest,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(
-      await this.hotelsService.update(id, input, user),
-    );
+    return HotelMapper.toResponse(await this.hotelsService.update(id, input));
   }
 
   @Post(':hotelId/documents')
   @ApiCreateOperation('Add a hotel document', HotelDocumentResponse)
   async addDocument(
-    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) hotelId: string,
     @Body() input: CreateHotelDocumentRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<HotelDocumentResponse> {
-    const document = await this.hotelsService.addDocument(hotelId, input, user);
+    const document = await this.hotelsService.addDocument(hotelId, input);
     response.setHeader(
       'Location',
       `/api/v1/hotels/${hotelId}/documents/${document.id}`,
@@ -142,31 +100,26 @@ export class HotelsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiDeleteOperation('Delete a hotel document', 'documentId')
   async deleteDocument(
-    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) hotelId: string,
     @Param('documentId', new ParseUUIDPipe({ version: '4' }))
     documentId: string,
   ): Promise<void> {
-    await this.documentsService.remove(hotelId, documentId, user);
+    await this.hotelsService.deleteDocument(hotelId, documentId);
   }
 
   @Put(':hotelId/submit')
   @ApiUpdateOperation('Submit a hotel for approval', HotelResponse, 'hotelId')
   async submit(
-    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(await this.hotelsService.submit(id, user));
+    return HotelMapper.toResponse(await this.hotelsService.submit(id));
   }
 
   @Put(':hotelId/deactivate')
   @ApiUpdateOperation('Deactivate a hotel', HotelResponse, 'hotelId')
   async deactivate(
-    @CurrentUser() user: UserEntity,
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(
-      await this.hotelsService.deactivate(id, user),
-    );
+    return HotelMapper.toResponse(await this.hotelsService.deactivate(id));
   }
 }
