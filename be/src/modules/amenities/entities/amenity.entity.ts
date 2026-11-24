@@ -17,9 +17,6 @@ export class AmenityEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'hotel_id', type: 'uuid', nullable: true })
-  hotelId: string | null;
-
   @Column({ type: 'varchar', length: 50 })
   code: string;
 

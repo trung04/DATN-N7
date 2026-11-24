@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
-import { ActivityEntity } from '../../activities/entities/activity.entity';
 import { StopoverEntity } from '../entities/stopover.entity';
 import { StopoverOrderConflictException } from '../exceptions/stopover.exceptions';
 import type {
@@ -29,28 +28,11 @@ export class TypeOrmStopoverRepository implements StopoverRepository {
     return this.repository.findOneBy({ id, itineraryId });
   }
 
-  findByItineraryId(itineraryId: string): Promise<StopoverEntity[]> {
-    return this.repository.find({
-      where: { itineraryId },
-      order: { arrivalTime: 'ASC', id: 'ASC' },
-    });
-  }
-
-  async hasActivitiesOutsideRange(
-    stopoverId: string,
-    arrivalTime: Date,
-    departureTime: Date,
-  ): Promise<boolean> {
-    const count = await this.repository.manager
-      .getRepository(ActivityEntity)
-      .createQueryBuilder('activity')
-      .where('activity.stopoverId = :stopoverId', { stopoverId })
-      .andWhere(
-        '(activity.startTime < :arrivalTime OR activity.endTime > :departureTime)',
-        { arrivalTime, departureTime },
-      )
-      .getCount();
-    return count > 0;
+  findByItineraryAndOrder(
+    itineraryId: string,
+    stopOrder: number,
+  ): Promise<StopoverEntity | null> {
+    return this.repository.findOneBy({ itineraryId, stopOrder });
   }
 
   async findPage(options: FindStopoversOptions): Promise<StopoverPage> {

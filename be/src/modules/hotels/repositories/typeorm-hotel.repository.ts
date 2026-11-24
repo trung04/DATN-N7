@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { HotelDocumentEntity } from '../entities/hotel-document.entity';
 import { HotelReviewHistoryEntity } from '../entities/hotel-review-history.entity';
 import { HotelEntity } from '../entities/hotel.entity';
@@ -28,21 +28,11 @@ export class TypeOrmHotelRepository implements HotelRepository {
     private readonly reviewRepository: Repository<HotelReviewHistoryEntity>,
   ) {}
 
-  async findIdsByOwner(ownerUserId: string): Promise<string[]> {
-    const hotels = await this.repository.find({
-      select: { id: true }, where: { ownerUserId }, order: { id: 'ASC' },
-    });
-    return hotels.map((hotel) => hotel.id);
-  }
-
   findById(id: string): Promise<HotelEntity | null> {
     return this.repository.findOne({
       where: { id },
-      relations: { documents: true, images: { image: true } },
-      order: {
-        documents: { createdAt: 'ASC' },
-        images: { imageOrder: 'ASC', id: 'ASC' },
-      },
+      relations: { documents: true },
+      order: { documents: { createdAt: 'ASC' } },
     });
   }
 
@@ -51,7 +41,9 @@ export class TypeOrmHotelRepository implements HotelRepository {
   }
 
   async findPage(options: FindHotelsOptions): Promise<HotelPage> {
-    const query = this.repository.createQueryBuilder('hotel');
+    const query = this.repository
+      .createQueryBuilder('hotel')
+      .leftJoinAndSelect('hotel.documents', 'document');
 
     if (options.search) {
       const escapedSearch = options.search.replace(/[\\%_]/g, '\\$&');
@@ -82,23 +74,11 @@ export class TypeOrmHotelRepository implements HotelRepository {
     const [items, total] = await query
       .orderBy(sortColumns[options.sortBy], options.sortOrder)
       .addOrderBy('hotel.id', 'ASC')
+      .addOrderBy('document.createdAt', 'ASC')
       .skip((options.page - 1) * options.limit)
       .take(options.limit)
       .getManyAndCount();
-    if (!items.length) return { items, total };
-    // Paginate hotels before loading their collections: one hotel with many
-    // images or documents must not consume several positions on a page.
-    const detailed = await this.repository.find({
-      where: { id: In(items.map((hotel) => hotel.id)) },
-      relations: { documents: true, images: { image: true } },
-      relationLoadStrategy: 'query',
-      order: {
-        documents: { createdAt: 'ASC' },
-        images: { imageOrder: 'ASC', id: 'ASC' },
-      },
-    });
-    const byId = new Map(detailed.map((hotel) => [hotel.id, hotel]));
-    return { items: items.map((hotel) => byId.get(hotel.id)!), total };
+    return { items, total };
   }
 
   async create(data: CreateHotelData): Promise<HotelEntity> {
@@ -132,11 +112,8 @@ export class TypeOrmHotelRepository implements HotelRepository {
           .save(manager.getRepository(HotelReviewHistoryEntity).create(review));
         return (await manager.getRepository(HotelEntity).findOne({
           where: { id: hotel.id },
-          relations: { documents: true, images: { image: true } },
-          order: {
-            documents: { createdAt: 'ASC' },
-            images: { imageOrder: 'ASC', id: 'ASC' },
-          },
+          relations: { documents: true },
+          order: { documents: { createdAt: 'ASC' } },
         }))!;
       });
     } catch (error) {

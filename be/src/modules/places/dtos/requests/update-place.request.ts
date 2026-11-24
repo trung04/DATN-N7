@@ -4,10 +4,6 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
-  IsArray,
-  ArrayMaxSize,
-  ArrayUnique,
-  ValidateNested,
   IsString,
   IsTimeZone,
   Matches,
@@ -16,7 +12,6 @@ import {
   Min,
 } from 'class-validator';
 import { PlaceStatus } from '../../entities/place.entity';
-import { PlaceReferencePriceRequest } from './create-place.request';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -47,13 +42,6 @@ export class UpdatePlaceRequest {
   address?: string | null;
 
   @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  city?: string | null;
-
-  @IsOptional()
   @Transform(uppercase)
   @Matches(/^[A-Z]{2}$/, { message: 'countryCode must be an ISO alpha-2 code' })
   countryCode?: string | null;
@@ -76,14 +64,14 @@ export class UpdatePlaceRequest {
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-90)
   @Max(90)
-  latitude?: number;
+  latitude?: number | null;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 7 })
   @Min(-180)
   @Max(180)
-  longitude?: number;
+  longitude?: number | null;
 
   @IsOptional()
   @IsEnum(PlaceStatus)
@@ -102,35 +90,4 @@ export class UpdatePlaceRequest {
   @IsNotEmpty()
   @MaxLength(255)
   openingTime?: string | null;
-
-  @IsOptional()
-  @Transform(uppercase)
-  @Matches(/^[A-Z0-9_-]{1,50}$/)
-  categoryCode?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @ArrayUnique()
-  @Matches(/^[A-Z0-9_-]{1,50}$/, { each: true })
-  topicCodes?: string[];
-
-  @IsOptional()
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
-  @IsString()
-  @Matches(/^(https?:\/\/|\/images\/)[^\s]+$/i, {
-    message: 'imageUrl must be an http(s) URL or an /images/ asset path',
-  })
-  imageUrl?: string | null;
-
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MaxLength(255)
-  imageAltText?: string | null;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => PlaceReferencePriceRequest)
-  referencePrice?: PlaceReferencePriceRequest | null;
 }

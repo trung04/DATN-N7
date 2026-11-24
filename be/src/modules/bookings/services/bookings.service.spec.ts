@@ -1,11 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { HotelsService } from '../../hotels/services/hotels.service';
-import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
-import { UserRole } from '../../users/entities/user.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
-import { CancellationPolicyChangedException } from '../../cancellation-policies/exceptions/cancellation-policy.exceptions';
-import { NotificationType } from '../../notifications/entities/notification.entity';
-import type { NotificationsService } from '../../notifications/services/notifications.service';
 import {
   RoomOperationalStatus,
   RoomEntity,
@@ -24,6 +19,7 @@ import {
   BookingCapacityExceededException,
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
+  BookingPolicyHotelMismatchException,
   BookingRoomNotOperationalException,
   BookingReservationExpiredException,
   InvalidBookingStayException,
@@ -32,7 +28,7 @@ import {
 } from '../exceptions/booking.exceptions';
 import type { BookingCodeGenerator } from '../interfaces/booking-code-generator.interface';
 import type { BookingRepository } from '../interfaces/booking.repository.interface';
-import type { SePayV2Client } from '../interfaces/sepay-v2.interface';
+import type { VnpayPaymentGateway } from '../interfaces/vnpay-payment-gateway.interface';
 import { BookingsService } from './bookings.service';
 
 const bookingId = '11111111-1111-4111-8111-111111111111';
@@ -41,7 +37,6 @@ const touristId = '33333333-3333-4333-8333-333333333333';
 const policyId = '44444444-4444-4444-8444-444444444444';
 const roomId = '55555555-5555-4555-8555-555555555555';
 const idempotencyKey = '66666666-6666-4666-8666-666666666666';
-const cancellationPolicyVersion = 'a'.repeat(64);
 
 const room = (overrides: Partial<RoomEntity> = {}): RoomEntity =>
   Object.assign(new RoomEntity(), {
@@ -62,7 +57,7 @@ const room = (overrides: Partial<RoomEntity> = {}): RoomEntity =>
 const createInput = (
   overrides: Partial<CreateBookingRequest> = {},
 ): CreateBookingRequest => ({
-  cancellationPolicyVersion,
+  touristId,
   roomIds: [roomId],
   checkInDate: '2026-12-01',
   checkOutDate: '2026-12-03',
@@ -71,6 +66,7 @@ const createInput = (
   guestName: 'Nguyen Van A',
   guestEmail: 'guest@example.com',
   guestPhone: '0912345678',
+  cancellationPolicyId: policyId,
   ...overrides,
 });
 
@@ -112,7 +108,7 @@ const booking = (overrides: Partial<BookingEntity> = {}): BookingEntity =>
     bankAccountNumberSnapshot: null,
     bankAccountHolderSnapshot: null,
     settledAt: null,
-    cancellationPolicyId: null,
+    cancellationPolicyId: policyId,
     cancellationWindowSnapshot: 24,
     cancellationFeeRateSnapshot: 20,
     cancellationDescriptionSnapshot: 'Cancel before 24 hours',
@@ -128,15 +124,12 @@ const booking = (overrides: Partial<BookingEntity> = {}): BookingEntity =>
 describe('BookingsService', () => {
   let repository: jest.Mocked<BookingRepository>;
   let codeGenerator: jest.Mocked<BookingCodeGenerator>;
-  let sepayGateway: jest.Mocked<SePayV2Client>;
+  let vnpayGateway: jest.Mocked<VnpayPaymentGateway>;
   let cancellationPoliciesService: jest.Mocked<
-    Pick<CancellationPoliciesService, 'getCompleteScheduleForBooking'>
+    Pick<CancellationPoliciesService, 'findById'>
   >;
   let roomsService: jest.Mocked<Pick<RoomsService, 'findEntitiesByIds'>>;
-  let hotelsService: jest.Mocked<
-    Pick<HotelsService, 'assertActive' | 'assertManagedBy'>
-  >;
-  let notificationsService: jest.Mocked<Pick<NotificationsService, 'createOnce'>>;
+  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
   let service: BookingsService;
   let createBooking: jest.MockedFunction<BookingRepository['create']>;
   let withLockedById: jest.MockedFunction<BookingRepository['withLockedById']>;
@@ -147,7 +140,6 @@ describe('BookingsService', () => {
     repository = {
       findById: jest.fn(),
       findByCode: jest.fn(),
-      findBySePayOrderCode: jest.fn(),
       findByIdempotencyKey: jest.fn(),
       findPage: jest.fn(),
       create: createBooking,
@@ -155,37 +147,18 @@ describe('BookingsService', () => {
       withLockedById,
     };
     codeGenerator = { generate: jest.fn() };
-    sepayGateway = {
-      createOrder: jest.fn(),
-      refundOrder: jest.fn(),
-      getRefund: jest.fn(),
-      verifyWebhook: jest.fn().mockReturnValue(true),
+    vnpayGateway = {
+      createPaymentUrl: jest.fn(),
+      verifyPaymentCallback: jest.fn(),
+      refund: jest.fn(),
     };
-    cancellationPoliciesService = { getCompleteScheduleForBooking: jest.fn() };
+    cancellationPoliciesService = { findById: jest.fn() };
     roomsService = { findEntitiesByIds: jest.fn() };
-    hotelsService = {
-      assertActive: jest.fn().mockResolvedValue({ id: hotelId, checkInTime: '14:00' }),
-      assertManagedBy: jest.fn(),
-    };
-    cancellationPoliciesService.getCompleteScheduleForBooking.mockResolvedValue({
-      hotelId,
-      version: cancellationPolicyVersion,
-      complete: true,
-      issue: null,
-      rules: [{
-        id: policyId,
-        name: 'Standard',
-        cancelHours: 24,
-        penaltyPercent: 20,
-        cancellationAllowed: true,
-        description: 'Cancel before 24 hours',
-      }],
-    });
-    notificationsService = { createOnce: jest.fn() };
+    hotelsService = { assertActive: jest.fn() };
     service = new BookingsService(
       repository,
       codeGenerator,
-      sepayGateway,
+      vnpayGateway,
       cancellationPoliciesService as unknown as CancellationPoliciesService,
       roomsService as unknown as RoomsService,
       new ConfigService({
@@ -194,19 +167,23 @@ describe('BookingsService', () => {
         IDEMPOTENCY_KEY_TTL_HOURS: 24,
       }),
       hotelsService as unknown as HotelsService,
-      notificationsService as unknown as NotificationsService,
     );
   });
 
   it('creates a booking with generated code and initial states', async () => {
     const saved = booking();
     codeGenerator.generate.mockReturnValue('BK-20261104-ABCDEF1234');
+    cancellationPoliciesService.findById.mockResolvedValue({
+      hotelId,
+      cancellationWindow: 24,
+      cancellationFeeRate: 20,
+      description: 'Cancel before 24 hours',
+    } as never);
     roomsService.findEntitiesByIds.mockResolvedValue([room()]);
     createBooking.mockResolvedValue({ booking: saved, replayed: false });
 
     await expect(
       service.create(
-        touristId,
         createInput({
           guestName: ' Nguyen Van A ',
           guestEmail: ' Guest@Example.com ',
@@ -244,21 +221,21 @@ describe('BookingsService', () => {
     repository.findByIdempotencyKey.mockResolvedValue(saved);
 
     await expect(
-      service.create(touristId, createInput(), idempotencyKey),
+      service.create(createInput(), idempotencyKey),
     ).resolves.toEqual({ booking: saved, replayed: true });
     expect(roomsService.findEntitiesByIds).not.toHaveBeenCalled();
     expect(createBooking).not.toHaveBeenCalled();
   });
 
-  it('rejects a booking when the cancellation policy changed after it was displayed', async () => {
-    cancellationPoliciesService.getCompleteScheduleForBooking.mockRejectedValue(
-      new CancellationPolicyChangedException(),
-    );
+  it('rejects a cancellation policy from another hotel', async () => {
+    cancellationPoliciesService.findById.mockResolvedValue({
+      hotelId: '55555555-5555-4555-8555-555555555555',
+    } as never);
     roomsService.findEntitiesByIds.mockResolvedValue([room()]);
 
     await expect(
-      service.create(touristId, createInput({ adultCount: 1 }), idempotencyKey),
-    ).rejects.toBeInstanceOf(CancellationPolicyChangedException);
+      service.create(createInput({ adultCount: 1 }), idempotencyKey),
+    ).rejects.toBeInstanceOf(BookingPolicyHotelMismatchException);
   });
 
   it('rejects a checkout date that is not later than check-in', async () => {
@@ -266,7 +243,6 @@ describe('BookingsService', () => {
 
     await expect(
       service.create(
-        touristId,
         createInput({ checkInDate: '2026-12-03', checkOutDate: '2026-12-03' }),
         idempotencyKey,
       ),
@@ -280,7 +256,6 @@ describe('BookingsService', () => {
 
     await expect(
       service.create(
-        touristId,
         createInput({ adultCount: 2, childCount: 1 }),
         idempotencyKey,
       ),
@@ -293,7 +268,7 @@ describe('BookingsService', () => {
     ]);
 
     await expect(
-      service.create(touristId, createInput(), idempotencyKey),
+      service.create(createInput(), idempotencyKey),
     ).rejects.toBeInstanceOf(BookingRoomNotOperationalException);
   });
 
@@ -307,17 +282,6 @@ describe('BookingsService', () => {
     ).rejects.toBeInstanceOf(InvalidBookingTransitionException);
   });
 
-  it('does not expose a booking to another tourist', async () => {
-    repository.findById.mockResolvedValue(booking());
-
-    await expect(
-      service.findByIdForActor(bookingId, {
-        id: '99999999-9999-4999-8999-999999999999',
-        role: UserRole.TOURIST,
-      }),
-    ).rejects.toBeInstanceOf(AuthorizationDeniedException);
-  });
-
   it('does not manually confirm an unpaid booking', async () => {
     repository.findById.mockResolvedValue(booking());
 
@@ -326,51 +290,31 @@ describe('BookingsService', () => {
     ).rejects.toBeInstanceOf(BookingPaymentRequiredException);
   });
 
-  it('allows a tourist to cancel an unpaid pending booking without a fee', async () => {
-    const existing = booking({
-      bookingStatus: BookingStatus.PENDING,
-      paymentStatus: PaymentStatus.PENDING,
-    });
-    repository.findById.mockResolvedValue(existing);
+  it('creates one VNPAY payment URL without choosing the method upfront', async () => {
+    const existing = booking();
     repository.withLockedById.mockImplementation(async (_id, operation) =>
       operation(existing),
     );
-
-    const result = await service.cancelForActor(bookingId, {
-      id: touristId,
-      role: UserRole.TOURIST,
-    });
-
-    expect(result.bookingStatus).toBe(BookingStatus.CANCELLED);
-    expect(result.paymentStatus).toBe(PaymentStatus.PENDING);
-    expect(result.cancellationFeeAmount).toBe(0);
-    expect(result.refundAmount).toBeNull();
-    expect(result.refundStatus).toBe(RefundStatus.NONE);
-    expect(notificationsService.createOnce).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: touristId,
-        type: NotificationType.BOOKING_CANCELLED,
-        eventKey: `booking:${bookingId}:cancelled`,
-      }),
+    vnpayGateway.createPaymentUrl.mockReturnValue(
+      'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?signed=1',
     );
+
+    const result = await service.createVnpayPayment(
+      bookingId,
+      { locale: 'vn' },
+      '127.0.0.1',
+    );
+
+    expect(result.paymentUrl).toContain('sandbox.vnpayment.vn');
+    expect(existing.paymentMethod).toBeNull();
+    expect(existing.paymentStatus).toBe(PaymentStatus.PAYMENT_PENDING);
+    expect(existing.paymentCreatedAt).toBeInstanceOf(Date);
+    expect(
+      existing.paymentExpiresAt!.getTime() -
+        existing.paymentCreatedAt!.getTime(),
+    ).toBe(15 * 60 * 1000);
   });
 
-  it('creates and stores one SePay v2 VA order', async () => {
-    const existing = booking()
-    repository.withLockedById.mockImplementation(async (_id, operation) => operation(existing))
-    sepayGateway.createOrder.mockImplementation(async input => ({
-      id: 'order-v2-uuid', order_code: input.orderCode, amount: input.amount,
-      status: 'Pending', va_number: 'SBSEPAY123456',
-      qr_code_url: 'https://example.test/qr', bank_name: 'Sandbox Bank',
-      account_number: '123456789', account_holder_name: 'SANDBOX',
-    }))
-    const result = await service.createSePayPayment(bookingId)
-    expect(result.booking.sepayOrderXid).toBe('order-v2-uuid')
-    expect(result.booking.sepayVaNumber).toBe('SBSEPAY123456')
-    expect(result.booking.paymentMethod).toBe(PaymentMethod.BANK_TRANSFER)
-    expect(result.booking.paymentStatus).toBe(PaymentStatus.PAYMENT_PENDING)
-    expect(result.booking.paymentCreatedAt).toBeInstanceOf(Date)
-  })
   it('rejects a second payment initialization', async () => {
     const existing = booking({
       paymentStatus: PaymentStatus.PAYMENT_PENDING,
@@ -383,7 +327,7 @@ describe('BookingsService', () => {
     );
 
     await expect(
-      service.createSePayPayment(bookingId),
+      service.createVnpayPayment(bookingId, { locale: 'vn' }, '127.0.0.1'),
     ).rejects.toBeInstanceOf(BookingPaymentAlreadyInitializedException);
   });
 
@@ -396,95 +340,95 @@ describe('BookingsService', () => {
     );
 
     await expect(
-      service.createSePayPayment(bookingId),
+      service.createVnpayPayment(bookingId, { locale: 'vn' }, '127.0.0.1'),
     ).rejects.toBeInstanceOf(BookingReservationExpiredException);
   });
 
-  it('confirms a booking only from a matching SePay v2 payment webhook', async () => {
+  it('confirms a booking only from a valid successful VNPAY IPN', async () => {
     const existing = booking({
-      paymentMethod: PaymentMethod.BANK_TRANSFER,
+      paymentMethod: null,
       paymentStatus: PaymentStatus.PAYMENT_PENDING,
       paymentCreatedAt: new Date(),
       paymentExpiresAt: new Date(Date.now() + 60_000),
-      sepayOrderCode: 'BKTEST12345678',
-      sepayVaNumber: 'SBSEPAY123456',
-    })
-    repository.findBySePayOrderCode.mockResolvedValue(existing)
-    repository.withLockedById.mockImplementation(async (_id, operation) => operation(existing))
-    const payload = {
-      id: 14567890, code: 'BKTEST12345678', transferType: 'in',
-      transferAmount: 1_000_000, transactionDate: '2026-11-04 10:30:00',
-      subAccount: 'SBSEPAY123456',
-    };
-    await expect(service.handleSePayV2Webhook(payload)).resolves.toBe(true)
-    expect(existing.paymentStatus).toBe(PaymentStatus.PAID)
-    expect(existing.paymentMethod).toBe(PaymentMethod.BANK_TRANSFER)
-    expect(existing.bookingStatus).toBe(BookingStatus.CONFIRMED)
-    expect(existing.paymentTransactionId).toBe('14567890')
-    expect(notificationsService.createOnce).toHaveBeenCalledTimes(2);
-    expect(notificationsService.createOnce).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        userId: touristId,
-        type: NotificationType.PAYMENT_SUCCEEDED,
-        eventKey: `booking:${bookingId}:payment-succeeded`,
-      }),
-    );
-    expect(notificationsService.createOnce).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        userId: touristId,
-        type: NotificationType.BOOKING_CONFIRMED,
-        eventKey: `booking:${bookingId}:confirmed`,
-      }),
-    );
-
-    await expect(service.handleSePayV2Webhook(payload)).resolves.toBe(true);
-    expect(notificationsService.createOnce).toHaveBeenCalledTimes(2);
-  })
-
-  it('automatically refunds a SePay payment received after the booking was cancelled', async () => {
-    const existing = booking({
-      bookingStatus: BookingStatus.CANCELLED,
-      paymentMethod: PaymentMethod.BANK_TRANSFER,
-      paymentStatus: PaymentStatus.PAYMENT_PENDING,
-      paymentCreatedAt: new Date(),
-      paymentExpiresAt: new Date(Date.now() + 60_000),
-      cancelledAt: new Date(),
-      sepayOrderXid: 'order-v2-uuid',
-      sepayOrderCode: 'BKTEST12345678',
-      sepayVaNumber: 'SBSEPAY123456',
     });
-    repository.findBySePayOrderCode.mockResolvedValue(existing);
+    vnpayGateway.verifyPaymentCallback.mockReturnValue({
+      signatureValid: true,
+      terminalCodeValid: true,
+      bookingId,
+      amount: 1_000_000,
+      responseCode: '00',
+      transactionStatus: '00',
+      transactionId: '14567890',
+      cardType: 'QRCODE',
+      bankCode: 'NCB',
+      paidAt: new Date('2026-11-04T01:00:00.000Z'),
+    });
     repository.withLockedById.mockImplementation(async (_id, operation) =>
       operation(existing),
     );
-    sepayGateway.refundOrder.mockResolvedValue({
-      refund_id: 'RF-LATE-PAYMENT',
-      status: 'succeeded',
-      amount: existing.amount,
+
+    await expect(service.handleVnpayIpn({})).resolves.toEqual({
+      RspCode: '00',
+      Message: 'Confirm Success',
     });
-    const payload = {
-      id: 14567891,
-      code: 'BKTEST12345678',
-      transferType: 'in',
-      transferAmount: 1_000_000,
-      transactionDate: '2026-11-04 10:30:00',
-      subAccount: 'SBSEPAY123456',
-    };
-
-    await expect(service.handleSePayV2Webhook(payload)).resolves.toBe(true);
-
-    expect(existing.bookingStatus).toBe(BookingStatus.CANCELLED);
     expect(existing.paymentStatus).toBe(PaymentStatus.PAID);
-    expect(existing.refundAmount).toBe(existing.amount);
-    expect(existing.refundStatus).toBe(RefundStatus.REFUNDED);
-    expect(existing.refundTransactionId).toBe('RF-LATE-PAYMENT');
-    expect(sepayGateway.refundOrder).toHaveBeenCalledWith(
-      'order-v2-uuid',
-      existing.amount,
-      expect.stringContaining(`refund-${bookingId.replaceAll('-', '')}`),
-    );
+    expect(existing.paymentMethod).toBe(PaymentMethod.QR);
+    expect(existing.bookingStatus).toBe(BookingStatus.CONFIRMED);
+    expect(existing.paymentTransactionId).toBe('14567890');
+  });
+
+  it.each([
+    ['CREDIT', 'VISA', PaymentMethod.CARD],
+    ['ATM', 'NCB', PaymentMethod.BANK_TRANSFER],
+  ])(
+    'maps VNPAY card type %s and bank code %s to %s',
+    async (cardType, bankCode, expectedMethod) => {
+      const existing = booking({
+        paymentStatus: PaymentStatus.PAYMENT_PENDING,
+        paymentCreatedAt: new Date(),
+        paymentExpiresAt: new Date(Date.now() + 60_000),
+      });
+      vnpayGateway.verifyPaymentCallback.mockReturnValue({
+        signatureValid: true,
+        terminalCodeValid: true,
+        bookingId,
+        amount: 1_000_000,
+        responseCode: '00',
+        transactionStatus: '00',
+        transactionId: '14567890',
+        cardType,
+        bankCode,
+        paidAt: new Date('2026-11-04T01:00:00.000Z'),
+      });
+      repository.withLockedById.mockImplementation(async (_id, operation) =>
+        operation(existing),
+      );
+
+      await service.handleVnpayIpn({});
+
+      expect(existing.paymentMethod).toBe(expectedMethod);
+    },
+  );
+
+  it('rejects an IPN with an invalid signature without loading a booking', async () => {
+    vnpayGateway.verifyPaymentCallback.mockReturnValue({
+      signatureValid: false,
+      terminalCodeValid: true,
+      bookingId,
+      amount: 1_000_000,
+      responseCode: '00',
+      transactionStatus: '00',
+      transactionId: '14567890',
+      cardType: 'QRCODE',
+      bankCode: 'NCB',
+      paidAt: new Date(),
+    });
+
+    await expect(service.handleVnpayIpn({})).resolves.toEqual({
+      RspCode: '97',
+      Message: 'Invalid signature',
+    });
+    expect(withLockedById).not.toHaveBeenCalled();
   });
 
   it('calculates commission and partner receivable during settlement', async () => {
@@ -510,7 +454,6 @@ describe('BookingsService', () => {
       paymentStatus: PaymentStatus.PAID,
       paymentTransactionId: '14567890',
       paymentCreatedAt: new Date(),
-      sepayOrderXid: 'order-v2-uuid',
     });
     repository.withLockedById.mockImplementation(async (_id, operation) =>
       operation(existing),
@@ -525,28 +468,33 @@ describe('BookingsService', () => {
     ).rejects.toBeInstanceOf(RefundAmountExceededException);
   });
 
-  it('sends a booking refund to SePay v2 and stores its provider reference', async () => {
+  it('records one successful VNPAY refund', async () => {
     const existing = booking({
       bookingStatus: BookingStatus.CONFIRMED,
       paymentStatus: PaymentStatus.PAID,
-      paymentMethod: PaymentMethod.BANK_TRANSFER,
+      paymentMethod: PaymentMethod.QR,
       paymentTransactionId: '14567890',
       paymentCreatedAt: new Date('2026-11-04T00:30:00.000Z'),
-      sepayOrderXid: 'order-v2-uuid',
-    })
-    repository.withLockedById.mockImplementation(async (_id, operation) => operation(existing))
-    sepayGateway.refundOrder.mockResolvedValue({
-      refund_id: 'RF-TEST-123456', status: 'pending', amount: 250_000,
-    })
+    });
+    repository.withLockedById.mockImplementation(async (_id, operation) =>
+      operation(existing),
+    );
+    vnpayGateway.refund.mockResolvedValue({
+      requestId: 'request-1',
+      responseCode: '00',
+      transactionStatus: '00',
+      transactionId: '987654321',
+      payDate: new Date('2026-11-04T02:00:00.000Z'),
+    });
+
     const result = await service.refund(
       bookingId,
       { refundAmount: 250_000, refundReason: 'Customer cancellation' },
       '127.0.0.1',
-    )
-    expect(result.refundStatus).toBe(RefundStatus.PROCESSING)
-    expect(result.refundTransactionId).toBe('RF-TEST-123456')
-    expect(sepayGateway.refundOrder).toHaveBeenCalledWith(
-      'order-v2-uuid', 250_000, expect.stringContaining('refund-'),
-    )
+    );
+
+    expect(result.refundStatus).toBe(RefundStatus.REFUNDED);
+    expect(result.refundTransactionId).toBe('987654321');
+    expect(result.bookingStatus).toBe(BookingStatus.CANCELLED);
   });
 });

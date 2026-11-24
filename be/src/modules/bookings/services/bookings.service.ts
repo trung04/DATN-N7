@@ -1,25 +1,22 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { HotelsService } from '../../hotels/services/hotels.service';
-import { NotificationsService } from '../../notifications/services/notifications.service';
-import { NotificationType } from '../../notifications/entities/notification.entity';
-import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
-import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
-import { UserRole } from '../../users/entities/user.entity';
+import type { CancellationPolicyEntity } from '../../cancellation-policies/entities/cancellation-policy.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
-import { RoomOperationalStatus, RoomEntity } from '../../rooms/entities/room.entity';
-import { RoomGuestPolicyEntity } from '../../rooms/entities/room-guest-policy.entity';
+import { RoomOperationalStatus } from '../../rooms/entities/room.entity';
 import { RoomsService } from '../../rooms/services/rooms.service';
+import { CreateVnpayPaymentRequest } from '../dtos/requests/create-vnpay-payment.request';
 import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
-import { RoomGuestAllocationRequest } from '../dtos/requests/room-guest-allocation.request';
-import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
 import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
-import { SePayV2RequestException } from '../integrations/sepay/sepay-v2.client';
+import { SettleBookingRequest } from '../dtos/requests/settle-booking.request';
 import { UpdateBookingRequest } from '../dtos/requests/update-booking.request';
 import {
-  BookingCancellationRuleSnapshot,
+  VnpayIpnResponse,
+  VnpayReturnResponse,
+} from '../dtos/responses/vnpay-payment.response';
+import {
   BookingEntity,
   BookingStatus,
   PaymentMethod,
@@ -29,13 +26,13 @@ import {
 } from '../entities/booking.entity';
 import {
   BookingActionNotAllowedException,
-  BookingCancellationNotAllowedException,
   BookingAlreadyPaidException,
+  BookingAlreadySettledException,
   BookingNotFoundException,
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
+  BookingPolicyHotelMismatchException,
   BookingCapacityExceededException,
-  BookingGuestAllocationException,
   BookingRoomNotOperationalException,
   BookingReservationExpiredException,
   BookingRoomsCurrencyMismatchException,
@@ -47,8 +44,9 @@ import {
   InvalidBookingFinancialTimestampException,
   InvalidBookingTransitionException,
   RefundAmountExceededException,
-  SePayAmountNotSupportedException,
-  SePayCurrencyNotSupportedException,
+  SettlementBaseAmountExceededException,
+  VnpayAmountNotSupportedException,
+  VnpayCurrencyNotSupportedException,
 } from '../exceptions/booking.exceptions';
 import { BOOKING_CODE_GENERATOR } from '../interfaces/booking-code-generator.interface';
 import type { BookingCodeGenerator } from '../interfaces/booking-code-generator.interface';
@@ -58,67 +56,37 @@ import type {
   BookingRepository,
   CreatedBookingResult,
 } from '../interfaces/booking.repository.interface';
-import { SEPAY_V2_CLIENT } from '../interfaces/sepay-v2.interface';
-import type { SePayV2Client, SePayWebhookPayload } from '../interfaces/sepay-v2.interface';
-import { assessCancellation } from './cancellation-assessment';
+import { VNPAY_PAYMENT_GATEWAY } from '../interfaces/vnpay-payment-gateway.interface';
+import type {
+  VnpayPaymentGateway,
+  VnpayRefundResult,
+} from '../interfaces/vnpay-payment-gateway.interface';
 
-export interface CreatedSePayPayment {
+export interface CreatedVnpayPayment {
   booking: BookingEntity;
+  paymentUrl: string;
 }
 
 @Injectable()
 export class BookingsService {
-  private readonly logger = new Logger(BookingsService.name);
-
   constructor(
     @Inject(BOOKING_REPOSITORY)
     private readonly repository: BookingRepository,
     @Inject(BOOKING_CODE_GENERATOR)
     private readonly codeGenerator: BookingCodeGenerator,
-    @Inject(SEPAY_V2_CLIENT)
-    private readonly sepay: SePayV2Client,
+    @Inject(VNPAY_PAYMENT_GATEWAY)
+    private readonly vnpayGateway: VnpayPaymentGateway,
     private readonly cancellationPoliciesService: CancellationPoliciesService,
     private readonly roomsService: RoomsService,
     private readonly configService: ConfigService,
     private readonly hotelsService: HotelsService,
-    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
-  async searchRoomAvailability(
-    input: SearchRoomAvailabilityRequest,
-  ): Promise<{
-    hotelId: string | null;
-    checkInDate: string;
-    checkOutDate: string;
-    availableRoomIds: string[];
-  }> {
-    this.resolveNumberOfNights(input.checkInDate, input.checkOutDate);
-    if (input.hotelId) await this.hotelsService.assertActive(input.hotelId);
-    const [bookableRooms, unavailableRoomIds] = await Promise.all([
-      this.roomsService.findBookableByHotel(input.hotelId),
-      this.repository.findUnavailableRoomIds(
-        input.hotelId,
-        input.checkInDate,
-        input.checkOutDate,
-      ),
-    ]);
-    const unavailable = new Set(unavailableRoomIds);
-    return {
-      hotelId: input.hotelId ?? null,
-      checkInDate: input.checkInDate,
-      checkOutDate: input.checkOutDate,
-      availableRoomIds: bookableRooms
-        .filter((room) => !unavailable.has(room.id))
-        .map((room) => room.id),
-    };
-  }
-
   async create(
-    touristId: string,
     input: CreateBookingRequest,
     idempotencyKey: string,
   ): Promise<CreatedBookingResult> {
-    const requestHash = this.fingerprintCreateRequest(touristId, input);
+    const requestHash = this.fingerprintCreateRequest(input);
     const replayedBooking = await this.repository.findByIdempotencyKey(
       idempotencyKey,
       requestHash,
@@ -129,10 +97,7 @@ export class BookingsService {
 
     const rooms = await this.roomsService.findEntitiesByIds(input.roomIds);
     const hotelId = rooms[0].hotelId;
-    const hotel = await this.hotelsService.assertActive(hotelId);
-    const cancellationSchedule = await this.cancellationPoliciesService
-      .getCompleteScheduleForBooking(hotelId, input.cancellationPolicyVersion);
-    const { tiers, ...cancellationPolicy } = cancellationSchedule.rules[0]!;
+    await this.hotelsService.assertActive(hotelId);
     const currency = rooms[0].currency;
     if (rooms.some((room) => room.hotelId !== hotelId)) {
       throw new BookingRoomsHotelMismatchException();
@@ -146,44 +111,29 @@ export class BookingsService {
     if (unavailableRoom) {
       throw new BookingRoomNotOperationalException(unavailableRoom.id);
     }
-    const guestAllocations = await this.resolveGuestAllocations(
-      hotelId,
-      rooms,
-      input,
+    const guestCount = input.adultCount + input.childCount;
+    const totalCapacity = rooms.reduce(
+      (total, room) => total + room.maxOccupancy,
+      0,
     );
+    if (guestCount > totalCapacity) {
+      throw new BookingCapacityExceededException();
+    }
 
     const numberOfNights = this.resolveNumberOfNights(
       input.checkInDate,
       input.checkOutDate,
     );
-    const roomItems = rooms.map((room) => {
-      const allocation = guestAllocations.get(room.id)!;
-      const childSurchargePerNight = allocation.childGuests.reduce(
-        (total, child) => total + child.surchargePerNightSnapshot,
-        0,
-      );
-      return {
-        roomId: room.id,
-        roomNumberSnapshot: room.roomNumber,
-        roomTypeSnapshot: room.roomType,
-        maxOccupancySnapshot: room.maxOccupancy,
-        adultCount: allocation.adultCount,
-        maxAdultsSnapshot: allocation.maxAdults,
-        maxChildrenSnapshot: allocation.maxChildren,
-        adultAgeFromSnapshot: allocation.adultAgeFrom,
-        freeChildMaxAgeSnapshot: allocation.freeChildMaxAge,
-        childSurchargePerNightSnapshot: allocation.childSurchargePerNight,
-        childGuests: allocation.childGuests,
-        pricePerNight: room.pricePerNight,
-        currency: room.currency,
-        numberOfNights,
-        subtotal: this.roundMoney(
-          (room.pricePerNight + childSurchargePerNight) * numberOfNights,
-        ),
-      };
-    });
+    const cancellationPolicyId = input.cancellationPolicyId ?? null;
+    const cancellationPolicy = await this.resolveCancellationPolicy(
+      hotelId,
+      cancellationPolicyId,
+    );
     const totalAmount = this.roundMoney(
-      roomItems.reduce((total, room) => total + room.subtotal, 0),
+      rooms.reduce(
+        (total, room) => total + room.pricePerNight * numberOfNights,
+        0,
+      ),
     );
     const appliedCommissionRate = this.configService.getOrThrow<number>(
       'BOOKING_COMMISSION_RATE',
@@ -195,10 +145,10 @@ export class BookingsService {
       'IDEMPOTENCY_KEY_TTL_HOURS',
     );
 
-    const created = await this.repository.create(
+    return this.repository.create(
       {
         hotelId,
-        touristId,
+        touristId: input.touristId,
         bookingCode: this.codeGenerator.generate(),
         checkInDate: input.checkInDate,
         checkOutDate: input.checkOutDate,
@@ -218,216 +168,50 @@ export class BookingsService {
         paymentMethod: null,
         paymentStatus: PaymentStatus.PENDING,
         settlementStatus: SettlementStatus.PENDING,
-        cancellationPolicyId: null,
-        cancellationPolicySnapshot: {
-          version: cancellationSchedule.version,
-          basis: 'HOURS_AFTER_BOOKING',
-          ...(tiers ? { inclusiveHourLimits: true as const } : {
-            cancelHours: cancellationPolicy.cancelHours,
-            penaltyPercent: cancellationPolicy.penaltyPercent,
-            cancellationAllowed: cancellationPolicy.cancellationAllowed,
-          }),
-          policyName: cancellationPolicy.name,
-          policyDescription: cancellationPolicy.description,
-          timezone: 'Asia/Ho_Chi_Minh',
-          checkInTime: hotel.checkInTime,
-          rules: tiers ? tiers.map((tier, index) => ({
-            id: `${cancellationPolicy.id}:${index}`,
-            name: cancellationPolicy.name,
-            minHoursAfterBooking: tiers[index - 1]?.upToHours ?? 0,
-            maxHoursAfterBooking: tier.upToHours,
-            cancellationAllowed: tier.feePercent !== null,
-            cancellationFeeRate: tier.feePercent,
-            description: null,
-          })) : [{
-            ...cancellationPolicy,
-            minHoursAfterBooking: 0,
-            maxHoursAfterBooking: null,
-            cancellationFeeRate: cancellationPolicy.penaltyPercent,
-          }],
-        },
-        cancellationWindowSnapshot: null,
-        cancellationFeeRateSnapshot: null,
-        cancellationDescriptionSnapshot: null,
+        cancellationPolicyId,
+        cancellationWindowSnapshot:
+          cancellationPolicy?.cancellationWindow ?? null,
+        cancellationFeeRateSnapshot:
+          cancellationPolicy?.cancellationFeeRate ?? null,
+        cancellationDescriptionSnapshot:
+          cancellationPolicy?.description ?? null,
         refundStatus: RefundStatus.NONE,
-        refundRequestedAt: null,
-        refundProcessingAt: null,
-        refundAttempt: 0,
-        refundFailureReason: null,
-        refundFailedAt: null,
-        refundHandledBy: null,
       },
-      roomItems,
+      rooms.map((room) => ({
+        roomId: room.id,
+        roomNumberSnapshot: room.roomNumber,
+        roomTypeSnapshot: room.roomType,
+        maxOccupancySnapshot: room.maxOccupancy,
+        pricePerNight: room.pricePerNight,
+        currency: room.currency,
+        numberOfNights,
+        subtotal: this.roundMoney(room.pricePerNight * numberOfNights),
+      })),
       {
         key: idempotencyKey,
         requestHash,
         expiresAt: new Date(Date.now() + idempotencyTtlHours * 3_600_000),
       },
     );
-    if (!created.replayed) {
-      await this.notify(
-        created.booking,
-        NotificationType.BOOKING_CREATED,
-        'booking:' + created.booking.id + ':created',
-        'Đã nhận yêu cầu đặt phòng',
-        'Booking ' +
-          created.booking.bookingCode +
-          ' đã được tạo và đang chờ thanh toán.',
-      );
-    }
-    return created;
   }
 
-  private fingerprintCreateRequest(
-    touristId: string,
-    input: CreateBookingRequest,
-  ): string {
+  private fingerprintCreateRequest(input: CreateBookingRequest): string {
     const canonicalRequest = {
-      touristId,
+      touristId: input.touristId,
       roomIds: [...input.roomIds].sort(),
       checkInDate: input.checkInDate,
       checkOutDate: input.checkOutDate,
       adultCount: input.adultCount,
       childCount: input.childCount,
-      roomGuests: input.roomGuests
-        ?.map((allocation) => ({
-          roomId: allocation.roomId,
-          adultCount: allocation.adultCount,
-          childAges: [...(allocation.childAges ?? [])].sort((left, right) => left - right),
-        }))
-        .sort((left, right) => left.roomId.localeCompare(right.roomId)),
       guestName: input.guestName.trim(),
       guestEmail: input.guestEmail.trim().toLowerCase(),
       guestPhone: input.guestPhone.trim(),
       specialRequests: this.normalizeNullable(input.specialRequests),
-      cancellationPolicyVersion: input.cancellationPolicyVersion,
+      cancellationPolicyId: input.cancellationPolicyId ?? null,
     };
     return createHash('sha256')
       .update(JSON.stringify(canonicalRequest))
       .digest('hex');
-  }
-
-  private async resolveGuestAllocations(
-    hotelId: string,
-    rooms: RoomEntity[],
-    input: CreateBookingRequest,
-  ): Promise<Map<string, {
-    adultCount: number;
-    maxAdults: number;
-    maxChildren: number;
-    adultAgeFrom: number;
-    freeChildMaxAge: number;
-    childSurchargePerNight: number;
-    childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
-  }>> {
-    const listPolicies = (this.roomsService as RoomsService & {
-      listGuestPolicies?: (id: string) => Promise<RoomGuestPolicyEntity[]>;
-    }).listGuestPolicies;
-    const policies = listPolicies
-      ? await listPolicies.call(this.roomsService, hotelId)
-      : [];
-    const policyByRoomType = new Map(
-      policies.map((policy) => [this.normalizeRoomType(policy.roomType), policy]),
-    );
-    const policyFor = (room: RoomEntity) => {
-      const configured = policyByRoomType.get(this.normalizeRoomType(room.roomType));
-      return {
-        maxAdults: Math.min(configured?.maxAdults ?? room.maxOccupancy, room.maxOccupancy),
-        maxChildren: configured?.maxChildren ?? room.maxOccupancy,
-        adultAgeFrom: configured?.adultAgeFrom ?? 12,
-        freeChildMaxAge: configured?.freeChildMaxAge ?? 11,
-        childSurchargePerNight: configured?.childSurchargePerNight ?? 0,
-      };
-    };
-
-    let requested: RoomGuestAllocationRequest[] | undefined = input.roomGuests;
-    if (!requested) {
-      const totalCapacity = rooms.reduce((total, room) => total + room.maxOccupancy, 0);
-      if (input.adultCount + input.childCount > totalCapacity) {
-        throw new BookingCapacityExceededException();
-      }
-      if (input.childCount > 0) {
-        throw new BookingGuestAllocationException(
-          'Provide each child age and assign guests to each selected room.',
-        );
-      }
-      let remainingAdults = input.adultCount;
-      requested = rooms.map((room) => {
-        const adultCount = Math.min(remainingAdults, policyFor(room).maxAdults);
-        remainingAdults -= adultCount;
-        return { roomId: room.id, adultCount, childAges: [] };
-      });
-      if (remainingAdults > 0) throw new BookingCapacityExceededException();
-    }
-
-    const roomById = new Map(rooms.map((room) => [room.id, room]));
-    const requestByRoom = new Map(requested.map((allocation) => [allocation.roomId, allocation]));
-    if (
-      requestByRoom.size !== rooms.length ||
-      rooms.some((room) => !requestByRoom.has(room.id)) ||
-      [...requestByRoom.keys()].some((roomId) => !roomById.has(roomId))
-    ) {
-      throw new BookingGuestAllocationException(
-        'Guest allocation must include every selected room exactly once.',
-      );
-    }
-
-    const adultTotal = requested.reduce((sum, allocation) => sum + allocation.adultCount, 0);
-    const childTotal = requested.reduce((sum, allocation) => sum + (allocation.childAges?.length ?? 0), 0);
-    if (adultTotal !== input.adultCount || childTotal !== input.childCount) {
-      throw new BookingGuestAllocationException(
-        'Per-room guest counts must match adultCount and childCount.',
-      );
-    }
-
-    const result = new Map<string, {
-      adultCount: number;
-      maxAdults: number;
-      maxChildren: number;
-      adultAgeFrom: number;
-      freeChildMaxAge: number;
-      childSurchargePerNight: number;
-      childGuests: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>;
-    }>();
-    for (const allocation of requested) {
-      const room = roomById.get(allocation.roomId)!;
-      const policy = policyFor(room);
-      const childAges = allocation.childAges ?? [];
-      if (allocation.adultCount > policy.maxAdults) {
-        throw new BookingGuestAllocationException(
-          `Room ${room.roomNumber} allows at most ${policy.maxAdults} adults. Add another room or distribute the guests differently.`,
-        );
-      }
-      if (childAges.length > policy.maxChildren) {
-        throw new BookingGuestAllocationException(
-          `Room ${room.roomNumber} allows at most ${policy.maxChildren} children.`,
-        );
-      }
-      if (allocation.adultCount + childAges.length > room.maxOccupancy) {
-        throw new BookingCapacityExceededException();
-      }
-      if (childAges.some((age) => age >= policy.adultAgeFrom)) {
-        throw new BookingGuestAllocationException(
-          `Guests aged ${policy.adultAgeFrom} or older must be counted as adults.`,
-        );
-      }
-      result.set(room.id, {
-        adultCount: allocation.adultCount,
-        ...policy,
-        childGuests: childAges.map((ageAtCheckIn) => ({
-          ageAtCheckIn,
-          surchargePerNightSnapshot:
-            ageAtCheckIn > policy.freeChildMaxAge
-              ? policy.childSurchargePerNight
-              : 0,
-        })),
-      });
-    }
-    return result;
-  }
-
-  private normalizeRoomType(value: string): string {
-    return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi-VN');
   }
 
   findPage(input: ListBookingsRequest): Promise<BookingPage> {
@@ -455,37 +239,9 @@ export class BookingsService {
     });
   }
 
-  async findPageForActor(
-    input: ListBookingsRequest,
-    actor: AuthorizationActor,
-  ): Promise<BookingPage> {
-    if (actor.role === UserRole.ADMIN) return this.findPage(input);
-
-    if (actor.role === UserRole.HOTEL_OWNER && input.hotelId) {
-      await this.hotelsService.assertManagedBy(input.hotelId, actor);
-      const scoped = Object.assign(new ListBookingsRequest(), input);
-      scoped.touristId = undefined;
-      return this.findPage(scoped);
-    }
-
-    const scoped = Object.assign(new ListBookingsRequest(), input);
-    scoped.hotelId = undefined;
-    scoped.touristId = actor.id;
-    return this.findPage(scoped);
-  }
-
   async findById(id: string): Promise<BookingEntity> {
     const booking = await this.repository.findById(id);
     if (!booking) throw new BookingNotFoundException(id);
-    return booking;
-  }
-
-  async findByIdForActor(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<BookingEntity> {
-    const booking = await this.findById(id);
-    await this.assertCanView(booking, actor);
     return booking;
   }
 
@@ -502,6 +258,16 @@ export class BookingsService {
       if (input.bookingStatus === BookingStatus.CANCELLED) {
         booking.cancelledAt ??= new Date();
       }
+    }
+    if (input.cancellationPolicyId !== undefined) {
+      const policy = await this.resolveCancellationPolicy(
+        booking.hotelId,
+        input.cancellationPolicyId,
+      );
+      booking.cancellationPolicyId = input.cancellationPolicyId;
+      booking.cancellationWindowSnapshot = policy?.cancellationWindow ?? null;
+      booking.cancellationFeeRateSnapshot = policy?.cancellationFeeRate ?? null;
+      booking.cancellationDescriptionSnapshot = policy?.description ?? null;
     }
     if (input.adultCount !== undefined) booking.adultCount = input.adultCount;
     if (input.childCount !== undefined) booking.childCount = input.childCount;
@@ -530,502 +296,249 @@ export class BookingsService {
     return this.repository.save(booking);
   }
 
-  async updateForActor(
+  async createVnpayPayment(
     id: string,
-    input: UpdateBookingRequest,
-    actor: AuthorizationActor,
-  ): Promise<BookingEntity> {
-    const booking = await this.findById(id);
-    this.assertCanModify(booking, actor);
-    return this.update(id, input);
-  }
-
-  async completeForHotelOwner(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<BookingEntity> {
-    if (actor.role !== UserRole.HOTEL_OWNER) {
-      throw new AuthorizationDeniedException();
-    }
-    const completed = await this.repository.withLockedById(id, async (booking) => {
-      await this.hotelsService.assertManagedBy(booking.hotelId, actor);
-      this.assertBookingTransition(booking, BookingStatus.COMPLETED);
-      booking.bookingStatus = BookingStatus.COMPLETED;
-      return booking;
-    });
-    if (!completed) throw new BookingNotFoundException(id);
-    return completed;
-  }
-
-  async cancelForActor(id: string, actor: AuthorizationActor): Promise<BookingEntity> {
-    const existing = await this.findById(id);
-    this.assertCanModify(existing, actor);
-    const cancelled = await this.repository.withLockedById(id, async (booking) => {
-      const unpaidPending =
-        booking.bookingStatus === BookingStatus.PENDING &&
-        booking.paymentStatus !== PaymentStatus.PAID;
-      if (!unpaidPending && booking.bookingStatus !== BookingStatus.CONFIRMED) {
-        throw new BookingActionNotAllowedException('cancel this booking');
-      }
-      let policy: BookingCancellationRuleSnapshot | null = null;
-      if (!unpaidPending) {
-        const assessment = assessCancellation(booking);
-        if (!assessment.allowed || !assessment.rule) {
-          throw new BookingCancellationNotAllowedException(
-            assessment.reason ?? 'Booking không đủ điều kiện hủy theo chính sách đã xác nhận.',
-          );
-        }
-        policy = assessment.rule;
-      }
-      const feeRate = policy
-        ? policy.cancellationFeeRate ?? policy.penaltyPercent ?? 0
-        : 0;
-      const feeAmount = unpaidPending
-        ? 0
-        : this.roundVnd(booking.amount * feeRate / 100);
-      if (policy) booking.cancellationPolicyId = policy.id;
-      if (policy) booking.cancellationWindowSnapshot = policy.cancelHours ?? policy.maxHoursAfterBooking ??
-        policy.maxHoursBeforeCheckIn ?? null;
-      booking.cancellationFeeRateSnapshot = feeRate;
-      booking.cancellationDescriptionSnapshot = unpaidPending
-        ? 'Hủy trước khi thanh toán; không phát sinh phí hủy.'
-        : policy!.description ?? policy!.name;
-      booking.cancellationFeeAmount = feeAmount;
-      booking.bookingStatus = BookingStatus.CANCELLED;
-      booking.cancelledAt = new Date();
-      // Keep PAYMENT_PENDING intact: if a payment races with cancellation,
-      // the SePay webhook can recognize it and trigger a full refund.
-      const refundAmount = this.roundVnd(Math.max(0, booking.amount - feeAmount));
-      booking.refundAmount = !unpaidPending && booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
-        ? refundAmount
-        : null;
-      booking.refundReason = booking.refundAmount === null
-        ? null
-        : `Khách hủy booking theo chính sách: ${policy?.name ?? 'đã xác nhận'}`;
-      booking.refundStatus = booking.refundAmount === null ? RefundStatus.NONE : RefundStatus.PENDING;
-      booking.refundRequestedAt = booking.refundAmount === null ? null : booking.cancelledAt;
-      booking.refundProcessingAt = null;
-      booking.refundAttempt = booking.refundAmount === null ? 0 : 1;
-      booking.refundFailureReason = null;
-      booking.refundFailedAt = null;
-      booking.refundHandledBy = null;
-      return booking;
-    });
-    if (!cancelled) throw new BookingNotFoundException(id);
-    await this.notify(
-      cancelled,
-      NotificationType.BOOKING_CANCELLED,
-      `booking:${cancelled.id}:cancelled`,
-      'Booking đã được hủy',
-      `Booking ${cancelled.bookingCode} đã được hủy theo chính sách.`,
-    );
-    return cancelled.refundAmount !== null && cancelled.refundAmount > 0
-      ? this.submitSePayRefund(id)
-      : cancelled;
-  }
-
-  async createSePayPaymentForActor(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<CreatedSePayPayment> {
-    const booking = await this.findById(id);
-    this.assertCanModify(booking, actor);
-    return this.createSePayPayment(id);
-  }
-
-  async createSePayPayment(id: string): Promise<CreatedSePayPayment> {
+    input: CreateVnpayPaymentRequest,
+    customerIp: string,
+  ): Promise<CreatedVnpayPayment> {
     const now = new Date();
     const holdMinutes = this.configService.getOrThrow<number>(
       'BOOKING_HOLD_MINUTES',
     );
     const expiresAt = new Date(now.getTime() + holdMinutes * 60_000);
-    const reservation = await this.repository.withLockedById(id, (booking) => {
-      this.assertPayable(booking, 'create SePay payment');
+    const result = await this.repository.withLockedById(id, (booking) => {
+      this.assertPayable(booking, 'create VNPAY payment');
       if (booking.reservationExpiresAt <= now) {
         throw new BookingReservationExpiredException();
       }
       if (
-        booking.paymentStatus === PaymentStatus.PAYMENT_PENDING &&
-        booking.paymentCreatedAt !== null &&
-        booking.paymentExpiresAt !== null &&
-        booking.paymentExpiresAt > now
-      ) {
-        if (booking.sepayOrderXid) return { booking, createOrder: false };
-        if (booking.paymentCreatedAt.getTime() > now.getTime() - 30_000) {
-          throw new BookingPaymentAlreadyInitializedException();
-        }
-      }
-      if (booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING && (
         booking.paymentStatus !== PaymentStatus.PENDING ||
         booking.paymentCreatedAt !== null
-      )) {
+      ) {
         throw new BookingPaymentAlreadyInitializedException();
       }
       if (booking.currency !== 'VND') {
-        throw new SePayCurrencyNotSupportedException();
+        throw new VnpayCurrencyNotSupportedException();
       }
-      if (!Number.isInteger(booking.amount) || booking.amount <= 0) {
-        throw new SePayAmountNotSupportedException();
+      if (!Number.isInteger(booking.amount) || booking.amount < 5_000) {
+        throw new VnpayAmountNotSupportedException();
       }
 
-      booking.paymentMethod = PaymentMethod.BANK_TRANSFER;
+      booking.paymentMethod = null;
       booking.paymentStatus = PaymentStatus.PAYMENT_PENDING;
-      booking.paymentCreatedAt ??= now;
-      booking.paymentExpiresAt ??= expiresAt;
-      booking.reservationExpiresAt = booking.paymentExpiresAt;
-      booking.sepayOrderCode ??= `BK${createHash('sha256').update(booking.id).digest('hex').slice(0, 13).toUpperCase()}`;
-      return { booking, createOrder: !booking.sepayOrderXid };
+      booking.paymentCreatedAt = now;
+      booking.paymentExpiresAt = expiresAt;
+      booking.reservationExpiresAt = expiresAt;
+      const paymentUrl = this.vnpayGateway.createPaymentUrl({
+        bookingId: booking.id,
+        bookingCode: booking.bookingCode,
+        amount: booking.amount,
+        customerIp,
+        createdAt: now,
+        expiresAt,
+        locale: input.locale,
+      });
+      return { booking, paymentUrl };
     });
-    if (!reservation) throw new BookingNotFoundException(id);
-    if (!reservation.createOrder) return { booking: reservation.booking };
-
-    const order = await this.sepay.createOrder({
-      orderCode: reservation.booking.sepayOrderCode!,
-      amount: reservation.booking.amount,
-      durationSeconds: holdMinutes * 60,
-    });
-    const saved = await this.repository.withLockedById(id, (booking) => {
-      if (booking.sepayOrderCode !== order.order_code) {
-        throw new BookingActionNotAllowedException('save the SePay order');
-      }
-      booking.sepayOrderXid = order.id;
-      booking.sepayOrderCode = order.order_code;
-      booking.sepayVaNumber = order.va_number ?? null;
-      booking.sepayQrCode = order.qr_code ?? order.qr_code_url ?? null;
-      booking.sepayBankName = order.bank_name ?? null;
-      booking.sepayAccountNumber = order.account_number ?? null;
-      booking.sepayAccountHolderName = order.account_holder_name ?? order.va_holder_name ?? null;
-      booking.sepayOrderStatus = order.status;
-      if (order.expired_at) {
-        const expires = new Date(order.expired_at.replace(' ', 'T') + '+07:00');
-        if (!Number.isNaN(expires.getTime())) booking.paymentExpiresAt = expires;
-      }
-      return booking;
-    });
-    if (!saved) throw new BookingNotFoundException(id);
-    return { booking: saved };
+    if (!result) throw new BookingNotFoundException(id);
+    return result;
   }
 
-  async handleSePayV2Webhook(payload: SePayWebhookPayload): Promise<boolean> {
-    const code = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
-    const booking = code ? await this.repository.findBySePayOrderCode(code) : null;
-    if (!booking) return false;
-    if (String(payload.transferType ?? '').toLowerCase() !== 'in') return false;
-    if (Number(payload.transferAmount) !== booking.amount) return false;
-    if (payload.subAccount && booking.sepayVaNumber &&
-      payload.subAccount.toUpperCase() !== booking.sepayVaNumber.toUpperCase()) return false;
-    const transactionId = payload.id === undefined ? '' : String(payload.id);
-    if (!transactionId) return false;
+  async handleVnpayIpn(
+    query: Record<string, unknown>,
+  ): Promise<VnpayIpnResponse> {
+    const callback = this.vnpayGateway.verifyPaymentCallback(query);
+    if (!callback.signatureValid || !callback.terminalCodeValid) {
+      return { RspCode: '97', Message: 'Invalid signature' };
+    }
+    if (!callback.bookingId) {
+      return { RspCode: '01', Message: 'Order not found' };
+    }
 
-    const updated = await this.repository.withLockedById(booking.id, (current) => {
-      if (current.paymentStatus === PaymentStatus.PAID) {
-        return {
-          accepted: current.paymentTransactionId === transactionId,
-          newlyPaid: false,
-          booking: current,
-          wasConfirmed: false,
-        };
-      }
-      if (current.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
-        current.paymentTransactionId !== null) {
-        return { accepted: false, newlyPaid: false, booking: current, wasConfirmed: false };
-      }
+    const response = await this.repository.withLockedById(
+      callback.bookingId,
+      (booking): VnpayIpnResponse => {
+        if (callback.amount !== booking.amount) {
+          return { RspCode: '04', Message: 'Invalid amount' };
+        }
+        if (
+          booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
+          booking.paymentTransactionId !== null
+        ) {
+          return { RspCode: '02', Message: 'Order already confirmed' };
+        }
 
-      current.paymentStatus = PaymentStatus.PAID;
-      current.paymentMethod = PaymentMethod.BANK_TRANSFER;
-      current.paymentTransactionId = transactionId;
-      current.sepayOrderStatus = 'Paid';
-      const paidAt = typeof payload.transactionDate === 'string'
-        ? new Date(payload.transactionDate.replace(' ', 'T') + '+07:00')
-        : new Date();
-      current.paidAt = Number.isNaN(paidAt.getTime()) ? new Date() : paidAt;
-      const wasConfirmed = current.bookingStatus === BookingStatus.PENDING;
-      const latePaymentAfterCancellation = current.bookingStatus === BookingStatus.CANCELLED;
-      if (current.bookingStatus === BookingStatus.PENDING) {
-        current.bookingStatus = BookingStatus.CONFIRMED;
-      }
-      if (latePaymentAfterCancellation) {
-        current.refundAmount = current.amount;
-        current.refundReason = 'Thanh toán nhận được sau khi booking đã bị hủy.';
-        current.refundStatus = RefundStatus.PENDING;
-        current.refundRequestedAt = new Date();
-        current.refundProcessingAt = null;
-        current.refundAttempt = 1;
-        current.refundFailureReason = null;
-        current.refundFailedAt = null;
-        current.refundHandledBy = null;
-      }
+        const successful =
+          callback.responseCode === '00' && callback.transactionStatus === '00';
+        if (successful) {
+          if (!callback.transactionId || !callback.paidAt) {
+            return { RspCode: '99', Message: 'Invalid payment data' };
+          }
+          booking.paymentStatus = PaymentStatus.PAID;
+          booking.paymentMethod = this.resolveVnpayPaymentMethod(
+            callback.cardType,
+            callback.bankCode,
+          );
+          booking.paymentTransactionId = callback.transactionId;
+          booking.paidAt = callback.paidAt;
+          if (booking.bookingStatus === BookingStatus.PENDING) {
+            booking.bookingStatus = BookingStatus.CONFIRMED;
+          }
+        } else {
+          booking.paymentStatus =
+            callback.responseCode === '11'
+              ? PaymentStatus.EXPIRED
+              : PaymentStatus.FAILED;
+        }
+        return { RspCode: '00', Message: 'Confirm Success' };
+      },
+    );
+    return response ?? { RspCode: '01', Message: 'Order not found' };
+  }
+
+  async getVnpayReturn(
+    query: Record<string, unknown>,
+  ): Promise<VnpayReturnResponse> {
+    const callback = this.vnpayGateway.verifyPaymentCallback(query);
+    const signatureValid =
+      callback.signatureValid && callback.terminalCodeValid;
+    if (!signatureValid || !callback.bookingId) {
       return {
-        accepted: true,
-        newlyPaid: true,
-        booking: current,
-        wasConfirmed,
-        latePaymentAfterCancellation,
+        signatureValid: false,
+        bookingId: null,
+        bookingCode: null,
+        paymentStatus: null,
+        responseCode: callback.responseCode,
+        transactionStatus: callback.transactionStatus,
       };
-    });
-    if (!updated?.accepted) return false;
-    if (updated.newlyPaid) {
-      const amount = this.formatVnd(updated.booking.amount);
-      await this.notify(
-        updated.booking,
-        NotificationType.PAYMENT_SUCCEEDED,
-        `booking:${updated.booking.id}:payment-succeeded`,
-        'Thanh toán thành công',
-        `Đã nhận thanh toán ${amount} cho booking ${updated.booking.bookingCode}.${this.sandboxNotice()}`,
-      );
-      if (updated.wasConfirmed) {
-        await this.notify(
-          updated.booking,
-          NotificationType.BOOKING_CONFIRMED,
-          `booking:${updated.booking.id}:confirmed`,
-          'Booking đã được xác nhận',
-          `Booking ${updated.booking.bookingCode} đã được khách sạn xác nhận.`,
-        );
-      }
     }
-    if (
-      updated.booking.bookingStatus === BookingStatus.CANCELLED &&
-      updated.booking.refundStatus === RefundStatus.PENDING &&
-      updated.booking.refundAmount !== null &&
-      !updated.booking.sepayRefundId
-    ) {
-      await this.submitSePayRefund(updated.booking.id);
+    const booking = await this.repository.findById(callback.bookingId);
+    return {
+      signatureValid: true,
+      bookingId: booking?.id ?? callback.bookingId,
+      bookingCode: booking?.bookingCode ?? null,
+      paymentStatus: booking?.paymentStatus ?? null,
+      responseCode: callback.responseCode,
+      transactionStatus: callback.transactionStatus,
+    };
+  }
+
+  async settle(
+    id: string,
+    input: SettleBookingRequest,
+  ): Promise<BookingEntity> {
+    const booking = await this.findById(id);
+    if (booking.paymentStatus !== PaymentStatus.PAID) {
+      throw new BookingPaymentRequiredException('settlement');
     }
-    return true;
+    if (booking.settlementStatus === SettlementStatus.SETTLED) {
+      throw new BookingAlreadySettledException();
+    }
+    if (input.settlementBaseAmount > booking.amount) {
+      throw new SettlementBaseAmountExceededException();
+    }
+
+    const commissionAmount = this.roundMoney(
+      (input.settlementBaseAmount * booking.appliedCommissionRate) / 100,
+    );
+    booking.settlementBaseAmount = input.settlementBaseAmount;
+    booking.commissionAmount = commissionAmount;
+    booking.partnerReceivableAmount = this.roundMoney(
+      input.settlementBaseAmount - commissionAmount,
+    );
+    booking.settlementStatus = SettlementStatus.SETTLED;
+    booking.transactionId = input.transactionId.trim();
+    booking.bankNameSnapshot = input.bankNameSnapshot.trim();
+    booking.bankAccountNumberSnapshot = input.bankAccountNumberSnapshot.trim();
+    booking.bankAccountHolderSnapshot = input.bankAccountHolderSnapshot.trim();
+    booking.settledAt = this.resolveNotFutureTimestamp(
+      input.settledAt,
+      'settledAt',
+    );
+    return this.repository.save(booking);
   }
 
   async refund(
     id: string,
     input: RefundBookingRequest,
-    _customerIp?: string,
+    customerIp: string,
   ): Promise<BookingEntity> {
-    const initialized = await this.repository.withLockedById(id, (booking) => {
+    const prepared = await this.repository.withLockedById(id, (booking) => {
       if (booking.paymentStatus !== PaymentStatus.PAID) {
         throw new BookingPaymentRequiredException('refund');
       }
-      if (booking.settlementStatus !== SettlementStatus.PENDING) {
-        throw new BookingActionNotAllowedException(
-          'refund after hotel settlement has started',
-        );
-      }
-      if (!booking.sepayOrderXid) {
-        throw new BookingActionNotAllowedException('SePay v2 refund without a VA order');
-      }
-      const retry = booking.refundStatus === RefundStatus.FAILED && booking.refundAmount !== null;
-      const active = [RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus);
-      if (booking.refundStatus !== RefundStatus.NONE && !retry && !active) {
+      if (booking.refundStatus !== RefundStatus.NONE) {
         throw new BookingRefundAlreadyInitializedException();
-      }
-      if ((retry || active) && input.refundAmount !== booking.refundAmount) {
-        throw new RefundAmountExceededException();
       }
       if (input.refundAmount > booking.amount) {
         throw new RefundAmountExceededException();
       }
-      if (!Number.isInteger(input.refundAmount) || input.refundAmount <= 0) {
-        throw new SePayAmountNotSupportedException();
+      if (!booking.paymentTransactionId || !booking.paymentCreatedAt) {
+        throw new BookingActionNotAllowedException('VNPAY refund');
       }
+      booking.refundAmount = input.refundAmount;
       booking.refundReason = input.refundReason.trim();
-      if (booking.refundStatus === RefundStatus.NONE) {
-        booking.refundAmount = input.refundAmount;
-        booking.refundAttempt = 1;
-      } else if (retry) {
-        booking.refundAttempt = (booking.refundAttempt ?? 0) + 1;
-        booking.sepayRefundId = null;
-        booking.sepayRefundProviderStatus = null;
-        booking.sepayRefundIdempotencyKey = null;
-      }
       booking.refundStatus = RefundStatus.PENDING;
-      booking.refundRequestedAt = new Date();
-      booking.refundProcessingAt = null;
-      booking.refundHandledBy = null;
-      return booking;
-    });
-    if (!initialized) throw new BookingNotFoundException(id);
-    return this.submitSePayRefund(id);
-  }
-
-  async syncSePayRefund(id: string): Promise<BookingEntity> {
-    const booking = await this.findById(id);
-    if (!booking.sepayRefundId) return this.submitSePayRefund(id);
-    let refund;
-    try {
-      refund = await this.sepay.getRefund(booking.sepayRefundId);
-    } catch {
-      return booking;
-    }
-    const updated = await this.repository.withLockedById(id, (current) => {
-      if (current.sepayRefundId !== refund.refund_id) return current;
-      current.sepayRefundProviderStatus = refund.status;
-      current.refundTransactionId = refund.refund_id;
-      if (refund.status === 'succeeded') {
-        current.refundStatus = RefundStatus.REFUNDED;
-        current.refundedAt ??= new Date();
-        current.refundFailureReason = null;
-      } else if (refund.status === 'failed' || refund.status === 'rejected') {
-        current.refundStatus = RefundStatus.FAILED;
-      current.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
-        current.refundFailedAt = new Date();
-      } else {
-        current.refundStatus = RefundStatus.PROCESSING;
-      }
-      return current;
-    });
-    if (!updated) throw new BookingNotFoundException(id);
-    await this.notifyRefundStatus(updated);
-    return updated;
-  }
-
-  private async submitSePayRefund(id: string): Promise<BookingEntity> {
-    const request = await this.repository.withLockedById(id, (booking) => {
-      if (!booking.sepayOrderXid || booking.refundAmount === null || booking.refundAmount <= 0) {
-        throw new BookingActionNotAllowedException('submit SePay v2 refund');
-      }
-      if (![RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus)) {
-        throw new BookingActionNotAllowedException('retry this SePay refund');
-      }
-      booking.sepayRefundIdempotencyKey ??= `refund-${booking.id.replaceAll('-', '')}-${booking.refundAttempt || 1}`;
-      booking.refundStatus = RefundStatus.PROCESSING;
-      booking.refundProcessingAt ??= new Date();
       return {
-        orderXid: booking.sepayOrderXid,
-        amount: booking.refundAmount,
-        key: booking.sepayRefundIdempotencyKey,
+        originalAmount: booking.amount,
+        originalTransactionId: booking.paymentTransactionId,
+        originalTransactionDate: booking.paymentCreatedAt,
       };
     });
-    if (!request) throw new BookingNotFoundException(id);
+    if (!prepared) throw new BookingNotFoundException(id);
 
-    let refund;
+    let result: VnpayRefundResult;
     try {
-      refund = await this.sepay.refundOrder(request.orderXid, request.amount, request.key);
-    } catch (error) {
-      const rejection = error instanceof SePayV2RequestException ? error : null;
-      const permanentRejection = rejection !== null &&
-        rejection.providerStatus >= 400 && rejection.providerStatus < 500 &&
-        rejection.providerStatus !== 408 && rejection.providerStatus !== 429;
-      const current = await this.repository.withLockedById(id, (booking) => {
-        if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
-        if (permanentRejection) {
-          booking.refundStatus = RefundStatus.FAILED;
-          booking.refundFailureReason = `SePay từ chối yêu cầu hoàn tiền (HTTP ${rejection!.providerStatus}, ${rejection!.providerErrorCode}).`;
-          booking.refundFailedAt = new Date();
-        } else {
-          booking.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
-        }
-        return booking;
+      result = await this.vnpayGateway.refund({
+        bookingId: id,
+        amount: input.refundAmount,
+        originalAmount: prepared.originalAmount,
+        originalTransactionId: prepared.originalTransactionId,
+        originalTransactionDate: prepared.originalTransactionDate,
+        reason: input.refundReason.trim(),
+        customerIp,
       });
-      if (!current) throw new BookingNotFoundException(id);
-      await this.notifyRefundStatus(current);
-      return current;
+    } catch (error) {
+      await this.repository.withLockedById(id, (booking) => {
+        if (booking.refundStatus === RefundStatus.PENDING) {
+          booking.refundStatus = RefundStatus.FAILED;
+        }
+      });
+      throw error;
     }
+
     const updated = await this.repository.withLockedById(id, (booking) => {
-      if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
-      booking.sepayRefundId = refund.refund_id;
-      booking.sepayRefundProviderStatus = refund.status;
-      booking.refundTransactionId = refund.refund_id;
-      booking.refundFailureReason = null;
-      if (refund.status === 'succeeded') {
+      booking.refundTransactionId = result.transactionId ?? result.requestId;
+      if (result.responseCode === '00' && result.transactionStatus === '00') {
         booking.refundStatus = RefundStatus.REFUNDED;
-        booking.refundedAt ??= new Date();
-      } else if (refund.status === 'failed' || refund.status === 'rejected') {
-        booking.refundStatus = RefundStatus.FAILED;
-        booking.refundFailureReason = `SePay refund ${refund.status}.`;
-        booking.refundFailedAt = new Date();
+        booking.refundedAt = result.payDate ?? new Date();
+        booking.bookingStatus = BookingStatus.CANCELLED;
+        booking.cancelledAt ??= new Date();
+      } else if (
+        result.responseCode === '00' &&
+        ['05', '06'].includes(result.transactionStatus ?? '')
+      ) {
+        booking.refundStatus = RefundStatus.PENDING;
       } else {
-        booking.refundStatus = RefundStatus.PROCESSING;
+        booking.refundStatus = RefundStatus.FAILED;
       }
       return booking;
     });
     if (!updated) throw new BookingNotFoundException(id);
-    await this.notifyRefundStatus(updated);
     return updated;
   }
 
-  private async notifyRefundStatus(booking: BookingEntity): Promise<void> {
-    if (booking.refundStatus === RefundStatus.NONE || booking.refundAmount === null) return;
-    const amount = this.formatVnd(booking.refundAmount);
-    if (booking.refundStatus === RefundStatus.PROCESSING) {
-      await this.notify(
-        booking,
-        NotificationType.REFUND_PROCESSING,
-        `booking:${booking.id}:refund:${booking.refundAttempt}:processing`,
-        'Hoàn tiền đang được xử lý',
-        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} đang chờ SePay xác nhận.`,
-      );
-    } else if (booking.refundStatus === RefundStatus.REFUNDED) {
-      await this.notify(
-        booking,
-        NotificationType.REFUND_SUCCEEDED,
-        `booking:${booking.id}:refund:${booking.refundAttempt}:succeeded`,
-        'SePay đã xác nhận hoàn tiền',
-        `SePay xác nhận hoàn ${amount} cho booking ${booking.bookingCode} thành công.${this.sandboxNotice()}`,
-      );
-    } else if (booking.refundStatus === RefundStatus.FAILED) {
-      const reason = booking.refundFailureReason ? ` Lý do: ${booking.refundFailureReason}` : '';
-      await this.notify(
-        booking,
-        NotificationType.REFUND_FAILED,
-        `booking:${booking.id}:refund:${booking.refundAttempt}:failed`,
-        'Hoàn tiền chưa thành công',
-        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} chưa thành công.${reason}`,
-      );
+  private async resolveCancellationPolicy(
+    hotelId: string,
+    cancellationPolicyId: string | null,
+  ): Promise<CancellationPolicyEntity | null> {
+    if (!cancellationPolicyId) return null;
+    const policy =
+      await this.cancellationPoliciesService.findById(cancellationPolicyId);
+    if (policy.hotelId !== hotelId) {
+      throw new BookingPolicyHotelMismatchException();
     }
-  }
-
-  private async notify(
-    booking: BookingEntity,
-    type: NotificationType,
-    eventKey: string,
-    title: string,
-    message: string,
-  ): Promise<void> {
-    if (!this.notificationsService) return;
-    try {
-      await this.notificationsService.createOnce({
-        userId: booking.touristId,
-        type,
-        title,
-        message,
-        link: `/bookings/${booking.id}`,
-        eventKey,
-      }, booking.guestEmail);
-    } catch {
-      this.logger.error(
-        `Failed to persist booking notification (${type}).`,
-      );
-    }
-  }
-
-  private formatVnd(amount: number): string {
-    return new Intl.NumberFormat('vi-VN').format(amount) + ' ₫';
-  }
-
-  private sandboxNotice(): string {
-    const baseUrl = this.configService.get<string>('SEPAY_V2_BASE_URL') ?? '';
-    return baseUrl.includes('sandbox') ? ' Đây là kết quả mô phỏng trong môi trường thử nghiệm.' : '';
-  }
-
-  private async assertCanView(
-    booking: BookingEntity,
-    actor: AuthorizationActor,
-  ): Promise<void> {
-    if (actor.role === UserRole.ADMIN || booking.touristId === actor.id) {
-      return;
-    }
-    if (actor.role === UserRole.HOTEL_OWNER) {
-      await this.hotelsService.assertManagedBy(booking.hotelId, actor);
-      return;
-    }
-    throw new AuthorizationDeniedException();
-  }
-
-  private assertCanModify(
-    booking: BookingEntity,
-    actor: AuthorizationActor,
-  ): void {
-    if (actor.role !== UserRole.ADMIN && booking.touristId !== actor.id) {
-      throw new AuthorizationDeniedException();
-    }
+    return policy;
   }
 
   private assertBookingTransition(
@@ -1036,10 +549,12 @@ export class BookingsService {
       [BookingStatus.PENDING]: [
         BookingStatus.PENDING,
         BookingStatus.CONFIRMED,
+        BookingStatus.CANCELLED,
       ],
       [BookingStatus.CONFIRMED]: [
         BookingStatus.CONFIRMED,
         BookingStatus.COMPLETED,
+        BookingStatus.CANCELLED,
       ],
       [BookingStatus.CANCELLED]: [BookingStatus.CANCELLED],
       [BookingStatus.COMPLETED]: [BookingStatus.COMPLETED],
@@ -1089,6 +604,7 @@ export class BookingsService {
       input.guestPhone,
       input.specialRequests,
       input.bookingStatus,
+      input.cancellationPolicyId,
     ].every((value) => value === undefined);
   }
 
@@ -1110,11 +626,26 @@ export class BookingsService {
     return numberOfNights;
   }
 
-  private roundMoney(value: number): number {
-    return Math.round((value + Number.EPSILON) * 100) / 100;
+  private resolveVnpayPaymentMethod(
+    cardType: string | null,
+    bankCode: string | null,
+  ): PaymentMethod {
+    const normalizedCardType = cardType?.trim().toUpperCase() ?? '';
+    const normalizedBankCode = bankCode?.trim().toUpperCase() ?? '';
+
+    if (normalizedCardType === 'QRCODE' || normalizedBankCode === 'VNPAYQR') {
+      return PaymentMethod.QR;
+    }
+    if (
+      ['CREDIT', 'INTCARD'].includes(normalizedCardType) ||
+      ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'UPI'].includes(normalizedBankCode)
+    ) {
+      return PaymentMethod.CARD;
+    }
+    return PaymentMethod.BANK_TRANSFER;
   }
 
-  private roundVnd(value: number): number {
-    return Math.round(value + Number.EPSILON);
+  private roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 }

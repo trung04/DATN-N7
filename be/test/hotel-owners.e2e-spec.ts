@@ -5,12 +5,9 @@ import { App } from 'supertest/types';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
 import { configureHttpApplication } from '../src/common/http/configure-http-application';
 import { HotelOwnersController } from '../src/modules/hotel-owners/controllers/hotel-owners.controller';
-import { HotelOwnerEntity } from '../src/modules/users/entities/hotel-owner.entity';
+import { HotelOwnerEntity } from '../src/modules/hotel-owners/entities/hotel-owner.entity';
 import { HotelOwnerNotFoundException } from '../src/modules/hotel-owners/exceptions/hotel-owner.exceptions';
 import { HotelOwnersService } from '../src/modules/hotel-owners/services/hotel-owners.service';
-import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
-import { UserRole } from '../src/modules/users/entities/user.entity';
-import type { NextFunction, Response } from 'express';
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const entity = Object.assign(new HotelOwnerEntity(), {
@@ -25,8 +22,8 @@ describe('Hotel Owners API (e2e)', () => {
   const service = {
     create: jest.fn(),
     findPage: jest.fn(),
-    findByUserIdForActor: jest.fn(),
-    updateForActor: jest.fn(),
+    findByUserId: jest.fn(),
+    update: jest.fn(),
     delete: jest.fn(),
   };
 
@@ -38,19 +35,6 @@ describe('Hotel Owners API (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.use(
-      (
-        currentRequest: AuthenticatedRequest,
-        _response: Response,
-        next: NextFunction,
-      ) => {
-        currentRequest.authUser = {
-          id: userId,
-          role: UserRole.HOTEL_OWNER,
-        } as never;
-        next();
-      },
-    );
     configureHttpApplication(app);
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
@@ -95,7 +79,7 @@ describe('Hotel Owners API (e2e)', () => {
   });
 
   it('allows a nullable bank field to be cleared', async () => {
-    service.updateForActor.mockResolvedValue(
+    service.update.mockResolvedValue(
       Object.assign(new HotelOwnerEntity(), entity, {
         bankAccountNumber: null,
       }),
@@ -111,7 +95,7 @@ describe('Hotel Owners API (e2e)', () => {
   });
 
   it('maps a missing hotel owner profile to problem details', async () => {
-    service.findByUserIdForActor.mockRejectedValue(
+    service.findByUserId.mockRejectedValue(
       new HotelOwnerNotFoundException(userId),
     );
 

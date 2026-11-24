@@ -52,37 +52,8 @@ export enum SettlementStatus {
 export enum RefundStatus {
   NONE = 'NONE',
   PENDING = 'PENDING',
-  PROCESSING = 'PROCESSING',
   REFUNDED = 'REFUNDED',
   FAILED = 'FAILED',
-}
-
-export interface BookingCancellationRuleSnapshot {
-  id: string;
-  name: string;
-  cancelHours?: number;
-  penaltyPercent?: number;
-  minHoursAfterBooking?: number;
-  maxHoursAfterBooking?: number | null;
-  minHoursBeforeCheckIn?: number;
-  maxHoursBeforeCheckIn?: number | null;
-  cancellationAllowed: boolean;
-  cancellationFeeRate: number | null;
-  description: string | null;
-}
-
-export interface BookingCancellationPolicySnapshot {
-  version: string;
-  basis?: 'HOURS_AFTER_BOOKING' | 'HOURS_BEFORE_CHECK_IN';
-  cancelHours?: number;
-  penaltyPercent?: number;
-  cancellationAllowed?: boolean;
-  policyName?: string;
-  policyDescription?: string | null;
-  inclusiveHourLimits?: true;
-  timezone: 'Asia/Ho_Chi_Minh';
-  checkInTime: string;
-  rules: BookingCancellationRuleSnapshot[];
 }
 
 @Entity({ name: 'bookings' })
@@ -201,30 +172,6 @@ export class BookingEntity {
   })
   paymentTransactionId: string | null;
 
-  @Column({ name: 'sepay_order_xid', type: 'varchar', length: 100, nullable: true })
-  sepayOrderXid: string | null;
-
-  @Column({ name: 'sepay_order_code', type: 'varchar', length: 50, nullable: true })
-  sepayOrderCode: string | null;
-
-  @Column({ name: 'sepay_va_number', type: 'varchar', length: 100, nullable: true })
-  sepayVaNumber: string | null;
-
-  @Column({ name: 'sepay_qr_code', type: 'text', nullable: true })
-  sepayQrCode: string | null;
-
-  @Column({ name: 'sepay_bank_name', type: 'varchar', length: 100, nullable: true })
-  sepayBankName: string | null;
-
-  @Column({ name: 'sepay_account_number', type: 'varchar', length: 100, nullable: true })
-  sepayAccountNumber: string | null;
-
-  @Column({ name: 'sepay_account_holder_name', type: 'varchar', length: 255, nullable: true })
-  sepayAccountHolderName: string | null;
-
-  @Column({ name: 'sepay_order_status', type: 'varchar', length: 30, nullable: true })
-  sepayOrderStatus: string | null;
-
   @Column({
     name: 'settlement_base_amount',
     type: 'numeric',
@@ -296,9 +243,6 @@ export class BookingEntity {
   @Column({ name: 'cancellation_policy_id', type: 'uuid', nullable: true })
   cancellationPolicyId: string | null;
 
-  @Column({ name: 'cancellation_policy_snapshot', type: 'jsonb', nullable: true })
-  cancellationPolicySnapshot: BookingCancellationPolicySnapshot | null;
-
   @Column({
     name: 'cancellation_window_snapshot',
     type: 'integer',
@@ -324,16 +268,6 @@ export class BookingEntity {
   cancellationDescriptionSnapshot: string | null;
 
   @Column({
-    name: 'cancellation_fee_amount',
-    type: 'numeric',
-    precision: 12,
-    scale: 2,
-    nullable: true,
-    transformer: nullableDecimalTransformer,
-  })
-  cancellationFeeAmount: number | null;
-
-  @Column({
     name: 'refund_amount',
     type: 'numeric',
     precision: 12,
@@ -345,24 +279,6 @@ export class BookingEntity {
 
   @Column({ name: 'refund_reason', type: 'text', nullable: true })
   refundReason: string | null;
-
-  @Column({ name: 'refund_requested_at', type: 'timestamptz', nullable: true })
-  refundRequestedAt: Date | null;
-
-  @Column({ name: 'refund_processing_at', type: 'timestamptz', nullable: true })
-  refundProcessingAt: Date | null;
-
-  @Column({ name: 'refund_attempt', type: 'integer', default: 0 })
-  refundAttempt: number;
-
-  @Column({ name: 'refund_failure_reason', type: 'text', nullable: true })
-  refundFailureReason: string | null;
-
-  @Column({ name: 'refund_failed_at', type: 'timestamptz', nullable: true })
-  refundFailedAt: Date | null;
-
-  @Column({ name: 'refund_handled_by', type: 'uuid', nullable: true })
-  refundHandledBy: string | null;
 
   @Column({ name: 'refund_status', type: 'varchar', length: 30 })
   refundStatus: RefundStatus;
@@ -377,15 +293,6 @@ export class BookingEntity {
     nullable: true,
   })
   refundTransactionId: string | null;
-
-  @Column({ name: 'sepay_refund_id', type: 'varchar', length: 100, nullable: true })
-  sepayRefundId: string | null;
-
-  @Column({ name: 'sepay_refund_idempotency_key', type: 'varchar', length: 100, nullable: true })
-  sepayRefundIdempotencyKey: string | null;
-
-  @Column({ name: 'sepay_refund_provider_status', type: 'varchar', length: 30, nullable: true })
-  sepayRefundProviderStatus: string | null;
 
   @OneToMany(() => BookingRoomEntity, (item) => item.booking)
   roomItems: BookingRoomEntity[];

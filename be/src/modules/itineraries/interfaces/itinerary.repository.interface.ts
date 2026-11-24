@@ -23,7 +23,6 @@ export interface ItineraryPage {
 export interface CreateItineraryData {
   touristUserId: string;
   name: string;
-  destinationCity: string;
   description: string | null;
   startDate: string;
   endDate: string;

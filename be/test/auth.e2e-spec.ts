@@ -1,7 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { APP_GUARD } from '@nestjs/core';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
@@ -62,7 +61,7 @@ describe('Authentication API (e2e)', () => {
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: service },
-        { provide: APP_GUARD, useClass: AccessSessionGuard },
+        AccessSessionGuard,
         TrustedOriginGuard,
         {
           provide: ConfigService,

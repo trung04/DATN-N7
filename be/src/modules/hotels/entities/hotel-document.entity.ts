@@ -10,15 +10,6 @@ import {
 } from 'typeorm';
 import { HotelEntity } from './hotel.entity';
 
-export interface HotelDocumentFile {
-  id: string;
-  objectKey: string;
-  contentType: string;
-  byteSize: number;
-  width: number;
-  height: number;
-}
-
 export enum HotelDocumentType {
   BUSINESS_LICENSE = 'BUSINESS_LICENSE',
   HOTEL_LICENSE = 'HOTEL_LICENSE',
@@ -45,9 +36,6 @@ export class HotelDocumentEntity {
 
   @Column({ name: 'file_url', type: 'varchar', length: 2048 })
   fileUrl: string;
-
-  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
-  files: HotelDocumentFile[];
 
   @Column({ name: 'issued_at', type: 'date', nullable: true })
   issuedAt: string | null;

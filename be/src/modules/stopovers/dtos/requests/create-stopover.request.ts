@@ -2,8 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsInt,
   IsISO8601,
-  IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -11,38 +9,11 @@ import {
   Max,
   MaxLength,
   Min,
-  ValidateIf,
 } from 'class-validator';
 
 export class CreateStopoverRequest {
-  @IsOptional()
   @IsUUID('4')
-  placeId?: string;
-
-  @ValidateIf((request: CreateStopoverRequest) => !request.placeId)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  customName?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  customAddress?: string;
-
-  @ValidateIf((request: CreateStopoverRequest) => !request.placeId)
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  latitude?: number;
-
-  @ValidateIf((request: CreateStopoverRequest) => !request.placeId)
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  longitude?: number;
+  placeId: string;
 
   @Type(() => Number)
   @IsInt()

@@ -1,6 +1,5 @@
 import { AmenitiesService } from '../../amenities/services/amenities.service';
 import { HotelsService } from '../../hotels/services/hotels.service';
-import { UserRole } from '../../users/entities/user.entity';
 import { AmenityEntity } from '../../amenities/entities/amenity.entity';
 import { RoomOperationalStatus, RoomEntity } from '../entities/room.entity';
 import {
@@ -36,17 +35,10 @@ const amenity = (): AmenityEntity =>
     updatedAt: new Date('2026-11-03T00:00:00.000Z'),
   });
 
-const ownerActor = {
-  id: '99999999-9999-4999-8999-999999999999',
-  role: UserRole.HOTEL_OWNER,
-};
-
 describe('RoomsService', () => {
   let repository: jest.Mocked<RoomRepository>;
-  let amenitiesService: jest.Mocked<Pick<AmenitiesService, 'findByIdsForHotel'>>;
-  let hotelsService: jest.Mocked<
-    Pick<HotelsService, 'assertActive' | 'assertManagedBy'>
-  >;
+  let amenitiesService: jest.Mocked<Pick<AmenitiesService, 'findByIds'>>;
+  let hotelsService: jest.Mocked<Pick<HotelsService, 'assertActive'>>;
   let service: RoomsService;
   let createRoom: jest.MockedFunction<RoomRepository['create']>;
   let deleteRoom: jest.MockedFunction<RoomRepository['delete']>;
@@ -63,8 +55,8 @@ describe('RoomsService', () => {
       save: jest.fn(),
       delete: deleteRoom,
     };
-    amenitiesService = { findByIdsForHotel: jest.fn() };
-    hotelsService = { assertActive: jest.fn(), assertManagedBy: jest.fn() };
+    amenitiesService = { findByIds: jest.fn() };
+    hotelsService = { assertActive: jest.fn() };
     service = new RoomsService(
       repository,
       amenitiesService as unknown as AmenitiesService,
@@ -76,26 +68,23 @@ describe('RoomsService', () => {
     const saved = room();
     const wifi = amenity();
     repository.findByHotelAndNumber.mockResolvedValue(null);
-    amenitiesService.findByIdsForHotel.mockResolvedValue([wifi]);
+    amenitiesService.findByIds.mockResolvedValue([wifi]);
     repository.create.mockResolvedValue({
       room: saved,
       amenityIds: [wifi.id],
     });
 
     await expect(
-      service.create(
-        {
-          hotelId: saved.hotelId,
-          roomNumber: ' a101 ',
-          maxOccupancy: 2,
-          pricePerNight: 750000,
-          currency: 'vnd',
-          operationalStatus: RoomOperationalStatus.AVAILABLE,
-          roomType: ' DELUXE ',
-          amenityIds: [wifi.id],
-        },
-        ownerActor,
-      ),
+      service.create({
+        hotelId: saved.hotelId,
+        roomNumber: ' a101 ',
+        maxOccupancy: 2,
+        pricePerNight: 750000,
+        currency: 'vnd',
+        operationalStatus: RoomOperationalStatus.AVAILABLE,
+        roomType: ' DELUXE ',
+        amenityIds: [wifi.id],
+      }),
     ).resolves.toEqual({ room: saved, amenities: [wifi] });
     expect(createRoom).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -112,26 +101,23 @@ describe('RoomsService', () => {
     repository.findByHotelAndNumber.mockResolvedValue(existing);
 
     await expect(
-      service.create(
-        {
-          hotelId: existing.hotelId,
-          roomNumber: existing.roomNumber,
-          maxOccupancy: 2,
-          pricePerNight: 750000,
-          currency: 'VND',
-          operationalStatus: RoomOperationalStatus.AVAILABLE,
-          roomType: 'DELUXE',
-          amenityIds: [],
-        },
-        ownerActor,
-      ),
+      service.create({
+        hotelId: existing.hotelId,
+        roomNumber: existing.roomNumber,
+        maxOccupancy: 2,
+        pricePerNight: 750000,
+        currency: 'VND',
+        operationalStatus: RoomOperationalStatus.AVAILABLE,
+        roomType: 'DELUXE',
+        amenityIds: [],
+      }),
     ).rejects.toBeInstanceOf(RoomNumberConflictException);
   });
 
   it('rejects an empty update', async () => {
-    await expect(
-      service.update(room().id, {}, ownerActor),
-    ).rejects.toBeInstanceOf(EmptyRoomUpdateException);
+    await expect(service.update(room().id, {})).rejects.toBeInstanceOf(
+      EmptyRoomUpdateException,
+    );
   });
 
   it('returns not found for an unknown room', async () => {
@@ -156,7 +142,7 @@ describe('RoomsService', () => {
     const existing = room();
     repository.findById.mockResolvedValue({ room: existing, amenityIds: [] });
 
-    await service.delete(existing.id, ownerActor);
+    await service.delete(existing.id);
 
     expect(deleteRoom).toHaveBeenCalledWith(existing);
   });

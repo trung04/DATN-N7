@@ -2,8 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsInt,
   IsISO8601,
-  IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -16,32 +14,7 @@ import {
 export class UpdateStopoverRequest {
   @IsOptional()
   @IsUUID('4')
-  placeId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
-  customName?: string | null;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  customAddress?: string | null;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  latitude?: number | null;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  longitude?: number | null;
+  placeId?: string;
 
   @IsOptional()
   @Type(() => Number)

@@ -1,10 +1,7 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { HotelOwnersService } from '../../hotel-owners/services/hotel-owners.service';
 import { PlacesService } from '../../places/services/places.service';
 import { UsersService } from '../../users/services/users.service';
-import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
-import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
-import { UserRole } from '../../users/entities/user.entity';
 import { CreateHotelDocumentRequest } from '../dtos/requests/create-hotel-document.request';
 import { CreateHotelRequest } from '../dtos/requests/create-hotel.request';
 import { ListHotelsRequest } from '../dtos/requests/list-hotels.request';
@@ -50,12 +47,8 @@ export class HotelsService {
     private readonly usersService: UsersService,
   ) {}
 
-  async create(
-    ownerUserId: string,
-    input: CreateHotelRequest,
-  ): Promise<HotelEntity> {
-    this.assertCoordinates(input);
-    await this.hotelOwnersService.findByUserId(ownerUserId);
+  async create(input: CreateHotelRequest): Promise<HotelEntity> {
+    await this.hotelOwnersService.findByUserId(input.ownerUserId);
     if (input.placeId) await this.placesService.findById(input.placeId);
 
     const taxCode = this.normalizeTaxCode(input.taxCode);
@@ -64,15 +57,13 @@ export class HotelsService {
     }
 
     return this.repository.create({
-      ownerUserId,
+      ownerUserId: input.ownerUserId,
       placeId: input.placeId ?? null,
       name: input.name.trim(),
       legalName: input.legalName.trim(),
       taxCode,
       description: this.normalizeNullable(input.description),
       address: input.address.trim(),
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
       phoneNumber: input.phoneNumber.trim(),
       email: input.email.trim().toLowerCase(),
       starRating: input.starRating ?? null,
@@ -95,59 +86,10 @@ export class HotelsService {
     });
   }
 
-  findPublicPage(input: ListHotelsRequest): Promise<HotelPage> {
-    const scoped = Object.assign(new ListHotelsRequest(), input);
-    scoped.ownerUserId = undefined;
-    scoped.status = HotelStatus.ACTIVE;
-    return this.findPage(scoped);
-  }
-
-  findOwnedPage(
-    input: ListHotelsRequest,
-    ownerUserId: string,
-  ): Promise<HotelPage> {
-    const scoped = Object.assign(new ListHotelsRequest(), input);
-    scoped.ownerUserId = ownerUserId;
-    return this.findPage(scoped);
-  }
-
-  findOwnedIds(ownerUserId: string): Promise<string[]> {
-    return this.repository.findIdsByOwner(ownerUserId);
-  }
-
   async findById(id: string): Promise<HotelEntity> {
     const hotel = await this.repository.findById(id);
     if (!hotel) throw new HotelNotFoundException(id);
     return hotel;
-  }
-
-  async getSettlementDestination(hotelId: string): Promise<{
-    hotelId: string;
-    hotelName: string;
-    ownerUserId: string;
-    bankName: string;
-    bankAccountNumber: string;
-    bankAccountHolder: string;
-  }> {
-    const hotel = await this.findById(hotelId);
-    const owner = await this.hotelOwnersService.findByUserId(hotel.ownerUserId);
-    if (!owner.bankName || !owner.bankAccountNumber || !owner.bankAccountHolder) {
-      throw new BadRequestException(
-        'Complete the hotel owner bank details before creating a payout batch.',
-      );
-    }
-    return {
-      hotelId: hotel.id,
-      hotelName: hotel.name,
-      ownerUserId: hotel.ownerUserId,
-      bankName: owner.bankName,
-      bankAccountNumber: owner.bankAccountNumber,
-      bankAccountHolder: owner.bankAccountHolder,
-    };
-  }
-
-  async findPublicById(id: string): Promise<HotelEntity> {
-    return this.assertActive(id);
   }
 
   async assertActive(id: string): Promise<HotelEntity> {
@@ -158,14 +100,9 @@ export class HotelsService {
     return hotel;
   }
 
-  async update(
-    id: string,
-    input: UpdateHotelRequest,
-    actor: AuthorizationActor,
-  ): Promise<HotelEntity> {
+  async update(id: string, input: UpdateHotelRequest): Promise<HotelEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyHotelUpdateException();
     const hotel = await this.findById(id);
-    this.assertCanManage(hotel, actor);
     if (hotel.status === HotelStatus.PENDING_APPROVAL) {
       throw new HotelUpdateLockedException();
     }
@@ -188,7 +125,6 @@ export class HotelsService {
       hotel.taxCode = taxCode;
     }
 
-    this.assertCoordinates(input);
     this.applyUpdate(hotel, input);
     return this.repository.save(hotel);
   }
@@ -196,10 +132,8 @@ export class HotelsService {
   async addDocument(
     hotelId: string,
     input: CreateHotelDocumentRequest,
-    actor: AuthorizationActor,
   ): Promise<HotelDocumentEntity> {
     const hotel = await this.findById(hotelId);
-    this.assertCanManage(hotel, actor);
     this.assertDocumentsMutable(hotel);
     this.assertDocumentDates(input.issuedAt ?? null, input.expiresAt ?? null);
     return this.repository.createDocument({
@@ -212,13 +146,8 @@ export class HotelsService {
     });
   }
 
-  async deleteDocument(
-    hotelId: string,
-    documentId: string,
-    actor: AuthorizationActor,
-  ): Promise<void> {
+  async deleteDocument(hotelId: string, documentId: string): Promise<void> {
     const hotel = await this.findById(hotelId);
-    this.assertCanManage(hotel, actor);
     this.assertDocumentsMutable(hotel);
     const document = await this.repository.findDocumentById(documentId);
     if (!document || document.hotelId !== hotelId) {
@@ -227,9 +156,8 @@ export class HotelsService {
     await this.repository.deleteDocument(document);
   }
 
-  async submit(id: string, actor: AuthorizationActor): Promise<HotelEntity> {
+  async submit(id: string): Promise<HotelEntity> {
     const hotel = await this.findById(id);
-    this.assertCanManage(hotel, actor);
     if (
       hotel.status !== HotelStatus.DRAFT &&
       hotel.status !== HotelStatus.REJECTED
@@ -254,32 +182,24 @@ export class HotelsService {
     });
   }
 
-  async review(
-    id: string,
-    reviewerUserId: string,
-    input: ReviewHotelRequest,
-  ): Promise<HotelEntity> {
-    await this.usersService.findById(reviewerUserId);
+  async review(id: string, input: ReviewHotelRequest): Promise<HotelEntity> {
+    await this.usersService.findById(input.reviewerUserId);
     const hotel = await this.findById(id);
     const reason = this.normalizeNullable(input.reason);
     const action = this.applyReviewCommand(hotel, input.action, reason);
     hotel.reviewedAt = new Date();
-    hotel.reviewedBy = reviewerUserId;
+    hotel.reviewedBy = input.reviewerUserId;
 
     return this.repository.saveWithReview(hotel, {
       hotelId: hotel.id,
-      actorUserId: reviewerUserId,
+      actorUserId: input.reviewerUserId,
       action,
       reason,
     });
   }
 
-  async deactivate(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<HotelEntity> {
+  async deactivate(id: string): Promise<HotelEntity> {
     const hotel = await this.findById(id);
-    this.assertCanManage(hotel, actor);
     if (
       hotel.status !== HotelStatus.ACTIVE &&
       hotel.status !== HotelStatus.SUSPENDED
@@ -301,21 +221,6 @@ export class HotelsService {
   async findReviewHistory(id: string): Promise<HotelReviewHistoryEntity[]> {
     await this.findById(id);
     return this.repository.findReviewHistory(id);
-  }
-
-  async assertManagedBy(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<HotelEntity> {
-    const hotel = await this.findById(id);
-    this.assertCanManage(hotel, actor);
-    return hotel;
-  }
-
-  private assertCanManage(hotel: HotelEntity, actor: AuthorizationActor): void {
-    if (actor.role !== UserRole.ADMIN && hotel.ownerUserId !== actor.id) {
-      throw new AuthorizationDeniedException();
-    }
   }
 
   private applyReviewCommand(
@@ -417,8 +322,6 @@ export class HotelsService {
       hotel.description = this.normalizeNullable(input.description);
     }
     if (input.address !== undefined) hotel.address = input.address.trim();
-    if (input.latitude !== undefined) hotel.latitude = input.latitude;
-    if (input.longitude !== undefined) hotel.longitude = input.longitude;
     if (input.phoneNumber !== undefined) {
       hotel.phoneNumber = input.phoneNumber.trim();
     }
@@ -440,8 +343,6 @@ export class HotelsService {
       input.taxCode,
       input.description,
       input.address,
-      input.latitude,
-      input.longitude,
       input.phoneNumber,
       input.email,
       input.starRating,
@@ -452,18 +353,6 @@ export class HotelsService {
 
   private normalizeTaxCode(value: string): string {
     return value.trim().toUpperCase();
-  }
-
-  private assertCoordinates(input: { latitude?: number | null; longitude?: number | null }): void {
-    const { latitude, longitude } = input;
-    if (latitude === undefined && longitude === undefined) return;
-    if (latitude === null && longitude === null) return;
-    if (
-      typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
-      typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
-    ) {
-      throw new BadRequestException('Latitude and longitude must be provided together as valid coordinates, or both set to null.');
-    }
   }
 
   private normalizeNullable(value?: string | null): string | null {

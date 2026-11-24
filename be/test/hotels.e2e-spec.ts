@@ -13,10 +13,6 @@ import {
   HotelStatus,
 } from '../src/modules/hotels/entities/hotel.entity';
 import { HotelsService } from '../src/modules/hotels/services/hotels.service';
-import { HotelDocumentsService } from '../src/modules/hotels/services/hotel-documents.service';
-import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
-import { UserRole } from '../src/modules/users/entities/user.entity';
-import type { NextFunction, Response } from 'express';
 
 const hotelId = '11111111-1111-4111-8111-111111111111';
 const ownerUserId = '22222222-2222-4222-8222-222222222222';
@@ -67,24 +63,10 @@ describe('Hotels API (e2e)', () => {
     jest.clearAllMocks();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [HotelsController, AdminHotelsController],
-      providers: [{ provide: HotelsService, useValue: service }, { provide: HotelDocumentsService, useValue: { remove: (...args: unknown[]) => service.deleteDocument(...args) } }],
+      providers: [{ provide: HotelsService, useValue: service }],
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.use(
-      (
-        currentRequest: AuthenticatedRequest,
-        _response: Response,
-        next: NextFunction,
-      ) => {
-        const isAdminRoute = currentRequest.originalUrl.includes('/admin/');
-        currentRequest.authUser = {
-          id: isAdminRoute ? reviewerUserId : ownerUserId,
-          role: isAdminRoute ? UserRole.ADMIN : UserRole.HOTEL_OWNER,
-        } as never;
-        next();
-      },
-    );
     configureHttpApplication(app);
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
@@ -95,17 +77,16 @@ describe('Hotels API (e2e)', () => {
   });
 
   it('creates a draft hotel and returns its location', async () => {
-    service.create.mockResolvedValue(entity({ latitude: 16.0614, longitude: 108.2468 }));
+    service.create.mockResolvedValue(entity());
 
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
       .send({
+        ownerUserId,
         name: 'Sun Hotel',
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
         address: '1 Beach Road',
-        latitude: 16.0614,
-        longitude: 108.2468,
         phoneNumber: '0912345678',
         email: 'hotel@example.com',
         starRating: 4,
@@ -119,24 +100,15 @@ describe('Hotels API (e2e)', () => {
           id: hotelId,
           ownerUserId,
           status: HotelStatus.DRAFT,
-          latitude: 16.0614,
-          longitude: 108.2468,
         });
       });
-  });
-
-  it.each([{ latitude: 91, longitude: 108 }, { latitude: 16, longitude: 181 }, { latitude: '', longitude: 108 }])('rejects invalid hotel coordinates at the HTTP boundary: %j', async (point) => {
-    await request(app.getHttpServer()).post('/api/v1/hotels').send({
-      name: 'Hotel', legalName: 'Hotel', taxCode: 'TAX', address: 'Address',
-      phoneNumber: '0912345678', email: 'hotel@example.com', checkInTime: '14:00', checkOutTime: '12:00', ...point,
-    }).expect(400);
-    expect(service.create.mock.calls).toHaveLength(0);
   });
 
   it('does not allow callers to set the initial hotel status', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
       .send({
+        ownerUserId,
         name: 'Sun Hotel',
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
@@ -151,24 +123,6 @@ describe('Hotels API (e2e)', () => {
       .expect(({ body }) => {
         expect(body.code).toBe('VALIDATION_FAILED');
       });
-  });
-
-  it('does not allow callers to choose another hotel owner', async () => {
-    await request(app.getHttpServer())
-      .post('/api/v1/hotels')
-      .send({
-        ownerUserId: '99999999-9999-4999-8999-999999999999',
-        name: 'Sun Hotel',
-        legalName: 'Sun Hotel Company',
-        taxCode: 'TAX001',
-        address: '1 Beach Road',
-        phoneNumber: '0912345678',
-        email: 'hotel@example.com',
-        checkInTime: '14:00',
-        checkOutTime: '12:00',
-      })
-      .expect(400)
-      .expect(({ body }) => expect(body.code).toBe('VALIDATION_FAILED'));
   });
 
   it('adds a business license document', async () => {
@@ -217,13 +171,14 @@ describe('Hotels API (e2e)', () => {
 
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/hotels/${hotelId}/status`)
-      .send({ action: HotelReviewCommand.APPROVE })
+      .send({ reviewerUserId, action: HotelReviewCommand.APPROVE })
       .expect(200)
       .expect(({ body }) => {
         expect(body.status).toBe(HotelStatus.ACTIVE);
       });
 
-    expect(service.review).toHaveBeenCalledWith(hotelId, reviewerUserId, {
+    expect(service.review).toHaveBeenCalledWith(hotelId, {
+      reviewerUserId,
       action: HotelReviewCommand.APPROVE,
     });
   });
@@ -231,21 +186,10 @@ describe('Hotels API (e2e)', () => {
   it('requires a reason when rejecting a hotel', async () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/hotels/${hotelId}/status`)
-      .send({ action: HotelReviewCommand.REJECT })
+      .send({ reviewerUserId, action: HotelReviewCommand.REJECT })
       .expect(400)
       .expect(({ body }) => {
         expect(body.code).toBe('VALIDATION_FAILED');
       });
-  });
-
-  it('does not allow callers to choose the reviewer identity', async () => {
-    await request(app.getHttpServer())
-      .patch(`/api/v1/admin/hotels/${hotelId}/status`)
-      .send({
-        reviewerUserId: '99999999-9999-4999-8999-999999999999',
-        action: HotelReviewCommand.APPROVE,
-      })
-      .expect(400)
-      .expect(({ body }) => expect(body.code).toBe('VALIDATION_FAILED'));
   });
 });

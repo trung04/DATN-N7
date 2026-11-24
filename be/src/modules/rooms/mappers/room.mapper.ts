@@ -20,9 +20,6 @@ export class RoomMapper {
       description: room.description,
       operationalStatus: room.operationalStatus,
       roomType: room.roomType,
-      imageUrl: result.roomImageId
-        ? `/api/v1/rooms/${room.id}/images/${result.roomImageId}/file`
-        : null,
       amenities: amenities.map((amenity) => ({
         id: amenity.id,
         code: amenity.code,

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import { AmenityEntity } from '../entities/amenity.entity';
-import { RoomAmenityEntity } from '../../rooms/entities/room-amenity.entity';
 import { AmenityCodeConflictException } from '../exceptions/amenity.exceptions';
 import {
   AmenityPage,
@@ -16,8 +15,6 @@ export class TypeOrmAmenityRepository implements AmenityRepository {
   constructor(
     @InjectRepository(AmenityEntity)
     private readonly repository: Repository<AmenityEntity>,
-    @InjectRepository(RoomAmenityEntity)
-    private readonly roomAmenityRepository: Repository<RoomAmenityEntity>,
   ) {}
 
   findById(id: string): Promise<AmenityEntity | null> {
@@ -29,30 +26,12 @@ export class TypeOrmAmenityRepository implements AmenityRepository {
     return this.repository.findBy({ id: In(ids) });
   }
 
-  findByIdsForHotel(ids: string[], hotelId: string): Promise<AmenityEntity[]> {
-    if (ids.length === 0) return Promise.resolve([]);
-    return this.repository
-      .createQueryBuilder('amenity')
-      .where('amenity.id IN (:...ids)', { ids })
-      .andWhere('(amenity.hotelId IS NULL OR amenity.hotelId = :hotelId)', {
-        hotelId,
-      })
-      .getMany();
-  }
-
-  findByCode(code: string, hotelId: string | null = null): Promise<AmenityEntity | null> {
-    const query = this.repository
-      .createQueryBuilder('amenity')
-      .where('amenity.code = :code', { code });
-    if (hotelId) query.andWhere('amenity.hotelId = :hotelId', { hotelId });
-    else query.andWhere('amenity.hotelId IS NULL');
-    return query.getOne();
+  findByCode(code: string): Promise<AmenityEntity | null> {
+    return this.repository.findOneBy({ code });
   }
 
   async findPage(options: FindAmenitiesOptions): Promise<AmenityPage> {
     const query = this.repository.createQueryBuilder('amenity');
-    if (options.hotelId) query.andWhere('amenity.hotelId = :hotelId', { hotelId: options.hotelId });
-    else query.andWhere('amenity.hotelId IS NULL');
 
     if (options.search) {
       const escapedSearch = options.search.replace(/[\\%_]/g, '\\$&');
@@ -96,8 +75,6 @@ export class TypeOrmAmenityRepository implements AmenityRepository {
   }
 
   async delete(amenity: AmenityEntity): Promise<void> {
-    const links = await this.roomAmenityRepository.findBy({ amenityId: amenity.id });
-    if (links.length) await this.roomAmenityRepository.softRemove(links);
     await this.repository.softRemove(amenity);
   }
 
