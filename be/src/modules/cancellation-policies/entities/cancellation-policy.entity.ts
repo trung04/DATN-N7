@@ -13,6 +13,11 @@ const decimalTransformer: ValueTransformer = {
   from: (value: string) => Number(value),
 };
 
+export interface CancellationPolicyTier {
+  upToHours: number | null;
+  feePercent: number | null;
+}
+
 @Entity({ name: 'cancellation_policies' })
 @Index('IDX_cancellation_policies_hotel_id', ['hotelId'])
 @Index('UQ_cancellation_policies_one_active_per_hotel', ['hotelId'], {
@@ -44,6 +49,9 @@ export class CancellationPolicyEntity {
 
   @Column({ name: 'cancellation_allowed', type: 'boolean', default: true })
   cancellationAllowed: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  tiers: CancellationPolicyTier[] | null;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;

@@ -15,6 +15,7 @@ export class CancellationPolicyMapper {
       cancelHours: policy.cancelHours,
       penaltyPercent: policy.penaltyPercent,
       cancellationAllowed: policy.cancellationAllowed,
+      ...(policy.tiers ? { tiers: policy.tiers } : {}),
       description: policy.description,
       isActive: policy.isActive,
       createdAt: policy.createdAt,
