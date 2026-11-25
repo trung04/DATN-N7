@@ -3,7 +3,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestCo
 import { DomainError } from '@/lib/errors'
 import { hasValidCoordinates } from '@/lib/coordinates'
 import type { HotelLocationResult } from '@/lib/hotel-location-search'
-import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
@@ -201,16 +201,6 @@ export function googleLoginUrl(returnTo: string | null = null): string {
   const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/start'
   if (!returnTo) return startPath
   return startPath + '?' + new URLSearchParams({ returnTo }).toString()
-}
-const interestCodesByLabel: Record<string, string> = {
-  'Bi\u1ec3n': 'BEACH',
-  'Thi\u00ean nhi\u00ean': 'NATURE',
-  '\u1ea8m th\u1ef1c': 'FOOD',
-  'V\u0103n h\u00f3a': 'CULTURE',
-  'Mua s\u1eafm': 'SHOPPING',
-  'Ngh\u1ec9 d\u01b0\u1ee1ng': 'RELAXATION',
-  'Kh\u00e1m ph\u00e1': 'EXPLORATION',
-  'Gia \u0111\u00ecnh': 'FAMILY',
 }
 export function apiAssetUrl(path: string): string {
   return new URL(path, new URL(baseURL, window.location.origin)).href
@@ -563,6 +553,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
   myItineraries: (userId: string) => Promise<{ trips: Itinerary[]; stops: Stopover[]; activities: TravelActivity[] }>
   myPreference: () => Promise<TravelPreference | null>
+  preferenceOptions: () => Promise<PreferenceOptions>
   searchRoomAvailability: (query: { hotelId?: string; checkInDate: string; checkOutDate: string }) => Promise<{ hotelId: string | null; checkInDate: string; checkOutDate: string; availableRoomIds: string[] }>
   touristBookings: () => Promise<{ bookings: Booking[]; payments: Payment[]; refunds: Refund[] }>
   touristBooking: (bookingId: string) => Promise<{ booking: Booking; payment: Payment; refund: Refund | null; reviewed: false }>
@@ -691,7 +682,8 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   saveProfile: (_userId: string, values: UserProfileInput) => request<BackendUser>({ method: 'PATCH', url: '/users/me', data: { displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null, bio: values.bio?.trim() || null } }).then(mapBackendUser),
   requestDeletion: (userId, password) => request({ method: 'POST', url: '/users/' + userId + '/deletion-request', data: { password } }),
   myPreference: () => request<TravelPreference | null>({ method: 'GET', url: '/users/me/preferences' }),
-  savePreference: (_userId, pref) => request<TravelPreference>({ method: 'PUT', url: '/users/me/preferences', data: { interestCodes: pref.interests.map(interest => interestCodesByLabel[interest] ?? interest), budget: pref.budget, style: pref.style, transport: pref.transport, destinations: pref.destinations } }),
+  preferenceOptions: () => request<PreferenceOptions>({ method: 'GET', url: '/users/me/preference-options' }),
+  savePreference: (_userId, pref) => request<TravelPreference>({ method: 'PUT', url: '/users/me/preferences', data: pref }),
   clearPreference: _userId => request<void>({ method: 'DELETE', url: '/users/me/preferences' }),
   myFavorites: () => request<ApiFavorite[]>({ method: 'GET', url: '/users/me/favorites' }),
   toggleFavorite: async (_userId, id) => {

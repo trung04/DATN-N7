@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { useSession } from '@/stores/session'
-import type { Booking, Payment, Refund, TravelPreference } from '@/types/domain'
+import type { Booking, Payment, PreferenceOptions, Refund, TravelPreference } from '@/types/domain'
 import type { PublicPlaceQuery } from '@/services/api/client'
 
 async function mockPublicPlaces(query: PublicPlaceQuery) {
@@ -107,6 +107,26 @@ export function useMyPreference() {
       return { preference: await api.myPreference() }
     },
     enabled: user?.role === 'tourist',
+  })
+}
+export function usePreferenceOptions() {
+  const user = useSession(s => s.user)
+  return useQuery({
+    queryKey: ['preference-options'],
+    queryFn: async (): Promise<PreferenceOptions> => {
+      if (!isMock) return api.preferenceOptions()
+      const destinations = (await repo.publicData()).destinations
+      return {
+        categories: [...new Set(destinations.map(place => place.category).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right, 'vi'))
+          .map(name => ({ code: name, name })),
+        topics: [...new Set(destinations.flatMap(place => place.tags).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right, 'vi'))
+          .map(name => ({ code: name, name })),
+      }
+    },
+    enabled: user?.role === 'tourist',
+    staleTime: 5 * 60 * 1000,
   })
 }
 export function usePartnerData() {

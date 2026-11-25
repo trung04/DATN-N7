@@ -7,10 +7,9 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { repo } from '@/services'
 import { currency, errorMessage } from '@/lib/utils'
 import { useSession } from '@/stores/session'
-import { useCatalog, useFavorites, useMyPreference, useMyProfile } from '@/hooks/data'
+import { useCatalog, useFavorites, useMyPreference, useMyProfile, usePreferenceOptions } from '@/hooks/data'
 import { DestinationCard, HotelCard } from './catalog'
 
-const interests = ['Biển', 'Thiên nhiên', 'Ẩm thực', 'Văn hóa', 'Mua sắm', 'Nghỉ dưỡng', 'Khám phá', 'Gia đình']
 const genderLabels: Record<string, string> = { FEMALE: 'Nữ', MALE: 'Nam', OTHER: 'Khác', UNDISCLOSED: 'Không muốn tiết lộ' }
 export function ProfilePage() {
   const user = useSession(s => s.user)
@@ -86,18 +85,63 @@ export function PreferencesPage() {
   const user = useSession(s => s.user)
   const queryClient = useQueryClient()
   const { data, isLoading, error } = useMyPreference()
+  const options = usePreferenceOptions()
   const [edit, setEdit] = useState(false)
-  const [selected, setSelected] = useState<string[]>([])
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([])
   const [budget, setBudget] = useState(6000000)
   const [style, setStyle] = useState('Cân bằng')
   const [transport, setTransport] = useState('Máy bay')
   const [destinations, setDestinations] = useState('')
   const [message, setMessage] = useState('')
   const [clearOpen, setClearOpen] = useState(false)
-  const startEdit = () => { setSelected(data?.preference?.interests ?? []); setBudget(data?.preference?.budget ?? 6000000); setStyle(data?.preference?.style ?? 'Cân bằng'); setTransport(data?.preference?.transport ?? 'Máy bay'); setDestinations(data?.preference?.destinations.join(', ') ?? ''); setEdit(true) }
-  if (isLoading) return <LoadingState />
-  if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
-  return <div className="container-app section-pad"><PageHeader title="Sở thích du lịch" description="Sở thích được dùng để cá nhân hóa gợi ý khi bạn cho phép." actions={!edit && <Button onClick={startEdit}>Chỉnh sửa</Button>} /><Card className="max-w-3xl p-6">{edit ? <form className="grid gap-5" onSubmit={async e => { e.preventDefault(); try { await repo.savePreference(user?.id ?? '', { interests: selected, budget, style, transport, destinations: destinations.split(',').map(x => x.trim()).filter(Boolean) }); await queryClient.invalidateQueries({ queryKey: ['my-preference', user?.id] }); await queryClient.invalidateQueries({ queryKey: ['tourist'] }); setEdit(false); setMessage('Đã lưu sở thích.') } catch (err) { setMessage(errorMessage(err)) } }}><fieldset><legend className="mb-3 text-sm font-semibold">Loại hình yêu thích</legend><div className="flex flex-wrap gap-2">{interests.map(x => <label key={x} className={'cursor-pointer rounded-full border px-3 py-2 text-sm ' + (selected.includes(x) ? 'border-[#1E3A5F] bg-[#EAF0F6] text-[#1E3A5F]' : 'border-slate-200')}><input className="sr-only" type="checkbox" checked={selected.includes(x)} onChange={() => setSelected(selected.includes(x) ? selected.filter(y => y !== x) : [...selected, x])} />{x}</label>)}</div></fieldset><div className="grid gap-4 sm:grid-cols-2"><FormField label="Ngân sách tham khảo (VND)"><input type="number" min="0" step="100000" value={budget} onChange={e => setBudget(Number(e.target.value))} /></FormField><FormField label="Phong cách"><select value={style} onChange={e => setStyle(e.target.value)}><option>Tiết kiệm</option><option>Cân bằng</option><option>Thoải mái</option><option>Nghỉ dưỡng</option></select></FormField><FormField label="Phương tiện"><select value={transport} onChange={e => setTransport(e.target.value)}><option>Máy bay</option><option>Ô tô</option><option>Tàu hỏa</option><option>Xe máy</option></select></FormField><FormField label="Điểm đến yêu thích" hint="Ngăn cách bằng dấu phẩy"><input value={destinations} onChange={e => setDestinations(e.target.value)} /></FormField></div><Feedback message={message} kind={message.includes('Đã') ? 'success' : 'error'} /><div className="flex gap-2"><Button>Lưu sở thích</Button><Button type="button" variant="secondary" onClick={() => setEdit(false)}>Hủy</Button></div></form> : data?.preference ? <div className="grid gap-5"><div><h2 className="text-sm font-semibold">Loại hình yêu thích</h2><div className="mt-2 flex flex-wrap gap-2">{data.preference.interests.map(x => <span key={x} className="rounded-full bg-[#EAF0F6] px-3 py-1 text-sm text-[#1E3A5F]">{x}</span>)}</div></div><p className="text-sm"><strong>Ngân sách:</strong> {currency(data.preference.budget)}</p><p className="text-sm"><strong>Phong cách:</strong> {data.preference.style}</p><p className="text-sm"><strong>Phương tiện:</strong> {data.preference.transport}</p><p className="text-sm"><strong>Điểm đến:</strong> {data.preference.destinations.join(', ') || 'Chưa chọn'}</p><Feedback message={message} /><Button variant="danger" className="w-fit" onClick={() => setClearOpen(true)}>Xóa toàn bộ sở thích</Button></div> : <EmptyState title="Chưa có sở thích" description="Thêm vài lựa chọn để nhận gợi ý phù hợp hơn." action={<Button onClick={startEdit}>Thêm sở thích</Button>} />}</Card><Dialog open={clearOpen} onOpenChange={setClearOpen}><DialogContent title={"X\u00f3a to\u00e0n b\u1ed9 s\u1edf th\u00edch?"} description={"Ch\u1ea5t l\u01b0\u1ee3ng g\u1ee3i \u00fd c\u00f3 th\u1ec3 gi\u1ea3m."}><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setClearOpen(false)}>{"Quay l\u1ea1i"}</Button><Button variant="danger" onClick={async () => { try { await repo.clearPreference(user?.id ?? ''); await queryClient.invalidateQueries({ queryKey: ['my-preference', user?.id] }); await queryClient.invalidateQueries({ queryKey: ['tourist'] }); setClearOpen(false); setMessage('Đã xóa toàn bộ sở thích.') } catch (err) { setMessage(errorMessage(err)) } }}>Xóa toàn bộ sở thích</Button></div></DialogContent></Dialog></div>
+  const startEdit = () => {
+    setSelectedCategories(data?.preference?.categories.map(item => item.code) ?? [])
+    setSelectedTopics(data?.preference?.topics.map(item => item.code) ?? [])
+    setBudget(data?.preference?.budget ?? 6000000)
+    setStyle(data?.preference?.style ?? 'Cân bằng')
+    setTransport(data?.preference?.transport ?? 'Máy bay')
+    setDestinations(data?.preference?.destinations.join(', ') ?? '')
+    setMessage('')
+    setEdit(true)
+  }
+  const toggle = (code: string, selected: string[], update: (values: string[]) => void) => {
+    update(selected.includes(code) ? selected.filter(value => value !== code) : [...selected, code])
+  }
+  if (isLoading || options.isLoading) return <LoadingState />
+  if (error || options.error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error ?? options.error)} /></div>
+  const preference = data?.preference
+  return <div className="container-app section-pad">
+    <PageHeader title="Sở thích du lịch" description="Chọn loại địa điểm và chủ đề đang có trong danh mục." actions={!edit && <Button onClick={startEdit}>Chỉnh sửa</Button>} />
+    <Card className="max-w-3xl p-6">
+      {edit ? <form className="grid gap-5" onSubmit={async event => {
+        event.preventDefault()
+        try {
+          await repo.savePreference(user?.id ?? '', {
+            categoryCodes: selectedCategories,
+            topicCodes: selectedTopics,
+            budget,
+            style,
+            transport,
+            destinations: destinations.split(',').map(value => value.trim()).filter(Boolean),
+          })
+          await queryClient.invalidateQueries({ queryKey: ['my-preference', user?.id] })
+          setEdit(false)
+          setMessage('Đã lưu sở thích.')
+        } catch (cause) { setMessage(errorMessage(cause)) }
+      }}>
+        <fieldset><legend className="mb-3 text-sm font-semibold">Loại địa điểm</legend><div className="flex flex-wrap gap-2">{options.data?.categories.map(item => <label key={item.code} className={'cursor-pointer rounded-full border px-3 py-2 text-sm ' + (selectedCategories.includes(item.code) ? 'border-[#1E3A5F] bg-[#EAF0F6] text-[#1E3A5F]' : 'border-slate-200')}><input className="sr-only" type="checkbox" checked={selectedCategories.includes(item.code)} onChange={() => toggle(item.code, selectedCategories, setSelectedCategories)} />{item.name}</label>)}</div></fieldset>
+        <fieldset><legend className="mb-3 text-sm font-semibold">Chủ đề</legend><div className="flex flex-wrap gap-2">{options.data?.topics.map(item => <label key={item.code} className={'cursor-pointer rounded-full border px-3 py-2 text-sm ' + (selectedTopics.includes(item.code) ? 'border-[#1E3A5F] bg-[#EAF0F6] text-[#1E3A5F]' : 'border-slate-200')}><input className="sr-only" type="checkbox" checked={selectedTopics.includes(item.code)} onChange={() => toggle(item.code, selectedTopics, setSelectedTopics)} />{item.name}</label>)}</div></fieldset>
+        <div className="grid gap-4 sm:grid-cols-2"><FormField label="Ngân sách tham khảo (VND)"><input type="number" min="0" step="100000" value={budget} onChange={event => setBudget(Number(event.target.value))} /></FormField><FormField label="Phong cách"><select value={style} onChange={event => setStyle(event.target.value)}><option>Tiết kiệm</option><option>Cân bằng</option><option>Thoải mái</option><option>Nghỉ dưỡng</option></select></FormField><FormField label="Phương tiện"><select value={transport} onChange={event => setTransport(event.target.value)}><option>Máy bay</option><option>Ô tô</option><option>Tàu hỏa</option><option>Xe máy</option></select></FormField><FormField label="Điểm đến yêu thích" hint="Ngăn cách bằng dấu phẩy"><input value={destinations} onChange={event => setDestinations(event.target.value)} /></FormField></div>
+        <Feedback message={message} kind="error" /><div className="flex gap-2"><Button>Lưu sở thích</Button><Button type="button" variant="secondary" onClick={() => setEdit(false)}>Hủy</Button></div>
+      </form> : preference ? <div className="grid gap-5">
+        <div><h2 className="text-sm font-semibold">Loại địa điểm</h2><div className="mt-2 flex flex-wrap gap-2">{preference.categories.map(item => <span key={item.code} className="rounded-full bg-[#EAF0F6] px-3 py-1 text-sm text-[#1E3A5F]">{item.name}</span>)}</div></div>
+        <div><h2 className="text-sm font-semibold">Chủ đề</h2><div className="mt-2 flex flex-wrap gap-2">{preference.topics.map(item => <span key={item.code} className="rounded-full bg-[#EAF0F6] px-3 py-1 text-sm text-[#1E3A5F]">{item.name}</span>)}</div></div>
+        <p className="text-sm"><strong>Ngân sách:</strong> {currency(preference.budget)}</p><p className="text-sm"><strong>Phong cách:</strong> {preference.style}</p><p className="text-sm"><strong>Phương tiện:</strong> {preference.transport}</p><p className="text-sm"><strong>Điểm đến:</strong> {preference.destinations.join(', ') || 'Chưa chọn'}</p><Feedback message={message} /><Button variant="danger" className="w-fit" onClick={() => setClearOpen(true)}>Xóa toàn bộ sở thích</Button>
+      </div> : <EmptyState title="Chưa có sở thích" description="Thêm vài lựa chọn để nhận gợi ý phù hợp hơn." action={<Button onClick={startEdit}>Thêm sở thích</Button>} />}
+    </Card>
+    <Dialog open={clearOpen} onOpenChange={setClearOpen}><DialogContent title="Xóa toàn bộ sở thích?" description="Các lựa chọn category và topic sẽ được xóa."><div className="flex justify-end gap-2"><Button variant="secondary" onClick={() => setClearOpen(false)}>Quay lại</Button><Button variant="danger" onClick={async () => { try { await repo.clearPreference(user?.id ?? ''); await queryClient.invalidateQueries({ queryKey: ['my-preference', user?.id] }); setClearOpen(false); setMessage('Đã xóa toàn bộ sở thích.') } catch (cause) { setMessage(errorMessage(cause)) } }}>Xóa toàn bộ sở thích</Button></div></DialogContent></Dialog>
+  </div>
 }
 export function FavoritesPage() {
   const { data: favorites, isLoading, error } = useFavorites()
