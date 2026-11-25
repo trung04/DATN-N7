@@ -4,8 +4,10 @@ import {
   InvalidDateOfBirthException,
   UsernameConflictException,
 } from '../exceptions/user.exceptions';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import type { PasswordHasher } from '../interfaces/password-hasher.interface';
 import type { UserRepository } from '../interfaces/user.repository.interface';
+import type { TouristProfileRepository } from '../interfaces/tourist-profile.repository.interface';
 import { UsersService } from './users.service';
 
 const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
@@ -32,6 +34,7 @@ const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
 describe('UsersService', () => {
   let repository: jest.Mocked<UserRepository>;
   let passwordHasher: jest.Mocked<PasswordHasher>;
+  let touristProfiles: jest.Mocked<TouristProfileRepository>;
   let service: UsersService;
   let createUser: jest.MockedFunction<UserRepository['create']>;
   let saveUser: jest.MockedFunction<UserRepository['save']>;
@@ -52,7 +55,11 @@ describe('UsersService', () => {
       delete: jest.fn(),
     };
     passwordHasher = { hash: hashPassword, verify: jest.fn() };
-    service = new UsersService(repository, passwordHasher);
+    touristProfiles = {
+      findBioByUserId: jest.fn().mockResolvedValue(null),
+      saveBio: jest.fn(),
+    };
+    service = new UsersService(repository, passwordHasher, touristProfiles);
   });
 
   it('normalizes identity and stores only the password hash', async () => {
@@ -172,6 +179,9 @@ describe('UsersService', () => {
     const existing = user();
     repository.findById.mockResolvedValue(existing);
     saveUser.mockImplementation(async (value) => value);
+    touristProfiles.saveBio.mockResolvedValue(
+      'Tôi thích khám phá văn hóa địa phương.',
+    );
 
     const updated = await service.updateMyProfile(existing.id, {
       bio: 'Tôi thích khám phá văn hóa địa phương.',
@@ -181,6 +191,20 @@ describe('UsersService', () => {
       user: existing,
       bio: 'Tôi thích khám phá văn hóa địa phương.',
     });
+    expect(touristProfiles.saveBio).toHaveBeenCalledWith(
+      existing.id,
+      'Tôi thích khám phá văn hóa địa phương.',
+    );
+  });
+
+  it('rejects bio updates for non-tourist accounts', async () => {
+    const existing = user({ role: UserRole.ADMIN });
+    repository.findById.mockResolvedValue(existing);
+
+    await expect(
+      service.updateMyProfile(existing.id, { bio: 'Không hợp lệ' } as never),
+    ).rejects.toBeInstanceOf(AuthorizationDeniedException);
+    expect(touristProfiles.saveBio).not.toHaveBeenCalled();
   });
 
   it('hashes a replacement password before saving', async () => {

@@ -54,7 +54,7 @@ describe('ProfilePage tourist bio', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'Chỉnh sửa' }))
-    const bio = screen.getByRole('textbox', { name: 'Giới thiệu bản thân' })
+    const bio = screen.getByRole('textbox', { name: /Giới thiệu bản thân/ })
     await user.clear(bio)
     await user.type(bio, 'Bio mới')
     await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }))

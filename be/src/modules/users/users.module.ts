@@ -19,10 +19,12 @@ import { TRAVEL_PREFERENCE_REPOSITORY } from './interfaces/travel-preference.rep
 import { TypeOrmUserRepository } from './repositories/typeorm-user.repository';
 import { TypeOrmTravelPreferenceRepository } from './repositories/typeorm-travel-preference.repository';
 import { TypeOrmFavoriteRepository } from './repositories/typeorm-favorite.repository';
+import { TypeOrmTouristProfileRepository } from './repositories/typeorm-tourist-profile.repository';
 import { UsersService } from './services/users.service';
 import { TravelPreferencesService } from './services/travel-preferences.service';
 import { FavoritesService } from './services/favorites.service';
 import { FAVORITE_REPOSITORY } from './interfaces/favorite.repository.interface';
+import { TOURIST_PROFILE_REPOSITORY } from './interfaces/tourist-profile.repository.interface';
 
 @Module({
   imports: [
@@ -44,6 +46,10 @@ import { FAVORITE_REPOSITORY } from './interfaces/favorite.repository.interface'
     TravelPreferencesService,
     FavoritesService,
     { provide: FAVORITE_REPOSITORY, useClass: TypeOrmFavoriteRepository },
+    {
+      provide: TOURIST_PROFILE_REPOSITORY,
+      useClass: TypeOrmTouristProfileRepository,
+    },
     {
       provide: USER_REPOSITORY,
       useClass: TypeOrmUserRepository,

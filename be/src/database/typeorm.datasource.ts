@@ -88,6 +88,7 @@ import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015
 import { AddImageFallbackUrl1794500012000 } from './migrations/1794500012000-AddImageFallbackUrl';
 import { AddHotelCoordinates1794500013000 } from './migrations/1794500013000-AddHotelCoordinates';
 import { AddHotelDocumentFiles1794500014000 } from './migrations/1794500014000-AddHotelDocumentFiles';
+import { CreateTouristProfiles1794500016000 } from './migrations/1794500016000-CreateTouristProfiles';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -189,6 +190,7 @@ export default new DataSource({
     AddImageFallbackUrl1794500012000,
     AddHotelCoordinates1794500013000,
     AddHotelDocumentFiles1794500014000,
+    CreateTouristProfiles1794500016000,
   ],
   synchronize: false,
   logging: false,

@@ -99,6 +99,7 @@ interface BackendUser {
   status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'DEACTIVATED'
   createdAt?: string
   updatedAt?: string
+  bio?: string | null
 }
 
 const roleMap: Record<BackendUser['role'], Role> = {
@@ -190,6 +191,7 @@ export function mapBackendUser(user: BackendUser): User {
     verified: user.isEmailVerified,
     ...(user.dateOfBirth !== undefined ? { dateOfBirth: user.dateOfBirth } : {}),
     ...(user.gender !== undefined ? { gender: user.gender } : {}),
+    ...(user.bio !== undefined ? { bio: user.bio } : {}),
   }
 }
 
@@ -686,7 +688,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   resendOtp: email => request({ method: 'POST', url: '/auth/resend-otp', data: { email } }),
   resetPassword: (email, password, otp) => request({ method: 'POST', url: '/auth/reset-password', data: { email, password, otp } }),
   myProfile: () => request<BackendUser>({ method: 'GET', url: '/users/me' }).then(mapBackendUser),
-  saveProfile: (_userId: string, values: UserProfileInput) => request<BackendUser>({ method: 'PATCH', url: '/users/me', data: { displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null } }).then(mapBackendUser),
+  saveProfile: (_userId: string, values: UserProfileInput) => request<BackendUser>({ method: 'PATCH', url: '/users/me', data: { displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null, bio: values.bio?.trim() || null } }).then(mapBackendUser),
   requestDeletion: (userId, password) => request({ method: 'POST', url: '/users/' + userId + '/deletion-request', data: { password } }),
   myPreference: () => request<TravelPreference | null>({ method: 'GET', url: '/users/me/preferences' }),
   savePreference: (_userId, pref) => request<TravelPreference>({ method: 'PUT', url: '/users/me/preferences', data: { interestCodes: pref.interests.map(interest => interestCodesByLabel[interest] ?? interest), budget: pref.budget, style: pref.style, transport: pref.transport, destinations: pref.destinations } }),

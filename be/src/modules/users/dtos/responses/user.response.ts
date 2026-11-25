@@ -18,6 +18,10 @@ export class UserResponse {
   updatedAt: string;
 }
 
+export class MyProfileResponse extends UserResponse {
+  bio: string | null;
+}
+
 export class UserListResponse {
   data: UserResponse[];
   meta: {

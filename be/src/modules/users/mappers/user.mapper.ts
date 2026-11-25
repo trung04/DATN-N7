@@ -1,4 +1,5 @@
 import {
+  MyProfileResponse,
   UserListResponse,
   UserResponse,
 } from '../dtos/responses/user.response';
@@ -23,6 +24,12 @@ export class UserMapper {
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     };
+  }
+
+  static toMyProfileResponse(
+    profile: { user: UserEntity; bio: string | null },
+  ): MyProfileResponse {
+    return { ...this.toResponse(profile.user), bio: profile.bio };
   }
 
   static toListResponse(

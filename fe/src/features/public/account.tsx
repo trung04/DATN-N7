@@ -24,6 +24,7 @@ export function ProfilePage() {
   const [phone, setPhone] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [gender, setGender] = useState('')
+  const [bio, setBio] = useState('')
   const [password, setPassword] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [message, setMessage] = useState('')
@@ -36,6 +37,7 @@ export function ProfilePage() {
     setPhone(profile?.phone ?? '')
     setDateOfBirth(profile?.dateOfBirth ?? '')
     setGender(profile?.gender ?? '')
+    setBio(profile?.bio ?? '')
     setEditing(true)
   }
 
@@ -47,7 +49,7 @@ export function ProfilePage() {
         event.preventDefault()
         try {
           if (name.trim().length < 2) throw new Error('Họ tên cần ít nhất 2 ký tự.')
-          const next = await repo.saveProfile(user?.id ?? '', { name: name.trim(), phone: phone.trim() || null, dateOfBirth: dateOfBirth || null, gender: gender ? gender as 'MALE' | 'FEMALE' | 'OTHER' | 'UNDISCLOSED' : null })
+          const next = await repo.saveProfile(user?.id ?? '', { name: name.trim(), phone: phone.trim() || null, dateOfBirth: dateOfBirth || null, gender: gender ? gender as 'MALE' | 'FEMALE' | 'OTHER' | 'UNDISCLOSED' : null, bio: bio.trim() || null })
           login(next)
           await queryClient.invalidateQueries({ queryKey: ['my-profile', user?.id] })
           await queryClient.invalidateQueries({ queryKey: ['tourist', user?.id] })
@@ -61,6 +63,7 @@ export function ProfilePage() {
           <FormField label="Ngày sinh"><input type="date" value={dateOfBirth} onChange={event => setDateOfBirth(event.target.value)} /></FormField>
           <FormField label="Giới tính"><select value={gender} onChange={event => setGender(event.target.value)}><option value="">Chưa chọn</option><option value="FEMALE">Nữ</option><option value="MALE">Nam</option><option value="OTHER">Khác</option><option value="UNDISCLOSED">Không muốn tiết lộ</option></select></FormField>
         </div>
+        <FormField label="Giới thiệu bản thân" hint="Tối đa 1000 ký tự"><textarea rows={4} maxLength={1000} value={bio} onChange={event => setBio(event.target.value)} /></FormField>
         <Feedback message={message} kind={message.includes('Đã') ? 'success' : 'error'} />
         <div className="flex gap-2"><Button>Lưu thay đổi</Button><Button variant="secondary" type="button" onClick={() => { setEditing(false); setMessage('') }}>Hủy</Button></div>
       </form> : <dl className="grid gap-4 text-sm">
@@ -69,6 +72,7 @@ export function ProfilePage() {
         <div><dt className="text-slate-500">Số điện thoại</dt><dd className="font-medium">{profile?.phone || 'Chưa cập nhật'}</dd></div>
         <div><dt className="text-slate-500">Ngày sinh</dt><dd className="font-medium">{profile?.dateOfBirth || 'Chưa cập nhật'}</dd></div>
         <div><dt className="text-slate-500">Giới tính</dt><dd className="font-medium">{genderLabels[profile?.gender ?? ''] || 'Chưa cập nhật'}</dd></div>
+        <div><dt className="text-slate-500">Giới thiệu bản thân</dt><dd className="whitespace-pre-wrap font-medium">{profile?.bio || 'Chưa cập nhật'}</dd></div>
         {profile?.deletionRequestedAt && <div className="text-amber-800">Đã gửi yêu cầu xóa tài khoản.</div>}
         <Feedback message={message} kind="success" />
       </dl>}

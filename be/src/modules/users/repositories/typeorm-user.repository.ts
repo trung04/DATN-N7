@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
-import { UserEntity, UserStatus } from '../entities/user.entity';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
+import { TouristEntity } from '../entities/tourist.entity';
 import {
   GoogleAccountConflictException,
   UserEmailConflictException,
@@ -17,6 +18,7 @@ import type {
 @Injectable()
 export class TypeOrmUserRepository implements UserRepository {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(UserEntity)
     private readonly repository: Repository<UserEntity>,
   ) {}
@@ -92,7 +94,15 @@ export class TypeOrmUserRepository implements UserRepository {
 
   async create(data: CreateUserData): Promise<UserEntity> {
     try {
-      return await this.repository.save(this.repository.create(data));
+      return await this.dataSource.transaction(async (manager) => {
+        const users = manager.getRepository(UserEntity);
+        const saved = await users.save(users.create(data));
+        if (saved.role === UserRole.TOURIST) {
+          const tourists = manager.getRepository(TouristEntity);
+          await tourists.save(tourists.create({ userId: saved.id, bio: null }));
+        }
+        return saved;
+      });
     } catch (error) {
       this.rethrowIdentityConflict(error, data);
     }
