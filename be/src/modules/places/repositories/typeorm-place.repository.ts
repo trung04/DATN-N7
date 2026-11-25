@@ -64,6 +64,24 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
         { search: options.search },
       );
     }
+    if (options.city) {
+      query.andWhere('place.city = :city', { city: options.city });
+    }
+    if (options.categoryCode) {
+      query.andWhere(
+        `EXISTS (
+          SELECT 1
+          FROM place_category_mappings mapping
+          INNER JOIN place_categories category
+            ON category.id = mapping.place_category_id
+           AND category.deleted_at IS NULL
+          WHERE mapping.place_id = place.id
+            AND mapping.deleted_at IS NULL
+            AND category.code = :categoryCode
+        )`,
+        { categoryCode: options.categoryCode },
+      );
+    }
     if (options.status) {
       query.andWhere('place.status = :status', { status: options.status });
     }
@@ -103,15 +121,21 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
   }
 
   async findCatalogOptions(): Promise<PlaceCatalogOptions> {
-    const [categories, topics] = (await Promise.all([
+    const [cityRows, categories, topics] = (await Promise.all([
+      this.repository.query(
+        `SELECT DISTINCT city FROM places
+         WHERE deleted_at IS NULL AND status = 'ACTIVE'
+           AND city IS NOT NULL AND btrim(city) <> ''
+         ORDER BY city`,
+      ),
       this.repository.query(
         `SELECT code, name FROM place_categories WHERE deleted_at IS NULL ORDER BY name`,
       ),
       this.repository.query(
         `SELECT code, name FROM topics WHERE deleted_at IS NULL ORDER BY name`,
       ),
-    ])) as [PlaceCatalogOptions['categories'], PlaceCatalogOptions['topics']];
-    return { categories, topics };
+    ])) as [Array<{ city: string }>, PlaceCatalogOptions['categories'], PlaceCatalogOptions['topics']];
+    return { cities: cityRows.map((row) => row.city), categories, topics };
   }
 
   async create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity> {

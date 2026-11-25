@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button'
 import { CancellationPolicyTerms } from '@/components/cancellation-policy-terms'
 import { HotelDestinationSearch } from '@/components/hotel-destination-search'
 import { HotelSearchForm } from '@/components/hotel-search-form'
+import { Pagination } from '@/components/pagination'
 import { Card, DetailLink, EmptyState, ErrorState, Feedback, LoadingState, PageHeader, Picture } from '@/components/common'
 import { repo, isMock } from '@/services'
 import { api } from '@/services/api/client'
 import { currency, day, errorMessage, nights, todayPlus } from '@/lib/utils'
 import { useSession } from '@/stores/session'
-import { useCatalog } from '@/hooks/data'
+import { useCatalog, useFavorites, useMyItineraries, usePublicPlace, usePublicPlaceOptions, usePublicPlaces } from '@/hooks/data'
+import { readPage, readPageSize } from '@/lib/pagination'
+import { usePagination } from '@/lib/use-pagination'
 import { travelImage } from '@/lib/travel-images'
 import { seededHotelPhoto } from '@/lib/hotel-media'
 import { lowestBookableRoomPrice, readChildAges } from '@/lib/room-occupancy'
@@ -19,7 +22,6 @@ import { hotelSearchParams, matchesHotelSelection, NEARBY_HOTEL_RADIUS_KM, readH
 import type { Destination, Hotel, Stopover } from '@/types/domain'
 import { RoomTypePicker } from './RoomTypePicker'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { useFavorites, useMyItineraries } from '@/hooks/data'
 import { DestinationMap } from './destination-map'
 
 const cardTitle = 'text-lg font-semibold text-slate-900'
@@ -170,29 +172,42 @@ export function DestinationCard({ item }: { item: Destination }) { return <Card 
 export function HotelCard({ item, price, search = '' }: { item: Hotel; price: number; search?: string }) { return <Card className="group overflow-hidden transition-shadow hover:shadow-md"><HotelImage hotel={item} /><div className="p-5"><div className="mb-2 flex items-center justify-between"><div className="flex items-center gap-2"><span className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]">{item.stars} sao</span>{isSampleHotel(item) && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Dữ liệu mẫu</span>}</div>{item.rating && <span className="flex items-center gap-1 text-sm text-amber-700"><Star size={14} fill="currentColor" />{item.rating}</span>}</div><h3 className={cardTitle}>{hotelDisplayName(item)}</h3><p className="mt-1 flex items-center gap-1 text-sm text-slate-500"><MapPin size={14} />{hotelLocation(item)}</p><p className="mt-3 text-sm text-slate-600">{item.amenities.slice(0, 3).join(' · ')}</p><div className="mt-4 flex items-end justify-between gap-2"><DetailLink to={'/hotels/' + item.id + search} /><div className="text-right"><span className="text-xs text-slate-500">Từ / đêm</span><p className="font-semibold text-[#1E3A5F]">{currency(price)}</p></div></div></div></Card> }
 
 export function ExplorePage() {
-  const { data, isLoading, error } = useCatalog()
   const [params, setParams] = useSearchParams()
-  const q = (params.get('q') ?? '').toLowerCase()
+  const requestedPage = readPage(params)
+  const requestedSize = readPageSize(params)
+  const q = params.get('q') ?? ''
   const city = params.get('city') ?? ''
   const category = params.get('category') ?? ''
   const sort = params.get('sort') ?? 'name'
   const [keyword, setKeyword] = useState(params.get('q') ?? '')
-  const items = useMemo(() => {
-    const filtered = (data?.destinations ?? []).filter(x => (!q || (x.name + ' ' + x.city + ' ' + x.tags.join(' ')).toLowerCase().includes(q)) && (!city || x.city === city) && (!category || x.category === category))
-    return filtered.sort((a, b) => sort === 'rating' ? (b.rating ?? 0) - (a.rating ?? 0) : a.name.localeCompare(b.name, 'vi'))
-  }, [data, q, city, category, sort])
-  const update = (key: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next) }
-  return <div className="container-app section-pad"><PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." /><div className="mb-7 grid gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 md:grid-cols-[2fr_1fr_1fr_1fr]"><form onSubmit={e => { e.preventDefault(); update('q', keyword) }}><label className="text-sm font-medium">Từ khóa<input placeholder="Tên hoặc sở thích" value={keyword} onChange={e => setKeyword(e.target.value)} /></label></form><label className="text-sm font-medium">Thành phố<select value={city} onChange={e => update('city', e.target.value)}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(x => x.city) ?? [])].map(x => <option key={x}>{x}</option>)}</select></label><label className="text-sm font-medium">Loại hình<select value={category} onChange={e => update('category', e.target.value)}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(x => x.category) ?? [])].map(x => <option key={x}>{x}</option>)}</select></label><label className="text-sm font-medium">Sắp xếp<select value={sort} onChange={e => update('sort', e.target.value)}><option value="name">Tên A–Z</option><option value="rating">Đánh giá cao</option></select></label></div>{isLoading ? <LoadingState /> : error ? <ErrorState message={errorMessage(error)} /> : items.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <DestinationCard key={item.id} item={item} />)}</div> : <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={() => setParams({})}>Xóa bộ lọc</Button>} />}</div>
+  const places = usePublicPlaces({
+    page: requestedPage,
+    limit: requestedSize,
+    search: q || undefined,
+    city: city || undefined,
+    categoryCode: category || undefined,
+    sortBy: sort === 'rating' ? 'averageRating' : 'name',
+    sortOrder: sort === 'rating' ? 'DESC' : 'ASC',
+  })
+  const options = usePublicPlaceOptions()
+  const { page, size, setPage, setSize } = usePagination(places.data?.meta.total)
+  const update = (key: string, value: string) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value); else next.delete(key)
+    next.delete('page')
+    setParams(next)
+  }
+  const items = places.data?.data ?? []
+  return <div className="container-app section-pad"><PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." /><div className="mb-7 grid gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 md:grid-cols-[2fr_1fr_1fr_1fr]"><form onSubmit={e => { e.preventDefault(); update('q', keyword.trim()) }}><label className="text-sm font-medium">Từ khóa<input placeholder="Tên hoặc sở thích" value={keyword} onChange={e => setKeyword(e.target.value)} /></label></form><label className="text-sm font-medium">Thành phố<select value={city} onChange={e => update('city', e.target.value)}><option value="">Tất cả</option>{(options.data?.cities ?? []).map(value => <option key={value} value={value}>{value}</option>)}</select></label><label className="text-sm font-medium">Loại hình<select value={category} onChange={e => update('category', e.target.value)}><option value="">Tất cả</option>{(options.data?.categories ?? []).map(option => <option key={option.code} value={option.code}>{option.name}</option>)}</select></label><label className="text-sm font-medium">Sắp xếp<select value={sort} onChange={e => update('sort', e.target.value)}><option value="name">Tên A–Z</option><option value="rating">Đánh giá cao</option></select></label></div>{places.isLoading ? <LoadingState /> : places.error ? <ErrorState message={errorMessage(places.error)} retry={() => { void places.refetch() }} /> : items.length ? <><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <DestinationCard key={item.id} item={item} />)}</div><Pagination page={page} size={size} total={places.data?.meta.total ?? 0} onPageChange={setPage} onSizeChange={setSize} /></> : <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={() => { setKeyword(''); setParams({}) }}>Xóa bộ lọc</Button>} />}</div>
 }
 export function DestinationDetailPage() {
   const { id } = useParams()
-  const { data, isLoading, error } = useCatalog()
+  const { data: item, isLoading, error } = usePublicPlace(id)
   if (isLoading) return <LoadingState />
   if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
-  const item = data?.destinations.find(x => x.id === id)
-  if (!item) return <div className="container-app section-pad"><EmptyState title="Kh?ng t?m th?y ??a ?i?m" action={<Button asChild><Link to="/explore">V? Kh?m ph?</Link></Button>} /></div>
+  if (!item) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy địa điểm" action={<Button asChild><Link to="/explore">Về Khám phá</Link></Button>} /></div>
   return <div className="container-app section-pad">
-    <Link className="text-sm text-[#1E3A5F] hover:underline" to="/explore">? Kh?m ph?</Link>
+    <Link className="text-sm text-[#1E3A5F] hover:underline" to="/explore">← Khám phá</Link>
     <div className="mt-5 grid gap-8 lg:grid-cols-[1.2fr_.8fr]">
       <Picture label={item.name} src={item.image ?? travelImage(item.city)} className="rounded-xl" />
       <div>
@@ -201,8 +216,8 @@ export function DestinationDetailPage() {
         <p className="mt-2 text-slate-500">{item.region}, {item.city}</p>
         <p className="mt-6 leading-7 text-slate-700">{item.description}</p>
         <dl className="mt-6 grid gap-3 text-sm">
-          <div><dt className="font-semibold">Gi? ho?t ??ng</dt><dd className="text-slate-600">{item.openingHours ?? 'Ch?a c? th?ng tin'}</dd></div>
-          <div><dt className="font-semibold">Gi? tham kh?o</dt><dd className="text-slate-600">{item.price ? currency(item.price) : 'Mi?n ph?'}</dd></div>
+          <div><dt className="font-semibold">Giờ hoạt động</dt><dd className="text-slate-600">{item.openingHours ?? 'Chưa có thông tin'}</dd></div>
+          <div><dt className="font-semibold">Giá tham khảo</dt><dd className="text-slate-600">{item.price ? currency(item.price) : 'Miễn phí'}</dd></div>
         </dl>
         <div className="mt-7 flex flex-wrap items-center gap-3"><AddDestinationToTrip place={item} /><FavoriteButton id={item.id} targetType="PLACE" /></div>
       </div>

@@ -79,6 +79,8 @@ export class PlacesService {
       page: input.page,
       limit: input.limit,
       search: input.search,
+      city: input.city,
+      categoryCode: input.categoryCode,
       status: input.status,
       countryCode: input.countryCode,
       provinceCode: input.provinceCode,

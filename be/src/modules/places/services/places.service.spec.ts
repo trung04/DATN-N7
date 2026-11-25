@@ -95,6 +95,7 @@ describe('PlacesService', () => {
         averageRating: 0,
         externalProviderId: 'google-place-1',
       }),
+      {},
     );
   });
 

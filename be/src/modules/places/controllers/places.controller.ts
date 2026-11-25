@@ -69,6 +69,7 @@ export class PlacesController {
   }
 
   @Get('options')
+  @Public()
   async findCatalogOptions() {
     return this.placesService.findCatalogOptions();
   }

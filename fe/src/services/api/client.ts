@@ -6,7 +6,7 @@ import type { HotelLocationResult } from '@/lib/hotel-location-search'
 import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
-interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
+export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
 interface BackendHotel {
   id: string; placeId?: string | null; name: string; description: string | null; address: string
   starRating: number | null; checkInTime: string
@@ -23,6 +23,7 @@ interface BackendPlace {
   id: string; name: string; city: string | null; category: string | null
   address: string | null; description?: string | null; primaryImageUrl?: string | null
   tags?: string[]; latitude?: number | null; longitude?: number | null
+  averageRating?: number; openingHours?: { display?: string } | null
   status?: 'ACTIVE' | 'INACTIVE'
   price?: { isFree: boolean; minPrice: number; maxPrice: number; currency: string; pricingUnit?: string; description?: string | null } | null
 }
@@ -30,6 +31,19 @@ const placeCategoryLabels: Record<string, string> = {
   ATTRACTION: 'Điểm tham quan',
   RESTAURANT: 'Nhà hàng',
   HOTEL: 'Khách sạn',
+}
+export interface PublicPlaceQuery {
+  page: number
+  limit: number
+  search?: string
+  city?: string
+  categoryCode?: string
+  sortBy: 'name' | 'averageRating'
+  sortOrder: 'ASC' | 'DESC'
+}
+export interface PublicPlaceOptions {
+  cities: string[]
+  categories: PlaceCatalogOptions['categories']
 }
 interface BackendItinerary {
   id: string; touristUserId: string; name: string; destinationCity: string
@@ -235,6 +249,26 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
   }
 }
 
+function mapBackendPlace(place: BackendPlace): Destination {
+  return {
+    id: place.id,
+    name: place.name,
+    city: place.city ?? '',
+    region: place.address ?? place.city ?? '',
+    category: place.category
+      ? placeCategoryLabels[place.category] ?? place.category
+      : 'Điểm tham quan',
+    description: place.description ?? '',
+    tags: place.tags ?? [],
+    price: place.price?.isFree ? 0 : place.price?.minPrice ?? 0,
+    ...(place.averageRating !== undefined ? { rating: place.averageRating } : {}),
+    ...(place.openingHours?.display ? { openingHours: place.openingHours.display } : {}),
+    ...(place.latitude != null ? { lat: place.latitude } : {}),
+    ...(place.longitude != null ? { lng: place.longitude } : {}),
+    ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
+  }
+}
+
 async function publicCatalog() {
   const [hotelPage, roomPage, placePage] = await Promise.all([
     request<Page<BackendHotel>>({ method: 'GET', url: '/hotels', params: { page: 1, limit: 100 } }),
@@ -284,21 +318,7 @@ async function publicCatalog() {
     ))
   }
   const allPlaceRecords = placePages.flatMap(page => page.data)
-  const destinations: Destination[] = allPlaceRecords.map(place => ({
-    id: place.id,
-    name: place.name,
-    city: place.city ?? '',
-    region: place.address ?? place.city ?? '',
-    category: place.category
-      ? placeCategoryLabels[place.category] ?? place.category
-      : 'Điểm tham quan',
-    description: place.description ?? '',
-    tags: place.tags ?? [],
-    price: place.price?.isFree ? 0 : place.price?.minPrice ?? 0,
-    ...(place.latitude != null ? { lat: place.latitude } : {}),
-    ...(place.longitude != null ? { lng: place.longitude } : {}),
-    ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
-  }))
+  const destinations: Destination[] = allPlaceRecords.map(mapBackendPlace)
   const rooms: RoomType[] = allRoomRecords.map(room => ({
     id: room.id,
     hotelId: room.hotelId,
@@ -419,6 +439,12 @@ type PlaceManagementApi = {
   deletePlace: (placeId: string) => Promise<void>
 }
 
+type PublicPlacesApi = {
+  publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<Page<Destination>>
+  publicPlace: (placeId: string, signal?: AbortSignal) => Promise<Destination>
+  publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
+}
+
 type CancellationPoliciesApi = {
   cancellationPolicies: (hotelId: string, page?: number) => Promise<Page<CancellationPolicy>>
   cancellationPolicySchedule: (hotelId: string) => Promise<CancellationPolicySchedule>
@@ -529,7 +555,7 @@ async function loadMyItineraries(userId: string) {
   return { trips, stops, activities }
 }
 
-export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
   myProfile: () => Promise<User>
   myFavorites: () => Promise<ApiFavorite[]>
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
@@ -548,6 +574,20 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   myItineraries: loadMyItineraries,
   partnerData: userId => request({ method: 'GET', url: '/partners/by-user/' + userId + '/overview' }),
   adminData: () => request({ method: 'GET', url: '/admin/overview' }),
+  publicPlaces: async (query, signal) => {
+    const page = await request<Page<BackendPlace>>({
+      method: 'GET',
+      url: '/places',
+      params: { ...query, status: 'ACTIVE' },
+      signal,
+    })
+    return { ...page, data: page.data.map(mapBackendPlace) }
+  },
+  publicPlace: (placeId, signal) => request<BackendPlace>({ method: 'GET', url: '/places/' + placeId, signal }).then(mapBackendPlace),
+  publicPlaceOptions: async signal => {
+    const options = await request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options', signal })
+    return { cities: options.cities, categories: options.categories }
+  },
   adminPlaces: query => request<Page<PlaceAdminListItem>>({ method: 'GET', url: '/places', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC', ...query } }),
   adminPlace: placeId => request<AdminPlace>({ method: 'GET', url: '/places/' + placeId }),
   placeCatalogOptions: () => request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options' }),

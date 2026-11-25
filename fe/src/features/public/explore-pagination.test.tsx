@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactNode } from 'react'
 import type { Destination } from '@/types/domain'
 
 const destinations: Destination[] = Array.from({ length: 10 }, (_, index) => ({
@@ -33,7 +35,14 @@ vi.mock('@/hooks/data', () => ({
 
 import { DestinationDetailPage, ExplorePage } from './catalog'
 
+function renderAt(children: ReactNode, initialEntry: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[initialEntry]}>{children}</MemoryRouter></QueryClientProvider>)
+}
+
 describe('ExplorePage pagination', () => {
+  afterEach(cleanup)
+
   beforeEach(() => {
     useCatalog.mockReset()
     usePublicPlace.mockReset()
@@ -58,7 +67,7 @@ describe('ExplorePage pagination', () => {
   })
 
   it('loads and renders only the requested server page', () => {
-    render(<MemoryRouter initialEntries={['/explore']}><ExplorePage /></MemoryRouter>)
+    renderAt(<ExplorePage />, '/explore')
 
     expect(usePublicPlaces).toHaveBeenCalledWith({
       page: 1,
@@ -75,7 +84,7 @@ describe('ExplorePage pagination', () => {
 
   it('requests the selected page instead of preloading every page', async () => {
     const user = userEvent.setup()
-    render(<MemoryRouter initialEntries={['/explore']}><ExplorePage /></MemoryRouter>)
+    renderAt(<ExplorePage />, '/explore')
 
     await user.click(screen.getByRole('button', { name: 'Trang 2' }))
 
@@ -83,7 +92,7 @@ describe('ExplorePage pagination', () => {
   })
 
   it('loads destination details directly instead of downloading the catalog', () => {
-    render(<MemoryRouter initialEntries={['/explore/place-1']}><Routes><Route path="/explore/:id" element={<DestinationDetailPage />} /></Routes></MemoryRouter>)
+    renderAt(<Routes><Route path="/explore/:id" element={<DestinationDetailPage />} /></Routes>, '/explore/place-1')
 
     expect(usePublicPlace).toHaveBeenCalledWith('place-1')
     expect(useCatalog).not.toHaveBeenCalled()

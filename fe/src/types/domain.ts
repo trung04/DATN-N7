@@ -85,7 +85,7 @@ export interface TravelPreference { userId: string; interests: string[]; budget:
 export interface Destination { id: string; name: string; city: string; region: string; category: string; description: string; tags: string[]; price: number; openingHours?: string; image?: string; rating?: number; lat?: number; lng?: number }
 export type PlaceStatus = 'ACTIVE' | 'INACTIVE'
 export interface PlaceCatalogOption { code: string; name: string }
-export interface PlaceCatalogOptions { categories: PlaceCatalogOption[]; topics: PlaceCatalogOption[] }
+export interface PlaceCatalogOptions { cities: string[]; categories: PlaceCatalogOption[]; topics: PlaceCatalogOption[] }
 export interface AdminPlace {
   id: string; name: string; city: string | null; category: string | null; address: string | null
   latitude: number | null; longitude: number | null; status: PlaceStatus; description: string | null
