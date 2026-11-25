@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Destination } from '@/types/domain'
 
@@ -15,27 +15,36 @@ const destinations: Destination[] = Array.from({ length: 10 }, (_, index) => ({
   price: 0,
 }))
 
-const { usePublicPlaces, usePublicPlaceOptions } = vi.hoisted(() => ({
+const { useCatalog, usePublicPlace, usePublicPlaces, usePublicPlaceOptions } = vi.hoisted(() => ({
+  useCatalog: vi.fn(),
+  usePublicPlace: vi.fn(),
   usePublicPlaces: vi.fn(),
   usePublicPlaceOptions: vi.fn(),
 }))
 
 vi.mock('@/hooks/data', () => ({
-  useCatalog: () => ({
-    data: { destinations: Array.from({ length: 25 }, (_, index) => ({ ...destinations[index % destinations.length]!, id: `legacy-${index}` })) },
-    isLoading: false,
-    error: null,
-  }),
+  useCatalog,
+  usePublicPlace,
   usePublicPlaces,
   usePublicPlaceOptions,
+  useFavorites: () => ({ data: [], isLoading: false, error: null }),
+  useMyItineraries: () => ({ data: { trips: [], stops: [], activities: [] }, isLoading: false, error: null }),
 }))
 
-import { ExplorePage } from './catalog'
+import { DestinationDetailPage, ExplorePage } from './catalog'
 
 describe('ExplorePage pagination', () => {
   beforeEach(() => {
+    useCatalog.mockReset()
+    usePublicPlace.mockReset()
     usePublicPlaces.mockReset()
     usePublicPlaceOptions.mockReset()
+    useCatalog.mockReturnValue({
+      data: { destinations: Array.from({ length: 25 }, (_, index) => ({ ...destinations[index % destinations.length]!, id: `legacy-${index}` })) },
+      isLoading: false,
+      error: null,
+    })
+    usePublicPlace.mockReturnValue({ data: destinations[0], isLoading: false, error: null })
     usePublicPlaces.mockReturnValue({
       data: { data: destinations, meta: { page: 1, limit: 10, total: 25 } },
       isLoading: false,
@@ -71,5 +80,13 @@ describe('ExplorePage pagination', () => {
     await user.click(screen.getByRole('button', { name: 'Trang 2' }))
 
     await waitFor(() => expect(usePublicPlaces).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, limit: 10 })))
+  })
+
+  it('loads destination details directly instead of downloading the catalog', () => {
+    render(<MemoryRouter initialEntries={['/explore/place-1']}><Routes><Route path="/explore/:id" element={<DestinationDetailPage />} /></Routes></MemoryRouter>)
+
+    expect(usePublicPlace).toHaveBeenCalledWith('place-1')
+    expect(useCatalog).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: 'Địa điểm 1' })).toBeInTheDocument()
   })
 })
