@@ -2,11 +2,13 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersController } from './controllers/users.controller';
 import { TravelPreferencesController } from './controllers/travel-preferences.controller';
+import { PreferenceOptionsController } from './controllers/preference-options.controller';
 import { AdminEntity } from './entities/admin.entity';
 import { HotelOwnerEntity } from './entities/hotel-owner.entity';
 import { TopicEntity } from './entities/topic.entity';
 import { TouristEntity } from './entities/tourist.entity';
 import { TravelPreferenceTopicEntity } from './entities/travel-preference-topic.entity';
+import { TravelPreferenceCategoryEntity } from './entities/travel-preference-category.entity';
 import { TravelPreferenceEntity } from './entities/travel-preference.entity';
 import { UserEntity } from './entities/user.entity';
 import { UserImageEntity } from './entities/user-image.entity';
@@ -25,9 +27,12 @@ import { TravelPreferencesService } from './services/travel-preferences.service'
 import { FavoritesService } from './services/favorites.service';
 import { FAVORITE_REPOSITORY } from './interfaces/favorite.repository.interface';
 import { TOURIST_PROFILE_REPOSITORY } from './interfaces/tourist-profile.repository.interface';
+import { PlacesModule } from '../places/places.module';
+import { PlaceCategoryEntity } from '../places/entities/place-category.entity';
 
 @Module({
   imports: [
+    PlacesModule,
     TypeOrmModule.forFeature([
       UserEntity,
       AdminEntity,
@@ -36,11 +41,18 @@ import { TOURIST_PROFILE_REPOSITORY } from './interfaces/tourist-profile.reposit
       TopicEntity,
       TravelPreferenceEntity,
       TravelPreferenceTopicEntity,
+      TravelPreferenceCategoryEntity,
+      PlaceCategoryEntity,
       UserImageEntity,
       UserFavoriteEntity,
     ]),
   ],
-  controllers: [UsersController, TravelPreferencesController, FavoritesController],
+  controllers: [
+    UsersController,
+    TravelPreferencesController,
+    PreferenceOptionsController,
+    FavoritesController,
+  ],
   providers: [
     UsersService,
     TravelPreferencesService,

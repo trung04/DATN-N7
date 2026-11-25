@@ -74,6 +74,10 @@ export class PlacesService {
     return this.repository.findCatalogOptions();
   }
 
+  findPreferenceOptions(): Promise<PlaceCatalogOptions> {
+    return this.repository.findPreferenceOptions();
+  }
+
   findPage(input: ListPlacesRequest): Promise<PlacePage> {
     return this.repository.findPage({
       page: input.page,

@@ -60,6 +60,7 @@ describe('PlacesService', () => {
       findByExternalProviderId: jest.fn(),
       findPage: jest.fn(),
       findCatalogOptions: jest.fn(),
+      findPreferenceOptions: jest.fn(),
       create: createPlace,
       save: savePlace,
       delete: jest.fn(),

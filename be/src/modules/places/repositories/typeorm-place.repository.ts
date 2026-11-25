@@ -138,6 +138,36 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
     return { cities: cityRows.map((row) => row.city), categories, topics };
   }
 
+  async findPreferenceOptions(): Promise<PlaceCatalogOptions> {
+    const [categories, topics] = (await Promise.all([
+      this.repository.query(`
+        SELECT DISTINCT category.code, category.name
+        FROM place_categories category
+        INNER JOIN place_category_mappings mapping
+          ON mapping.place_category_id = category.id AND mapping.deleted_at IS NULL
+        INNER JOIN places place
+          ON place.id = mapping.place_id
+          AND place.deleted_at IS NULL
+          AND place.status = 'ACTIVE'
+        WHERE category.deleted_at IS NULL
+        ORDER BY category.name
+      `),
+      this.repository.query(`
+        SELECT DISTINCT topic.code, topic.name
+        FROM topics topic
+        INNER JOIN place_topics mapping
+          ON mapping.topic_id = topic.id AND mapping.deleted_at IS NULL
+        INNER JOIN places place
+          ON place.id = mapping.place_id
+          AND place.deleted_at IS NULL
+          AND place.status = 'ACTIVE'
+        WHERE topic.deleted_at IS NULL
+        ORDER BY topic.name
+      `),
+    ])) as [PlaceCatalogOptions['categories'], PlaceCatalogOptions['topics']];
+    return { cities: [], categories, topics };
+  }
+
   async create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity> {
     try {
       return await this.dataSource.transaction(async (manager) => {

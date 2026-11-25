@@ -19,7 +19,14 @@ export class SaveTravelPreferenceRequest {
   @ArrayMaxSize(8)
   @IsString({ each: true })
   @MaxLength(50, { each: true })
-  interestCodes: string[];
+  categoryCodes: string[];
+
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  topicCodes: string[];
 
   @Type(() => Number)
   @IsInt()

@@ -58,7 +58,7 @@ describe('TravelPreferencesService', () => {
 
   it('returns only taxonomy values assigned to active places', async () => {
     await expect((service as unknown as { findOptions(): Promise<PlaceCatalogOptions> }).findOptions())
-      .resolves.toEqual(options);
+      .resolves.toEqual({ categories: options.categories, topics: options.topics });
     expect(places.findPreferenceOptions).toHaveBeenCalledTimes(1);
   });
 });

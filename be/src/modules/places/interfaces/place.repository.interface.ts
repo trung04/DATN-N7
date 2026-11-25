@@ -118,6 +118,7 @@ export interface PlaceRepository {
   ): Promise<PlaceEntity | null>;
   findPage(options: FindPlacesOptions): Promise<PlacePage>;
   findCatalogOptions(): Promise<PlaceCatalogOptions>;
+  findPreferenceOptions(): Promise<PlaceCatalogOptions>;
   create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity>;
   save(place: PlaceEntity, catalog: PlaceCatalogWriteData): Promise<PlaceEntity>;
   delete(place: PlaceEntity): Promise<void>;
