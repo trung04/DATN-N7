@@ -9,6 +9,7 @@ import {
   ExternalProviderConflictException,
 } from '../exceptions/place.exceptions';
 import type { PlaceRepository } from '../interfaces/place.repository.interface';
+import { ListPlacesRequest } from '../dtos/requests/list-places.request';
 import { PlacesService } from './places.service';
 
 const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
@@ -58,6 +59,7 @@ describe('PlacesService', () => {
       findDetailsById: jest.fn(),
       findByExternalProviderId: jest.fn(),
       findPage: jest.fn(),
+      findCatalogOptions: jest.fn(),
       create: createPlace,
       save: savePlace,
       delete: jest.fn(),
@@ -150,5 +152,35 @@ describe('PlacesService', () => {
     await expect(
       service.update('11111111-1111-4111-8111-111111111111', {}),
     ).rejects.toBeInstanceOf(EmptyPlaceUpdateException);
+  });
+
+  it('passes public discovery filters to the repository', async () => {
+    repository.findPage.mockResolvedValue({ items: [], total: 0 });
+    const query = Object.assign(new ListPlacesRequest(), {
+      page: 2,
+      limit: 10,
+      search: 'cầu',
+      city: 'Đà Nẵng',
+      categoryCode: 'ATTRACTION',
+      status: PlaceStatus.ACTIVE,
+      sortBy: 'averageRating' as const,
+      sortOrder: 'DESC' as const,
+    });
+
+    await service.findPage(query);
+
+    expect(repository.findPage).toHaveBeenCalledWith({
+      page: 2,
+      limit: 10,
+      search: 'cầu',
+      city: 'Đà Nẵng',
+      categoryCode: 'ATTRACTION',
+      status: PlaceStatus.ACTIVE,
+      countryCode: undefined,
+      provinceCode: undefined,
+      minRating: undefined,
+      sortBy: 'averageRating',
+      sortOrder: 'DESC',
+    });
   });
 });
