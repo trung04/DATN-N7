@@ -168,6 +168,21 @@ describe('UsersService', () => {
     );
   });
 
+  it('updates the authenticated tourist bio as part of the account profile', async () => {
+    const existing = user();
+    repository.findById.mockResolvedValue(existing);
+    saveUser.mockImplementation(async (value) => value);
+
+    const updated = await service.updateMyProfile(existing.id, {
+      bio: 'Tôi thích khám phá văn hóa địa phương.',
+    } as never);
+
+    expect(updated).toEqual({
+      user: existing,
+      bio: 'Tôi thích khám phá văn hóa địa phương.',
+    });
+  });
+
   it('hashes a replacement password before saving', async () => {
     const existing = user();
     repository.findById.mockResolvedValue(existing);
