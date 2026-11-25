@@ -41,7 +41,7 @@ export function AdminPlacesPage() {
   const [busy, setBusy] = useState(false)
   const places = useQuery({ queryKey: ['admin-places', search, statusFilter], queryFn: () => api.adminPlaces({ search: search.trim() || undefined, status: statusFilter || undefined }) })
   const options = useQuery({ queryKey: ['place-catalog-options'], queryFn: api.placeCatalogOptions })
-  const optionData: PlaceCatalogOptions = options.data ?? { categories: [], topics: [] }
+  const optionData: PlaceCatalogOptions = options.data ?? { cities: [], categories: [], topics: [] }
   const categoryNames = useMemo(() => new Map(optionData.categories.map(item => [item.code, item.name])), [optionData.categories])
 
   const openNew = () => { setEditing(null); setForm(blankForm()); setError(''); setFormOpen(true) }

@@ -3,8 +3,56 @@ import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { useSession } from '@/stores/session'
 import type { Booking, Payment, Refund, TravelPreference } from '@/types/domain'
+import type { PublicPlaceQuery } from '@/services/api/client'
+
+async function mockPublicPlaces(query: PublicPlaceQuery) {
+  const catalog = await repo.publicData()
+  const search = query.search?.toLocaleLowerCase('vi')
+  const filtered = catalog.destinations.filter(place =>
+    (!search || [place.name, place.city, place.region, place.description, ...place.tags].join(' ').toLocaleLowerCase('vi').includes(search))
+    && (!query.city || place.city === query.city)
+    && (!query.categoryCode || place.category === query.categoryCode),
+  )
+  const sorted = [...filtered].sort((left, right) => query.sortBy === 'averageRating'
+    ? ((right.rating ?? 0) - (left.rating ?? 0))
+    : left.name.localeCompare(right.name, 'vi'))
+  const start = (query.page - 1) * query.limit
+  return { data: sorted.slice(start, start + query.limit), meta: { page: query.page, limit: query.limit, total: sorted.length } }
+}
 
 export const useCatalog = () => useQuery({ queryKey: ['catalog'], queryFn: repo.publicData })
+export function usePublicPlaces(query: PublicPlaceQuery) {
+  return useQuery({
+    queryKey: ['public-places', query],
+    queryFn: ({ signal }) => isMock ? mockPublicPlaces(query) : api.publicPlaces(query, signal),
+    placeholderData: previous => previous,
+  })
+}
+export function usePublicPlaceOptions() {
+  return useQuery({
+    queryKey: ['public-place-options'],
+    queryFn: async ({ signal }) => {
+      if (!isMock) return api.publicPlaceOptions(signal)
+      const destinations = (await repo.publicData()).destinations
+      return {
+        cities: [...new Set(destinations.map(place => place.city).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'vi')),
+        categories: [...new Set(destinations.map(place => place.category).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'vi')).map(name => ({ code: name, name })),
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+export function usePublicPlace(placeId: string | undefined) {
+  return useQuery({
+    queryKey: ['public-place', placeId],
+    queryFn: async ({ signal }) => {
+      if (!placeId) return null
+      if (!isMock) return api.publicPlace(placeId, signal)
+      return (await repo.publicData()).destinations.find(place => place.id === placeId) ?? null
+    },
+    enabled: Boolean(placeId),
+  })
+}
 export function useFavorites() {
   const user = useSession(s => s.user)
   return useQuery({

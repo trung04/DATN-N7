@@ -49,6 +49,17 @@ export class ListPlacesRequest {
   search?: string;
 
   @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  city?: string;
+
+  @IsOptional()
+  @Transform(uppercase)
+  @Matches(/^[A-Z0-9_-]{1,50}$/)
+  categoryCode?: string;
+
+  @IsOptional()
   @IsEnum(PlaceStatus)
   status?: PlaceStatus;
 

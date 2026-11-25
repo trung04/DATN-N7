@@ -13,6 +13,8 @@ export interface FindPlacesOptions {
   page: number;
   limit: number;
   search?: string;
+  city?: string;
+  categoryCode?: string;
   status?: PlaceStatus;
   countryCode?: string;
   provinceCode?: string;
@@ -60,6 +62,7 @@ export interface PlaceDetailsData extends PlaceSummaryData {
 }
 
 export interface PlaceCatalogOptions {
+  cities: string[];
   categories: PlaceCategoryData[];
   topics: PlaceCategoryData[];
 }
