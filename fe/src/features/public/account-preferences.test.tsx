@@ -19,6 +19,8 @@ const options = {
     { code: 'CULTURE', name: 'Văn hóa' },
   ],
 }
+let preferenceData: Record<string, unknown>
+let optionData: Record<string, unknown>
 
 const { savePreference } = vi.hoisted(() => ({ savePreference: vi.fn() }))
 
@@ -28,16 +30,11 @@ vi.mock('@/services', () => ({
 
 vi.mock('@/hooks/data', () => ({
   useMyPreference: () => ({
-    data: {
-      preference: {
-        userId: 'tourist-1', categories: [], topics: [], budget: 6_000_000,
-        style: 'CULTURE_AND_FOOD', transport: 'WALKING', destinations: [],
-      },
-    },
+    data: preferenceData,
     isLoading: false,
     error: null,
   }),
-  usePreferenceOptions: () => ({ data: options, isLoading: false, error: null }),
+  usePreferenceOptions: () => ({ data: optionData, isLoading: false, error: null }),
   useMyProfile: () => ({ data: tourist, isLoading: false, error: null }),
   useCatalog: () => ({ data: undefined }),
   useFavorites: () => ({ data: [], isLoading: false, error: null }),
@@ -52,6 +49,13 @@ describe('PreferencesPage category and topic tags', () => {
     savePreference.mockReset()
     savePreference.mockResolvedValue(undefined)
     useSession.setState({ user: tourist, authReady: true })
+    preferenceData = {
+      preference: {
+        userId: 'tourist-1', categories: [], topics: [], budget: 6_000_000,
+        style: 'CULTURE_AND_FOOD', transport: 'WALKING', destinations: [],
+      },
+    }
+    optionData = options
   })
 
   it('opens the editor and submits selected catalog codes', async () => {
@@ -76,5 +80,21 @@ describe('PreferencesPage category and topic tags', () => {
       style: 'CULTURE_AND_FOOD',
       transport: 'WALKING',
     }))
+  })
+
+  it('opens the editor when an older API response omits collection fields', async () => {
+    preferenceData = { preference: { userId: 'tourist-1' } }
+    optionData = {}
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><PreferencesPage /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Chỉnh sửa' }))
+
+    expect(screen.getByRole('button', { name: 'Lưu sở thích' })).toBeInTheDocument()
   })
 })
