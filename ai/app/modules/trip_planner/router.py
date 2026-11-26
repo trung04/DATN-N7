@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request
 from app.core.auth import authorize
 from app.modules.recommendation.schemas import Identifier
@@ -7,7 +8,6 @@ from .itinerary_optimizer import PlanningEngine
 from app.database.repositories.trip_repository import TripRepository
 from .requirement_extractor import RequirementExtractor
 from .schemas import TripRequest as BaseTripRequest
-from pydantic import Field
 
 
 router=APIRouter(prefix="/api/v1",tags=["AI Trip Planner"],dependencies=[Depends(authorize)])
@@ -19,7 +19,7 @@ def components(request: Request):
 
 
 class PreviewRequest(BaseTripRequest):
-    routing_provider: str = Field(default='ors',pattern='^ors$')
+    routing_provider: Literal['configured', 'ors'] = 'ors'
     allow_estimated_routes: bool = False
 
 

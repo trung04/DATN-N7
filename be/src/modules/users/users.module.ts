@@ -57,6 +57,6 @@ import { FAVORITE_REPOSITORY } from './interfaces/favorite.repository.interface'
       useClass: BcryptPasswordHasher,
     },
   ],
-  exports: [UsersService],
+  exports: [UsersService, TravelPreferencesService],
 })
 export class UsersModule {}

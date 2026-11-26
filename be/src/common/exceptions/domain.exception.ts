@@ -5,6 +5,7 @@ export type DomainExceptionCategory =
   | 'not_found'
   | 'conflict'
   | 'bad_gateway'
+  | 'gateway_timeout'
   | 'rate_limited'
   | 'service_unavailable';
 

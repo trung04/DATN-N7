@@ -1,4 +1,4 @@
-import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, TravelRecommendation, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'
@@ -230,7 +230,7 @@ export const mock = {
     data.favorites[userId] = list.includes(id) ? list.filter(x => x !== id) : [...list, id]
     return data.favorites[userId]
   }),
-  recommend: async (query: string, userId?: string) => {
+  recommend: async (query: string, userId?: string): Promise<TravelRecommendation[]> => {
     const data = readData()
     const pref = data.preferences.find(p => p.userId === userId)
     const terms = (query + ' ' + (pref?.interests.join(' ') ?? '')).toLowerCase().split(/\s+/).filter(x => x.length > 2)
@@ -302,7 +302,8 @@ export const mock = {
   savePlannedTrip: async (userId: string, result: PlannerResult) => commit(data => {
     const trip = { ...result.trip, userId, status: 'SAVED' as const }
     assert(!data.trips.some(t => t.id === trip.id), 'DUPLICATE', 'Lịch trình đã được lưu.')
-    data.trips.push(trip); data.stops.push(...result.stops); data.activities.push(...result.activities)
+    data.trips.push(trip); data.stops.push(...result.stops)
+    data.activities.push(...result.activities.map(activity => ({ ...activity, cost: activity.cost ?? 0 })))
     return trip
   }),
   saveTrip: async (userId: string, values: Itinerary) => commit(data => {

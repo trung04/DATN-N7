@@ -699,22 +699,21 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
     return (await request<ApiFavorite[]>({ method: 'GET', url: '/users/me/favorites' })).map(favorite => favorite.targetId)
   },
   toggleMyFavorite: (targetType, targetId) => request<{ saved: boolean }>({ method: 'POST', url: '/users/me/favorites/toggle', data: { targetType, targetId } }),
-  recommend: (query, userId) => request({ method: 'POST', url: '/ai/recommendations', data: { query, userId } }),
-  plan: input => request({ method: 'POST', url: '/ai/trip-planner', data: input }),
+  recommend: (query, userId) => request({ method: 'POST', url: '/ai/recommendations', data: { query, usePreferences: Boolean(userId) }, timeout: 125000 }),
+  plan: input => request({ method: 'POST', url: '/ai/trip-planner', data: input, timeout: 125000 }),
   savePlannedTrip: async (userId, result: PlannerResult) => {
+    if (result.trip.userId !== userId) throw new DomainError('PLAN_OWNER_MISMATCH', 'Vui lòng tạo lại lịch trình bằng tài khoản đang đăng nhập.')
+    if (result.stops.some(stop => !stop.placeId)) throw new DomainError('PLACE_REQUIRED', 'Một điểm dừng chưa gắn với địa điểm trong danh mục.')
     const trip = await request<BackendItinerary>({
       method: 'POST', url: '/itineraries',
-      data: { name: result.trip.name, destinationCity: result.trip.city, description: result.trip.note, startDate: result.trip.startDate, endDate: result.trip.endDate, adultCount: result.trip.adults, childCount: result.trip.children, budget: result.trip.budget, currency: 'VND', status: 'SAVED' },
+      data: { name: result.trip.name, destinationCity: result.trip.city, description: result.trip.note, startDate: result.trip.startDate, endDate: result.trip.endDate, adultCount: result.trip.adults, childCount: result.trip.children, budget: result.trip.budget, currency: 'VND', status: 'SAVED', isAiGenerated: true },
     })
-    const savedStops = new Map<string, string>()
     try {
       for (const stop of [...result.stops].sort((a, b) => a.order - b.order)) {
-        if (!stop.placeId) throw new DomainError('PLACE_REQUIRED', 'Một điểm dừng chưa gắn với địa điểm trong danh mục.')
         const created = await request<BackendStopover>({
           method: 'POST', url: '/itineraries/' + trip.id + '/stopovers',
           data: { placeId: stop.placeId, stopOrder: stop.order, arrivalTime: toBackendTime(stop.start), departureTime: toBackendTime(stop.end), description: stop.note },
         })
-        savedStops.set(stop.id, created.id)
         const activities = result.activities.filter(item => item.stopId === stop.id).sort((a, b) => a.start.localeCompare(b.start))
         for (const [index, activity] of activities.entries()) {
           await request<BackendActivity>({
