@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, CalendarDays, Clock3, MapPin, PencilLine, Sparkles, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, ErrorState, Feedback, FormField, LoadingState } from '@/components/common'
-import { useCatalog, useMyPreference } from '@/hooks/data'
+import { useMyPreference, usePublicPlaceOptions } from '@/hooks/data'
 import { travelImage } from '@/lib/travel-images'
 import { addDay, currency, day, errorMessage, nights, todayPlus } from '@/lib/utils'
 import { repo, isMock } from '@/services'
@@ -17,7 +17,7 @@ const defaultInput: PlannerInput = { city: 'Đà Nẵng', startDate: todayPlus(7
 
 export function PlannerPage() {
   const [params] = useSearchParams()
-  const { data: catalog, isLoading: catalogLoading, error: catalogError } = useCatalog()
+  const { data: catalog, isLoading: catalogLoading, error: catalogError } = usePublicPlaceOptions()
   const { data: preferences } = useMyPreference()
   const user = useSession(s => s.user)
   const draft = useSession(s => s.draft)
@@ -34,11 +34,13 @@ export function PlannerPage() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [messageKind, setMessageKind] = useState<'error' | 'success'>('error')
-  const cityOptions = [...new Set(catalog?.destinations.map(place => place.city) ?? [form.city])]
+  const cityOptions = [...new Set([form.city, ...(catalog?.cities ?? [])])]
   const set = <K extends keyof PlannerInput>(key: K, value: PlannerInput[K]) => setForm(prev => ({ ...prev, [key]: value }))
   const tell = (value: string, kind: 'error' | 'success' = 'error') => { setMessage(value); setMessageKind(kind) }
 
   const generate = async (note = form.note) => {
+    if (!isMock && !user) { navigate('/dang-nhap?returnTo=' + encodeURIComponent('/ai/trip-planner')); return }
+    if (!isMock && user?.role !== 'tourist') { tell('Vui lòng dùng tài khoản du khách để tạo lịch trình.'); return }
     const duration = nights(form.startDate, form.endDate) + 1
     if (!form.city.trim() || form.startDate < todayPlus(0) || duration < 1 || duration > 10 || form.adults < 1 || form.children < 0 || form.budget <= 0) {
       tell('Kiểm tra điểm đến, ngày đi (tối đa 10 ngày), số khách và ngân sách.')
@@ -51,7 +53,7 @@ export function PlannerPage() {
       setDraft(result)
       setActiveDay(0)
       setRefinement('')
-      if (result.totalCost > form.budget) tell('Chi phí ước tính vượt ngân sách. Hãy giảm hoạt động hoặc điều chỉnh ngân sách.', 'error')
+      if (typeof result.totalCost === 'number' && result.totalCost > form.budget) tell('Chi phí ước tính vượt ngân sách. Hãy giảm hoạt động hoặc điều chỉnh ngân sách.', 'error')
       else tell('Đã tạo bản nháp. Bạn có thể tinh chỉnh, sửa tên hoạt động hoặc lưu chuyến đi.', 'success')
     } catch (error) { tell(errorMessage(error)) } finally { setBusy(false) }
   }
@@ -99,7 +101,7 @@ export function PlannerPage() {
           {preferences?.preference && <Button type="button" size="sm" variant="ghost" className="mt-3" onClick={() => setForm(prev => ({ ...prev, interests: preferences.preference!.interests, budget: preferences.preference!.budget, style: preferences.preference!.style }))}>Dùng sở thích đã lưu</Button>}
           <div className="mt-5"><FormField label="Mong muốn thêm" hint="Ví dụ: lịch thư giãn, ít hoạt động mỗi ngày."><textarea value={form.note} onChange={e => set('note', e.target.value)} placeholder="Bạn muốn chuyến đi có điều gì đặc biệt?" /></FormField></div>
           <Button className="mt-6 w-full" size="lg" disabled={busy} onClick={() => generate()}><Sparkles size={18} />{busy ? 'Đang sắp xếp lịch trình...' : 'Tạo lịch trình'}</Button>
-          <p className="mt-3 text-xs leading-5 text-slate-500">Dữ liệu và chi phí chỉ để minh họa. Không gọi AI thật hoặc đặt dịch vụ khi tạo lịch.</p>
+          <p className="mt-3 text-xs leading-5 text-slate-500">{isMock ? 'Dữ liệu và chi phí chỉ để minh họa.' : 'AI tạo lịch gợi ý từ danh mục địa điểm. Bạn có thể xem lại trước khi lưu.'}</p>
         </>}
       </section>
 
@@ -108,14 +110,15 @@ export function PlannerPage() {
         {busy && !draft ? <LoadingState label="Đang chọn địa điểm và sắp xếp theo giờ mở cửa..." /> : draft ? <>
           <Card className="overflow-hidden">
             <div className={travelImage(draft.trip.city) ? 'grid md:grid-cols-[minmax(0,1fr)_210px]' : ''}><div className="p-6 sm:p-7"><p className="text-xs font-bold uppercase tracking-[.15em] text-[#5D8BA5]">Lịch trình của bạn · bản nháp</p><h2 className="mt-2 text-2xl font-semibold text-[#1E3A5F]">{draft.trip.name}</h2><p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600"><CalendarDays size={16} />{day(draft.trip.startDate)} – {day(draft.trip.endDate)}<span>· {draft.trip.adults + draft.trip.children} khách</span></p><p className="mt-4 text-sm leading-6 text-slate-600">{draft.explanation}</p></div>{travelImage(draft.trip.city) && <img src={travelImage(draft.trip.city)} alt={'Ảnh ' + draft.trip.city} className="hidden h-full min-h-52 w-full object-cover md:block" />}</div>
-            <div className="grid gap-4 border-t border-slate-100 bg-[#FBFCFE] p-6 sm:grid-cols-[1fr_auto] sm:items-center"><div><span className="text-sm text-slate-500">Tổng chi phí ước tính</span><p className="mt-1 text-2xl font-semibold text-[#1E3A5F]">{currency(draft.totalCost)}</p><p className={'mt-1 text-xs ' + (draft.totalCost > draft.trip.budget ? 'text-amber-800' : 'text-emerald-700')}>{draft.totalCost > draft.trip.budget ? 'Vượt ngân sách ' + currency(draft.totalCost - draft.trip.budget) : 'Trong ngân sách dự kiến ' + currency(draft.trip.budget)}</p></div><Button disabled={busy} onClick={save}>Lưu lịch trình<ArrowRight size={17} /></Button></div>
+            <div className="grid gap-4 border-t border-slate-100 bg-[#FBFCFE] p-6 sm:grid-cols-[1fr_auto] sm:items-center"><div>{draft.totalCost === null ? <><span className="text-sm text-slate-500">Ngân sách bạn đặt</span><p className="mt-1 text-2xl font-semibold text-[#1E3A5F]">{currency(draft.trip.budget)}</p><p className="mt-1 text-xs text-slate-600">Lịch gợi ý chưa có ước tính chi phí.</p></> : <><span className="text-sm text-slate-500">Tổng chi phí ước tính</span><p className="mt-1 text-2xl font-semibold text-[#1E3A5F]">{currency(draft.totalCost)}</p><p className={'mt-1 text-xs ' + (draft.totalCost > draft.trip.budget ? 'text-amber-800' : 'text-emerald-700')}>{draft.totalCost > draft.trip.budget ? 'Vượt ngân sách ' + currency(draft.totalCost - draft.trip.budget) : 'Trong ngân sách dự kiến ' + currency(draft.trip.budget)}</p></>}</div><Button disabled={busy} onClick={save}>Lưu lịch trình<ArrowRight size={17} /></Button></div>
+            {!!draft.warnings?.length && <details className="border-t border-slate-100 px-6 py-4 text-sm text-slate-700"><summary className="cursor-pointer font-semibold">Lưu ý về lịch gợi ý</summary><ul className="mt-2 list-disc space-y-1 pl-5">{draft.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
             {draft.costBreakdown && <div className="grid gap-3 border-t border-slate-100 px-6 py-5 text-sm sm:grid-cols-3"><CostPart label="Lưu trú" value={draft.costBreakdown.lodging} /><CostPart label="Ăn uống" value={draft.costBreakdown.food} /><CostPart label="Vé tham quan" value={draft.costBreakdown.activities} /></div>}
           </Card>
           <div className="mt-7 flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.15em] text-[#5D8BA5]">Khám phá theo ngày</p><h2 className="mt-1 text-2xl font-semibold text-[#1E3A5F]">Lịch trình từng ngày</h2></div><Button size="sm" variant="secondary" disabled={busy} onClick={() => generate()}><Sparkles size={16} />Tạo lại</Button></div>
           <div role="tablist" aria-label="Chọn ngày trong lịch trình" className="mt-4 flex gap-2 overflow-x-auto pb-2">{days.map((date, index) => <button key={date} role="tab" aria-selected={index === activeDay} className={'shrink-0 rounded-xl border px-4 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A5F] ' + (index === activeDay ? 'border-[#1E3A5F] bg-[#1E3A5F] text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-[#EAF0F6]')} onClick={() => setActiveDay(index)}><strong className="block">Ngày {index + 1}</strong><span className="text-xs opacity-80">{day(date)}</span></button>)}</div>
           <div role="tabpanel" className="mt-3 grid gap-3">{dayStops.length ? dayStops.map(stop => {
             const activity = draft.activities.find(item => item.stopId === stop.id)
-            return <Card key={stop.id} className="overflow-hidden"><div className="grid sm:grid-cols-[88px_minmax(0,1fr)]"><div className="flex items-center gap-2 bg-[#EAF0F6] px-5 py-3 text-sm font-semibold text-[#1E3A5F] sm:flex-col sm:justify-center sm:gap-0"><Clock3 size={16} className="sm:mb-2" /><span>{stop.start.slice(11, 16)}</span><span className="text-xs font-normal">đến {stop.end.slice(11, 16)}</span></div><div className="min-w-0 p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-lg font-semibold text-[#1E3A5F]">{stop.name}</h3><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin size={13} />{stop.address}</p></div>{activity && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{activity.cost ? currency(activity.cost) + '/khách' : 'Miễn phí'}</span>}</div><p className="mt-3 text-sm leading-6 text-slate-600">{draft.reasons?.[stop.id] ?? stop.note}</p>{activity && <label className="mt-4 flex items-center gap-2 text-sm text-slate-600"><PencilLine size={15} className="shrink-0" /><span className="sr-only">Tên hoạt động tại {stop.name}</span><input aria-label={'Tên hoạt động tại ' + stop.name} value={activity.name} onChange={event => setDraft({ ...draft, activities: draft.activities.map(item => item.id === activity.id ? { ...item, name: event.target.value } : item) })} /></label>}</div></div></Card>
+            return <Card key={stop.id} className="overflow-hidden"><div className="grid sm:grid-cols-[88px_minmax(0,1fr)]"><div className="flex items-center gap-2 bg-[#EAF0F6] px-5 py-3 text-sm font-semibold text-[#1E3A5F] sm:flex-col sm:justify-center sm:gap-0"><Clock3 size={16} className="sm:mb-2" /><span>{stop.start.slice(11, 16)}</span><span className="text-xs font-normal">đến {stop.end.slice(11, 16)}</span></div><div className="min-w-0 p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-lg font-semibold text-[#1E3A5F]">{stop.name}</h3><p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><MapPin size={13} />{stop.address}</p></div>{activity && <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{activity.cost === null ? 'Chưa có giá' : activity.cost ? currency(activity.cost) + '/khách' : 'Miễn phí'}</span>}</div><p className="mt-3 text-sm leading-6 text-slate-600">{draft.reasons?.[stop.id] ?? stop.note}</p>{activity && <label className="mt-4 flex items-center gap-2 text-sm text-slate-600"><PencilLine size={15} className="shrink-0" /><span className="sr-only">Tên hoạt động tại {stop.name}</span><input aria-label={'Tên hoạt động tại ' + stop.name} value={activity.name} onChange={event => setDraft({ ...draft, activities: draft.activities.map(item => item.id === activity.id ? { ...item, name: event.target.value } : item) })} /></label>}</div></div></Card>
           }) : <Card className="p-6 text-sm text-slate-500">Chưa có địa điểm phù hợp giờ mở cửa trong ngày này.</Card>}</div>
           <Card className="mt-7 p-5 sm:p-6"><h2 className="text-lg font-semibold text-[#1E3A5F]">Tinh chỉnh lịch trình</h2><p className="mt-1 text-sm text-slate-500">Chọn một gợi ý hoặc ghi rõ mong muốn để tạo bản nháp mới.</p><div className="mt-4 flex flex-wrap gap-2">{suggestedRefinements.map(value => <button key={value} type="button" onClick={() => setRefinement(value)} className="rounded-full border border-slate-200 px-3 py-2 text-xs text-slate-700 hover:border-[#1E3A5F] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1E3A5F]">{value}</button>)}</div><div className="mt-4"><FormField label="Điều chỉnh của bạn"><input value={refinement} onChange={e => setRefinement(e.target.value)} placeholder="Ví dụ: ưu tiên thiên nhiên, ít hoạt động" /></FormField></div><Button className="mt-4" variant="secondary" disabled={busy || !refinement.trim()} onClick={() => generate([form.note, refinement].filter(Boolean).join('; '))}>Tinh chỉnh lịch trình<ArrowRight size={16} /></Button></Card>
           <div className="mt-4 flex items-start gap-2 text-xs leading-5 text-slate-500"><Wallet size={15} className="mt-0.5 shrink-0" /><p>Giá lưu trú và ăn uống là tạm tính; vé tham quan lấy từ danh mục. Chưa tính vận chuyển và biến động giá thực tế. {isMock && 'Bản nháp được giữ trong phiên trình duyệt khi bạn đăng nhập.'}</p></div>

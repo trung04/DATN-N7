@@ -133,3 +133,20 @@ class PreviewAPITests(unittest.TestCase):
         with self.app.state.recommendation.store.connection() as db:self.assertEqual(db.execute('SELECT count(*) FROM trips').fetchone()[0],0)
         self.assertEqual(self.client.get('/api/v1/trips/previews/'+draft['draft_id']+'?user_id=other').status_code,404)
         self.assertEqual(self.client.get('/api/v1/trips/previews/'+draft['draft_id']+'?user_id=u').status_code,200)
+
+    def test_preview_can_use_configured_estimates_for_local_integration(self):
+        self.seed(fixtures.place('p'))
+        body = {
+            'user_id': 'u', 'city': 'Đà Nẵng', 'start_date': '2026-12-10', 'days': 1,
+            'required_place_ids': ['p'], 'routing_provider': 'configured',
+            'allow_estimated_routes': True,
+        }
+        with patch.dict('os.environ', {
+            'TRIP_ORS_MODE': 'auto', 'ORS_API_KEY': '',
+            'TRIP_OSRM_URL': '', 'TRIP_OSRM_DRIVING_URL': '',
+        }):
+            response = self.client.post('/api/v1/trips/preview', json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        routing = response.json()['result']['routing']
+        self.assertEqual(routing['source'], 'haversine_estimate')
+        self.assertTrue(routing['estimated'])

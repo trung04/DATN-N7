@@ -17,8 +17,16 @@ export const useSession = create<SessionState>()(persist(
     user: null,
     draft: null,
     authReady: false,
-    login: user => set({ user, authReady: true }),
-    logout: () => set({ user: null, authReady: true }),
+    login: user => set(state => ({
+      user,
+      authReady: true,
+      draft: state.draft?.trip.userId && state.draft.trip.userId !== user.id ? null : state.draft,
+    })),
+    logout: () => set(state => ({
+      user: null,
+      authReady: true,
+      draft: state.draft?.trip.userId ? null : state.draft,
+    })),
     markAuthReady: () => set({ authReady: true }),
     setDraft: draft => set({ draft }),
   }),

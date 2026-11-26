@@ -41,7 +41,7 @@ export class ItinerariesService {
       budget: input.budget ?? null,
       currency: input.currency.trim().toUpperCase(),
       status: input.status,
-      isAiGenerated: false,
+      isAiGenerated: input.isAiGenerated ?? false,
     });
   }
 

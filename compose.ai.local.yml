@@ -1,0 +1,38 @@
+# Start together with compose.yml on the local machine.
+services:
+  backend:
+    environment:
+      AI_BASE_URL: http://ai:9000
+      AI_API_KEY: ${AI_SERVICE_API_KEY:?Set AI_SERVICE_API_KEY in .env}
+      AI_TIMEOUT_MS: ${AI_TIMEOUT_MS:-15000}
+
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks: [internal]
+
+  ai:
+    build: ./ai
+    restart: unless-stopped
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      RECOMMENDATION_API_KEY: ${AI_SERVICE_API_KEY:?Set AI_SERVICE_API_KEY in .env}
+      RECOMMENDATION_DB_PATH: /app/data/recommendation.sqlite3
+      TRIP_ORS_CACHE_PATH: /app/data/route_matrix_cache.sqlite3
+      TRIP_ORS_MODE: auto
+      ORS_API_KEY: ${ORS_API_KEY:-}
+      ORS_BASE_URL: ${ORS_BASE_URL:-https://api.heigit.org}
+    ports:
+      - "127.0.0.1:${AI_PORT:-9000}:9000"
+    volumes:
+      - ai_local_data:/app/data
+      - ai_model_cache:/root/.cache/huggingface
+    depends_on:
+      - qdrant
+    networks: [internal]
+
+volumes:
+  ai_local_data:
+  ai_model_cache:

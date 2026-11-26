@@ -23,13 +23,28 @@ Nếu đã có `.env` được cấu hình thì giữ nguyên, không sao chép 
 | AI readiness | http://localhost:9000/ready |
 | Backend API | http://localhost:3000/api/v1 |
 | Backend Swagger | http://localhost:3000/api/docs |
-| Qdrant | http://localhost:6333/dashboard |
+| Qdrant | http://qdrant:6333 trong mạng Compose AI local |
 | MinIO Console | http://localhost:9001 |
 | MinIO S3 API | http://localhost:9002 |
 
 Backend NestJS từ `dev` đã có API nghiệp vụ, Swagger, đăng nhập mật khẩu/Google, session xoay vòng trên Redis và phân quyền theo vai trò/chủ sở hữu. Các module bao gồm địa điểm, khách sạn, phòng, tiện ích, người dùng, chủ khách sạn, lịch trình, điểm dừng, hoạt động, chính sách hủy và booking. Xem [backend README](be/README.md) cho hợp đồng API chi tiết.
 
-Cấu hình tích hợp AI dùng nội bộ `http://ai:9000`, header `X-API-Key` lấy từ `AI_API_KEY`. Compose truyền cùng root `AI_SERVICE_API_KEY` cho hai dịch vụ; timeout được kiểm tra khi backend khởi động. Client nghiệp vụ gọi AI từ NestJS chưa được triển khai; demo AI gọi trực tiếp FastAPI.
+### Tích hợp AI trên máy local
+
+Từ thư mục gốc, tạo `.env` từ `.env.example` và `be/.env` từ `be/.env.example` nếu các file này chưa có. Đặt `AI_SERVICE_API_KEY` thành khóa nội bộ ngẫu nhiên trong root `.env`. Nếu địa điểm hoặc model cần nhiều thời gian, tăng `AI_TIMEOUT_MS` trong root `.env` lên `90000` (tối đa `120000`).
+
+```powershell
+docker compose -f compose.yml -f compose.ai.local.yml up -d --build
+Invoke-RestMethod http://localhost:9000/ready
+# Sau khi database local đã có danh mục địa điểm.
+python ai/scripts/sync_application_catalog.py --city "Đà Nẵng"
+```
+
+File Compose bổ sung chạy FastAPI và Qdrant cạnh backend. NestJS gọi `http://ai:9000` và gửi khóa từ cấu hình server. Khi chạy FastAPI và backend trực tiếp trên host, đặt `AI_BASE_URL` theo cổng FastAPI và `AI_API_KEY` trùng `RECOMMENDATION_API_KEY`. Nếu đổi cổng Docker, truyền `--backend` và `--ai` tương ứng cho lệnh đồng bộ.
+
+Đăng nhập bằng tài khoản du khách để thử **Gợi ý du lịch** và **Trợ lý lập lịch trình**. Gợi ý có thể dùng sở thích đã lưu nếu người dùng bật lựa chọn này. Trợ lý tạo bản nháp theo danh mục có cùng UUID với ứng dụng và dùng luồng lưu lịch trình hiện có khi bấm **Lưu lịch trình**. Lịch có thể dùng tuyến ước tính khi ORS chưa cấu hình và sẽ hiển thị cảnh báo. API bản nháp hiện chưa có giá, nên giao diện hiển thị ngân sách đã nhập và tình trạng chưa có ước tính chi phí.
+
+Lần chạy FastAPI đầu tiên cần tải model BGE-M3. Readiness chỉ xác nhận dịch vụ và vector store. Đồng bộ thành công và đủ số điểm có tọa độ mới tạo được lịch. Với lỗi dịch vụ, kiểm tra `docker compose -f compose.yml -f compose.ai.local.yml logs ai backend` và trạng thái đồng bộ danh mục.
 
 ## Database and Redis configuration
 
