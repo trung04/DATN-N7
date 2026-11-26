@@ -3,7 +3,6 @@ import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import {
   GoogleAccountConflictException,
-  GoogleAccountEmailMismatchException,
   UserEmailConflictException,
 } from '../../users/exceptions/user.exceptions';
 import { UserEntity, UserStatus } from '../../users/entities/user.entity';

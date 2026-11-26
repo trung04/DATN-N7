@@ -20,6 +20,8 @@ describe('mapBackendUser', () => {
       phone: '0900000000',
       role: 'admin',
       verified: true,
+      googleAccountLinked: false,
+      isTwoFactorEnabled: false,
     })
   })
 

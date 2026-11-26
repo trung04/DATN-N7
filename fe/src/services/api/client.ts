@@ -224,6 +224,7 @@ client.interceptors.response.use(undefined, async (error: AxiosError) => {
   const path = config?.url ?? ''
   const canRefresh = error.response?.status === 401 && config && !config._sessionRetry
     && !['/auth/login', '/auth/refresh', '/auth/logout'].some(route => path.endsWith(route))
+    && !path.includes('/auth/2fa/')
   if (!canRefresh) throw error
 
   config._sessionRetry = true
