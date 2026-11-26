@@ -38,7 +38,9 @@ describe('TwoFactorService', () => {
       decryptSecret: jest.fn().mockReturnValue('BASE32SECRET'),
       verifyTotp: jest.fn(),
       generateRecoveryCodes: jest.fn().mockReturnValue(['ABCD-EFGH', 'IJKL-MNOP']),
-      hashRecoveryCode: jest.fn((userId: string, code: string) => `${userId}:${code}`),
+      hashRecoveryCode: jest.fn(
+        (userId: string, code: string) => `${userId}:${code.trim().toUpperCase()}`,
+      ),
     } as unknown as jest.Mocked<TwoFactorCodeService>;
     users = { findActiveById: jest.fn().mockResolvedValue(user), setTwoFactorEnabled: jest.fn() };
     service = new TwoFactorService(

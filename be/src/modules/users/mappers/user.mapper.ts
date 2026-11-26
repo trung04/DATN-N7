@@ -21,6 +21,7 @@ export class UserMapper {
       status: user.status,
       role: user.role,
       isEmailVerified: user.isEmailVerified,
+      isTwoFactorEnabled: user.isTwoFactorEnabled,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
     };

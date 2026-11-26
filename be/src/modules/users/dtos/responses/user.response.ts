@@ -14,6 +14,7 @@ export class UserResponse {
   status: UserStatus;
   role: UserRole;
   isEmailVerified: boolean;
+  isTwoFactorEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }

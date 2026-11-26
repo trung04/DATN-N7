@@ -156,6 +156,12 @@ export class UsersService {
     return this.repository.save(user);
   }
 
+  async setTwoFactorEnabled(userId: string, enabled: boolean): Promise<UserEntity> {
+    const user = await this.findById(userId);
+    user.isTwoFactorEnabled = enabled;
+    return this.repository.save(user);
+  }
+
   async findById(id: string): Promise<UserEntity> {
     const user = await this.repository.findById(id);
     if (!user) throw new UserNotFoundException(id);
