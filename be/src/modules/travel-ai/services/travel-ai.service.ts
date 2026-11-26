@@ -43,10 +43,13 @@ export class TravelAiService {
     const saved = input.usePreferences
       ? await this.preferences.findForUser(userId)
       : null;
+    const preferenceNames = saved
+      ? [...saved.categories, ...saved.topics].map((item) => item.name)
+      : [];
     const candidates = await this.ai.recommend({
       userId,
       query: input.query,
-      preferences: saved?.interests ?? [],
+      preferences: [...new Set(preferenceNames)],
       personalized: input.usePreferences,
     });
 

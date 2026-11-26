@@ -1,4 +1,4 @@
-import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreferenceInput, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreferenceInput, TravelRecommendation, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'

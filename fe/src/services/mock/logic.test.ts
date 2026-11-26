@@ -6,6 +6,29 @@ import { cancellationQuote } from '@/lib/booking'
 beforeEach(() => { localStorage.clear(); sessionStorage.clear() })
 
 describe('mock nghiệp vụ du lịch', () => {
+  it('uses saved interests from existing demo data for recommendations', async () => {
+    const data = snapshot()
+    const [preference] = data.preferences
+    if (!preference) throw new Error('Missing demo preference')
+    const legacyPreference = {
+      userId: preference.userId,
+      interests: ['Biển'],
+      budget: preference.budget,
+      style: preference.style,
+      transport: preference.transport,
+      destinations: preference.destinations,
+    }
+    localStorage.setItem('smarttravel.demo.v2', JSON.stringify({ ...data, preferences: [legacyPreference] }))
+
+    const results = await mock.recommend('zzzz', preference.userId)
+
+    expect(results[0]?.reason).toContain('biển')
+    expect(snapshot().preferences[0]).toEqual({
+      ...preference,
+      categories: [],
+      topics: [{ code: 'Biển', name: 'Biển' }],
+    })
+  })
   it('đăng nhập đúng ba vai trò demo và từ chối mật khẩu sai', async () => {
     expect((await mock.login('khach@demo.vn', 'Demo@123')).role).toBe('tourist')
     expect((await mock.login('doitac@demo.vn', 'Demo@123')).role).toBe('partner')

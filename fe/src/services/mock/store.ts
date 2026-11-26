@@ -14,6 +14,17 @@ export function readData(): AppData {
     changed = !raw
     if (data.version === 2) { data = mergeSeedExtras(data); changed = true }
     else if (data.version !== 3) { data = seedData(); changed = true }
+    data.preferences = data.preferences.map(preference => {
+      if (!('interests' in preference) || !Array.isArray(preference.interests)) return preference
+      const { interests, ...fields } = preference
+      changed = true
+      return {
+        ...fields,
+        categories: [],
+        topics: interests.filter((name): name is string => typeof name === 'string')
+          .map(name => ({ code: name, name })),
+      }
+    })
     for (const hotel of data.hotels) {
       const terms = hotel.cancellationTerms
       if (terms.basis !== 'HOURS_AFTER_BOOKING') {

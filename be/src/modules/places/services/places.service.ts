@@ -78,7 +78,10 @@ export class PlacesService {
     return this.repository.findPreferenceOptions();
   }
 
-  findPage(input: ListPlacesRequest): Promise<PlacePage> {
+  findPage(
+    input: ListPlacesRequest,
+    rankedIds?: readonly string[],
+  ): Promise<PlacePage> {
     return this.repository.findPage({
       page: input.page,
       limit: input.limit,

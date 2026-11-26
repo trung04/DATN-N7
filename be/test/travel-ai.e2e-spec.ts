@@ -60,7 +60,10 @@ describe('Travel AI facade (local HTTP upstream)', () => {
     key: string | undefined;
     body: unknown;
   }> = [];
-  const preferences = jest.fn().mockResolvedValue({ interests: ['Biển'] });
+  const preferences = jest.fn().mockResolvedValue({
+    categories: [{ code: 'NATURE', name: 'Thiên nhiên' }],
+    topics: [{ code: 'BEACH', name: 'Biển' }],
+  });
   const findPlaces = jest.fn();
   const searchInput = {
     page: 2,
@@ -333,7 +336,7 @@ describe('Travel AI facade (local HTTP upstream)', () => {
           user_id: userId,
           query: 'Biển',
           mode: 'auto',
-          preferences: ['Biển'],
+          preferences: ['Thiên nhiên', 'Biển'],
           limit: 12,
         },
       },
