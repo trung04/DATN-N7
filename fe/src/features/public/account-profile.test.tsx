@@ -16,11 +16,17 @@ const profile: User = {
   googleAccountLinked: false,
 }
 
-const { saveProfile } = vi.hoisted(() => ({ saveProfile: vi.fn() }))
+const { saveProfile, setupTwoFactor, confirmTwoFactor } = vi.hoisted(() => ({
+  saveProfile: vi.fn(),
+  setupTwoFactor: vi.fn(),
+  confirmTwoFactor: vi.fn(),
+}))
 
 vi.mock('@/services', () => ({
   repo: {
     saveProfile,
+    setupTwoFactor,
+    confirmTwoFactor,
     requestDeletion: vi.fn(),
     clearPreference: vi.fn(),
     savePreference: vi.fn(),
@@ -42,6 +48,8 @@ describe('ProfilePage tourist bio', () => {
   beforeEach(() => {
     saveProfile.mockReset()
     saveProfile.mockResolvedValue({ ...profile, bio: 'Bio mới' })
+    setupTwoFactor.mockResolvedValue({ secret: 'BASE32SECRET', otpauthUri: 'otpauth://totp/HanhTrinhViet' })
+    confirmTwoFactor.mockResolvedValue({ recoveryCodes: ['ABCD-EFGH', 'IJKL-MNOP'] })
     useSession.setState({ user: profile, authReady: true })
   })
 
@@ -64,5 +72,25 @@ describe('ProfilePage tourist bio', () => {
     await user.click(screen.getByRole('button', { name: 'Lưu thay đổi' }))
 
     expect(saveProfile).toHaveBeenCalledWith('tourist-1', expect.objectContaining({ bio: 'Bio mới' }))
+  })
+
+  it('enables 2FA only after confirming an authenticator code and shows recovery codes', async () => {
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><ProfilePage /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Bật xác thực 2 bước' }))
+    expect(await screen.findByText('BASE32SECRET')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Mã QR thiết lập xác thực 2 bước' })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /Mã xác thực/ }), '123456')
+    await user.click(screen.getByRole('button', { name: 'Xác nhận bật 2FA' }))
+
+    expect(confirmTwoFactor).toHaveBeenCalledWith('123456')
+    expect(await screen.findByText('ABCD-EFGH')).toBeInTheDocument()
+    expect(screen.getByText(/chỉ hiển thị một lần/i)).toBeInTheDocument()
   })
 })
