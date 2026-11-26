@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -75,4 +76,8 @@ export class CreateItineraryRequest {
 
   @IsEnum(ItineraryStatus)
   status: ItineraryStatus = ItineraryStatus.DRAFT;
+
+  @IsOptional()
+  @IsBoolean()
+  isAiGenerated?: boolean;
 }

@@ -21,6 +21,7 @@ export interface FindPlacesOptions {
   minRating?: number;
   sortBy: PlaceSortField;
   sortOrder: 'ASC' | 'DESC';
+  rankedIds?: readonly string[];
 }
 
 export interface PlacePage {

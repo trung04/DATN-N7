@@ -40,6 +40,8 @@ Request:
 | `method` | `hybrid` / `bge` / `bm25`; mặc định `hybrid` | Phương pháp xếp hạng |
 | `filters` | object, mặc định `{}` | Điều kiện bắt buộc, dùng giống nhau cho cả ba phương pháp |
 | `infer_filters` | boolean, mặc định `true` | Tự nhận diện thành phố, loại, tiện ích bằng luật; không phải LLM. Đặt `false` nếu backend đã có bộ lọc |
+| `sort_by` | `relevance` (mặc định), `name`, `rating` | Sắp xếp toàn bộ kết quả trước khi phân trang. Khi trùng tên hoặc điểm đánh giá, giữ thứ tự phù hợp |
+| `sort_order` | `asc` (mặc định), `desc` | Chiều sắp xếp theo tên hoặc điểm đánh giá |
 | `limit` | integer 1–100; mặc định 10 | Số kết quả mỗi trang |
 | `offset` | integer 0–10000; mặc định 0 | Vị trí bắt đầu, trang tiếp theo = offset + limit |
 | `min_similarity` | number -1..1 hoặc null | Ngưỡng cosine; không được gửi với `bm25` |

@@ -91,6 +91,7 @@ export class PlacesService {
       minRating: input.minRating,
       sortBy: input.sortBy,
       sortOrder: input.sortOrder,
+      ...(rankedIds && { rankedIds }),
     });
   }
 

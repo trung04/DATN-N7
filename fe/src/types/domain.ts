@@ -179,6 +179,7 @@ export interface AppData {
 }
 
 export interface PlannerInput { city: string; startDate: string; endDate: string; adults: number; children: number; budget: number; interests: string[]; style: string; note: string }
-export interface PlannerResult { trip: Itinerary; stops: Stopover[]; activities: TravelActivity[]; totalCost: number; explanation: string; costBreakdown?: { lodging: number; food: number; activities: number }; reasons?: Record<string, string>; input?: PlannerInput }
+export interface TravelRecommendation { id: string; type: 'destination' | 'hotel' | 'restaurant'; name: string; city: string; price: number | null; tags: string[]; description: string; score: number; reason: string }
+export interface PlannerResult { trip: Itinerary; stops: Stopover[]; activities: Array<Omit<TravelActivity, 'cost'> & { cost: number | null }>; totalCost: number | null; explanation: string; warnings?: string[]; costBreakdown?: { lodging: number; food: number; activities: number }; reasons?: Record<string, string>; input?: PlannerInput }
 export interface BookingInput { hotelId: string; roomId: string; roomIds?: string[]; roomGuests?: RoomGuestAllocation[]; idempotencyKey?: string; cancellationPolicyVersion?: string; checkIn: string; checkOut: string; rooms: number; adults: number; children: number; guestName: string; guestEmail: string; guestPhone: string; specialRequest: string }
 export interface AppError { code: string; message: string; status?: number }

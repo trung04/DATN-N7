@@ -3,9 +3,9 @@ import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { useSession } from '@/stores/session'
 import type { Booking, Payment, PreferenceOptions, Refund, TravelPreference } from '@/types/domain'
-import type { PublicPlaceQuery } from '@/services/api/client'
+import type { PublicPlacePage, PublicPlaceQuery } from '@/services/api/client'
 
-async function mockPublicPlaces(query: PublicPlaceQuery) {
+async function mockPublicPlaces(query: PublicPlaceQuery): Promise<PublicPlacePage<Destination>> {
   const catalog = await repo.publicData()
   const search = query.search?.toLocaleLowerCase('vi')
   const filtered = catalog.destinations.filter(place =>

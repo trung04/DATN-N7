@@ -45,3 +45,27 @@ class TextAPIContractTests(unittest.TestCase):
             for path,body in [('/api/v1/search/places',{'query':'biển'}),('/api/v1/embeddings/text',{'text':'a'}),('/api/v1/embeddings/batch',{'text':['a']})]:
                 self.assertEqual(self.client.post(path,json=body).status_code,401)
                 self.assertEqual(self.client.post(path,json=body,headers={'X-API-Key':'test-only'}).status_code,200)
+
+    def test_sorting_by_name_and_rating_happens_before_pagination(self):
+        self.seed(
+            fixtures.place("a", name="Địa điểm Z", rating=3),
+            fixtures.place("b", name="Địa điểm A", rating=4),
+            fixtures.place("c", name="Địa điểm M", rating=5),
+        )
+        for sort_by, sort_order, expected_ids in [
+            ("name", "asc", ["b", "c", "a"]),
+            ("rating", "desc", ["c", "b", "a"]),
+        ]:
+            ids = []
+            for offset in range(3):
+                response = self.client.post("/api/v1/search/places", json={
+                    "query": "biển",
+                    "sort_by": sort_by,
+                    "sort_order": sort_order,
+                    "limit": 1,
+                    "offset": offset,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["total"], 3)
+                ids.append(response.json()["results"][0]["place_id"])
+            self.assertEqual(ids, expected_ids)

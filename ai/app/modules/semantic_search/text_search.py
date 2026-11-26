@@ -158,6 +158,7 @@ class PlaceSearchService:
         lexical_rank = {i: rank for rank,i in enumerate(sorted((i for i,v in enumerate(lexical) if v > 0),
             key=lambda i: (-lexical[i], eligible[i]["p"]["place_id"])), 1)}
         results = []
+        ratings = {}
         for i, c in enumerate(eligible):
             similarity = similarities.get(i)
             if body.min_similarity is not None and (similarity is None or similarity < body.min_similarity):
@@ -179,7 +180,12 @@ class PlaceSearchService:
                 "place_type": c["p"]["place_type"], "city": c["p"]["city"], "score": score,
                 "semantic_score": similarity, "keyword_score": lexical[i], "exact_name_match": exact_name,
                 "distance_km": c["distance"], "image_url": c["p"]["image_url"], "reasons": reasons})
+            ratings[c["p"]["place_id"]] = c["p"]["rating"] or 0
         results.sort(key=lambda r: (-int(r["exact_name_match"]) if body.method=='hybrid' else 0, -r["score"], r["place_id"]))
+        if body.sort_by == 'name':
+            results.sort(key=lambda r: folded(r["name"]), reverse=body.sort_order == 'desc')
+        elif body.sort_by == 'rating':
+            results.sort(key=lambda r: ratings[r["place_id"]], reverse=body.sort_order == 'desc')
         if stale:
             warnings.append(f"{stale} địa điểm chưa có embedding đúng model/nội dung; " + ('không tham gia BGE thuần' if body.method=='bge' else 'chỉ tham gia nguồn từ khóa'))
         if not results:

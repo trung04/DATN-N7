@@ -107,8 +107,17 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
       status: 'place.status',
     };
 
+    if (options.rankedIds) {
+      query
+        .andWhere('place.id = ANY(CAST(:rankedIds AS uuid[]))', {
+          rankedIds: options.rankedIds,
+        })
+        .orderBy('array_position(CAST(:rankedIds AS uuid[]), place.id)', 'ASC');
+    } else {
+      query.orderBy(sortColumns[options.sortBy], options.sortOrder);
+    }
+
     const [places, total] = await query
-      .orderBy(sortColumns[options.sortBy], options.sortOrder)
       .addOrderBy('place.id', 'ASC')
       .skip((options.page - 1) * options.limit)
       .take(options.limit)

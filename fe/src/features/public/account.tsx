@@ -920,6 +920,7 @@ export function FavoritesPage() {
   );
 }
 export function RecommendationsPage() {
+<<<<<<< feature/tourist-account-preferences-security
   const user = useSession((s) => s.user);
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState("");
@@ -1059,4 +1060,20 @@ export function RecommendationsPage() {
       )}
     </div>
   );
+=======
+  const user = useSession(s => s.user)
+  const [query, setQuery] = useState('')
+  const [extra, setExtra] = useState('')
+  const [usePreference, setUsePreference] = useState(true)
+  const [results, setResults] = useState<Awaited<ReturnType<typeof repo.recommend>> | null>(null)
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const quick = ['Du lịch tiết kiệm', 'Khám phá điểm đến', 'Du lịch gia đình', 'Nghỉ dưỡng', 'Khám phá thiên nhiên']
+  const navigate = useNavigate()
+  const run = async () => {
+    if (!isMock && !user) { navigate('/dang-nhap?returnTo=' + encodeURIComponent('/ai/recommendations')); return }
+    if (!isMock && user?.role !== 'tourist') { setMessage('Vui lòng dùng tài khoản du khách để nhận gợi ý.'); return }
+    if (!query.trim()) { setMessage('Vui lòng mô tả chuyến đi mong muốn.'); return } setLoading(true); setMessage(''); try { const items = await repo.recommend(query + ' ' + extra, usePreference ? user?.id : undefined); setResults(items.filter(item => item.type !== 'restaurant')) } catch (error) { setMessage(errorMessage(error)); setResults(null) } finally { setLoading(false) } }
+  return <div className="container-app section-pad"><PageHeader title="Gợi ý du lịch" description="Mô tả nhu cầu; công cụ tìm trong danh mục hiện có và giải thích lý do đề xuất." /><Card className="max-w-4xl p-6"><FormField label="Bạn muốn trải nghiệm điều gì?"><textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Ví dụ: Tôi muốn đi Đà Nẵng 3 ngày 2 đêm, thích biển, ẩm thực và những nơi yên tĩnh." /></FormField><div className="mt-3 flex flex-wrap gap-2">{quick.map(x => <Button key={x} size="sm" variant="secondary" onClick={() => setQuery(query ? query + ', ' + x.toLowerCase() : x)}>{x}</Button>)}</div><div className="mt-4 grid gap-4 sm:grid-cols-[1fr_auto]"><FormField label="Tiêu chí bổ sung" hint="Có thể bổ sung sau khi xem kết quả mà không cần nhập lại."><input value={extra} onChange={e => setExtra(e.target.value)} placeholder="Ví dụ: khách sạn gần biển" /></FormField><Button className="self-end" disabled={loading} onClick={run}>{loading ? 'Đang tìm...' : 'Nhận gợi ý'}</Button></div>{user?.role === 'tourist' && <label className="mt-4 flex items-center gap-2 text-sm text-slate-600"><input className="!m-0 !h-4 !w-4 !min-h-0" type="checkbox" checked={usePreference} onChange={e => setUsePreference(e.target.checked)} />Sử dụng sở thích đã lưu</label>}<div className="mt-4"><Feedback message={message} kind="error" /></div></Card>{loading && <LoadingState label="Đang tìm kết quả phù hợp trong danh mục..." />}{results && <div className="mt-9">{isMock && <p className="mb-4 text-sm text-amber-800">Gợi ý dùng dữ liệu minh họa.</p>}{results.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{results.map(x => <Card className="p-5" key={x.type + x.id}><span className="text-xs font-semibold uppercase text-[#1E3A5F]">{x.type === 'hotel' ? 'Khách sạn' : 'Địa điểm'}</span><h2 className="mt-2 text-lg font-semibold">{x.name}</h2><p className="mt-1 text-sm text-slate-500">{x.city}{x.price !== null && <> · {currency(x.price)}</>}</p><p className="mt-3 text-sm text-slate-600">{x.reason}</p><div className="mt-4"><Link className="text-sm font-semibold text-[#1E3A5F] hover:underline" to={x.type === 'hotel' ? '/hotels/' + x.id : '/explore/' + x.id}>Xem chi tiết →</Link></div></Card>)}</div> : <EmptyState title="Chưa có kết quả phù hợp" description="Thử thay đổi điểm đến hoặc sở thích." />}</div>}</div>
+>>>>>>> dev
 }

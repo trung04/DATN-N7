@@ -75,6 +75,6 @@ import { PlaceCategoryEntity } from '../places/entities/place-category.entity';
       useClass: BcryptPasswordHasher,
     },
   ],
-  exports: [UsersService],
+  exports: [UsersService, TravelPreferencesService],
 })
 export class UsersModule {}

@@ -51,6 +51,8 @@ class PlaceSearchRequest(Contract):
     query: str = Field(min_length=1, max_length=2000)
     filters: SearchFilters = Field(default_factory=SearchFilters)
     infer_filters: bool = True
+    sort_by: Literal['relevance', 'name', 'rating'] = 'relevance'
+    sort_order: Literal['asc', 'desc'] = 'asc'
     limit: int = Field(10, ge=1, le=100)
     offset: int = Field(0, ge=0, le=10000)
     min_similarity: float | None = Field(None, ge=-1, le=1)
