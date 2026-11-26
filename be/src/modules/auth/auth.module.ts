@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './controllers/auth.controller';
 import { AccessSessionGuard } from './guards/access-session.guard';
@@ -13,9 +14,16 @@ import { GOOGLE_OAUTH_STATE_STORE } from './interfaces/google-oauth-state-store.
 import { AUTH_CHALLENGE_STORE } from './interfaces/auth-challenge-store.interface';
 import { EMAIL_SENDER } from './interfaces/email-sender.interface';
 import { AuthService } from './services/auth.service';
+import { TwoFactorCredentialEntity } from './entities/two-factor-credential.entity';
+import { TWO_FACTOR_CREDENTIAL_REPOSITORY } from './interfaces/two-factor-credential.repository.interface';
+import { TypeOrmTwoFactorCredentialRepository } from './repositories/typeorm-two-factor-credential.repository';
+import { TwoFactorCodeService } from './services/two-factor-code.service';
+import { TwoFactorService } from './services/two-factor.service';
+import { RedisTwoFactorLoginChallengeStore } from './integrations/redis/redis-two-factor-login-challenge.store';
+import { TWO_FACTOR_LOGIN_CHALLENGE_STORE } from './interfaces/two-factor-login-challenge-store.interface';
 
 @Module({
-  imports: [UsersModule],
+  imports: [UsersModule, TypeOrmModule.forFeature([TwoFactorCredentialEntity])],
   controllers: [AuthController],
   providers: [
     AuthService,
@@ -25,6 +33,17 @@ import { AuthService } from './services/auth.service';
     RedisAuthChallengeStore,
     SmtpEmailSender,
     GoogleIdentityClient,
+    TwoFactorCodeService,
+    TwoFactorService,
+    RedisTwoFactorLoginChallengeStore,
+    {
+      provide: TWO_FACTOR_CREDENTIAL_REPOSITORY,
+      useClass: TypeOrmTwoFactorCredentialRepository,
+    },
+    {
+      provide: TWO_FACTOR_LOGIN_CHALLENGE_STORE,
+      useExisting: RedisTwoFactorLoginChallengeStore,
+    },
     {
       provide: AUTH_SESSION_STORE,
       useExisting: RedisAuthStore,

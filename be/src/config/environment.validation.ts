@@ -144,6 +144,29 @@ export function validateEnvironment(input: Record<string, unknown>) {
   if (Number(config.AUTH_REFRESH_TTL_MS) <= Number(config.AUTH_ACCESS_TTL_MS)) {
     throw new Error('AUTH_REFRESH_TTL_MS must exceed AUTH_ACCESS_TTL_MS');
   }
+  config.TWO_FACTOR_ENCRYPTION_KEY ??= '';
+  config.TWO_FACTOR_RECOVERY_PEPPER ??= '';
+  if (
+    typeof config.TWO_FACTOR_ENCRYPTION_KEY !== 'string' ||
+    typeof config.TWO_FACTOR_RECOVERY_PEPPER !== 'string'
+  ) {
+    throw new Error('Two-factor security settings must be strings');
+  }
+  const twoFactorConfigured = Boolean(config.TWO_FACTOR_ENCRYPTION_KEY) || Boolean(config.TWO_FACTOR_RECOVERY_PEPPER);
+  if (twoFactorConfigured || config.NODE_ENV === 'production') {
+    let encryptionKey: Buffer;
+    try {
+      encryptionKey = Buffer.from(config.TWO_FACTOR_ENCRYPTION_KEY as string, 'base64');
+    } catch {
+      throw new Error('TWO_FACTOR_ENCRYPTION_KEY must be base64 encoded');
+    }
+    if (encryptionKey.length !== 32) {
+      throw new Error('TWO_FACTOR_ENCRYPTION_KEY must decode to exactly 32 bytes');
+    }
+    if ((config.TWO_FACTOR_RECOVERY_PEPPER as string).length < 32) {
+      throw new Error('TWO_FACTOR_RECOVERY_PEPPER must contain at least 32 characters');
+    }
+  }
   integer('BOOKING_HOLD_MINUTES', 15, 5, 1440);
   integer('IDEMPOTENCY_KEY_TTL_HOURS', 24, 1, 168);
   const decimal = (key: string, fallback: number, min: number, max: number) => {

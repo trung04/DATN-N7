@@ -28,7 +28,7 @@ export function seedData(): AppData {
       { id: 'user-partner', name: 'Trần Hải Nam', email: 'doitac@demo.vn', role: 'partner', phone: '0902223344', verified: true },
       { id: 'user-admin', name: 'Lê Thu Hà', email: 'admin@demo.vn', role: 'admin', verified: true },
     ],
-    preferences: [{ userId: 'user-tourist', interests: ['Biển', 'Ẩm thực', 'Thiên nhiên'], budget: 6000000, style: 'Cân bằng', transport: 'Máy bay', destinations: ['Đà Nẵng'] }],
+    preferences: [{ userId: 'user-tourist', categories: [], topics: [{ code: 'Biển', name: 'Biển' }, { code: 'Ẩm thực', name: 'Ẩm thực' }, { code: 'Thiên nhiên', name: 'Thiên nhiên' }], budget: 6000000, style: 'Cân bằng', transport: 'Máy bay', destinations: ['Đà Nẵng'] }],
     destinations: [
       { id: 'my-khe', name: 'Bãi biển Mỹ Khê', city: 'Đà Nẵng', region: 'Sơn Trà', category: 'Biển', description: 'Bãi biển rộng với bờ cát dài, phù hợp đi dạo và đón bình minh.', tags: ['Biển', 'Nghỉ dưỡng'], price: 0, openingHours: 'Cả ngày', rating: 4.8, lat: 16.0614, lng: 108.2468 },
       { id: 'son-tra', name: 'Bán đảo Sơn Trà', city: 'Đà Nẵng', region: 'Sơn Trà', category: 'Thiên nhiên', description: 'Khu bán đảo xanh với các điểm ngắm toàn cảnh thành phố và biển.', tags: ['Thiên nhiên', 'Khám phá'], price: 0, openingHours: '06:00–18:00', rating: 4.7, lat: 16.1194, lng: 108.2911 },

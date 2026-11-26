@@ -4,7 +4,8 @@ export const TRAVEL_PREFERENCE_REPOSITORY = Symbol(
 
 export interface SaveTravelPreferenceData {
   userId: string;
-  interestCodes: string[];
+  categoryCodes: string[];
+  topicCodes: string[];
   budget: number;
   style: string;
   transport: string;
@@ -13,7 +14,8 @@ export interface SaveTravelPreferenceData {
 
 export interface TravelPreferenceData {
   userId: string;
-  interests: string[];
+  categories: Array<{ code: string; name: string }>;
+  topics: Array<{ code: string; name: string }>;
   budget: number;
   style: string;
   transport: string;

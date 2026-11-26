@@ -1,4 +1,5 @@
 import { DomainException } from '../../../common/exceptions/domain.exception';
+import type { PlaceTaxonomyKind, PlaceTaxonomyReferences } from '../interfaces/place-taxonomy.repository.interface';
 
 export class PlaceNotFoundException extends DomainException {
   constructor(id: string) {
@@ -53,5 +54,33 @@ export class InvalidPlacePriceException extends DomainException {
       'PLACE_REFERENCE_PRICE_INVALID',
       'validation',
     );
+  }
+}
+
+export class PlaceTaxonomyNotFoundException extends DomainException {
+  constructor(kind: PlaceTaxonomyKind, id: string) {
+    super(`${kind} '${id}' was not found.`, 'PLACE_TAXONOMY_NOT_FOUND', 'not_found');
+  }
+}
+
+export class PlaceTaxonomyCodeConflictException extends DomainException {
+  constructor(kind: PlaceTaxonomyKind, code: string) {
+    super(`${kind} code '${code}' already exists.`, 'PLACE_TAXONOMY_CODE_CONFLICT', 'conflict');
+  }
+}
+
+export class PlaceTaxonomyInUseException extends DomainException {
+  constructor(kind: PlaceTaxonomyKind, references: PlaceTaxonomyReferences) {
+    super(
+      `${kind} is still referenced by ${references.places} place(s) and ${references.preferences} preference(s).`,
+      'PLACE_TAXONOMY_IN_USE',
+      'conflict',
+    );
+  }
+}
+
+export class EmptyPlaceTaxonomyUpdateException extends DomainException {
+  constructor() {
+    super('At least one taxonomy field must be provided.', 'PLACE_TAXONOMY_UPDATE_EMPTY', 'validation');
   }
 }

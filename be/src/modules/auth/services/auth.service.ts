@@ -23,6 +23,7 @@ import {
   AuthPasswordResetUnavailableException,
   AuthEmailDeliveryException,
   AuthEmailUnavailableException,
+  TwoFactorChallengeInvalidException,
 } from '../exceptions/auth.exceptions';
 import {
   AUTH_SESSION_STORE,
@@ -40,16 +41,26 @@ import { AUTH_CHALLENGE_STORE } from '../interfaces/auth-challenge-store.interfa
 import type { AuthChallengePurpose, AuthChallengeStore } from '../interfaces/auth-challenge-store.interface';
 import { EMAIL_SENDER } from '../interfaces/email-sender.interface';
 import type { EmailSender } from '../interfaces/email-sender.interface';
+import { TWO_FACTOR_LOGIN_CHALLENGE_STORE } from '../interfaces/two-factor-login-challenge-store.interface';
+import type { TwoFactorLoginChallengeStore } from '../interfaces/two-factor-login-challenge-store.interface';
+import { TwoFactorService } from './two-factor.service';
 
 const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
 const AUTH_OTP_TTL_MS = 10 * 60 * 1000;
 const AUTH_OTP_COOLDOWN_MS = 60 * 1000;
+const TWO_FACTOR_LOGIN_TTL_MS = 5 * 60 * 1000;
 
 export interface AuthenticatedSession extends SessionTokens {
   user: UserEntity;
 }
 
 export interface GoogleLoginSession extends AuthenticatedSession {
+  returnTo: string;
+}
+
+export interface TwoFactorRequired {
+  requiresTwoFactor: true;
+  challengeToken: string;
   returnTo: string;
 }
 
@@ -68,6 +79,9 @@ export class AuthService {
     @Inject(EMAIL_SENDER)
     private readonly emailSender: EmailSender,
     private readonly config: ConfigService,
+    @Inject(TWO_FACTOR_LOGIN_CHALLENGE_STORE)
+    private readonly twoFactorChallenges: TwoFactorLoginChallengeStore,
+    private readonly twoFactor: TwoFactorService,
   ) {}
 
   async register(input: RegisterRequest): Promise<void> {
@@ -153,16 +167,28 @@ export class AuthService {
     if (!this.emailSender.isConfigured()) throw new AuthEmailUnavailableException();
   }
 
-  async login(input: LoginRequest): Promise<AuthenticatedSession> {
+  async login(input: LoginRequest): Promise<AuthenticatedSession | TwoFactorRequired> {
     const user = await this.usersService.validateCredentials(
       input.username,
       input.password,
     );
     if (!user) throw new InvalidCredentialsException();
+    if (user.isTwoFactorEnabled) return this.requireTwoFactor(user.id, '/');
     return { user, ...(await this.sessions.create(user.id)) };
   }
 
   async beginGoogleLogin(returnTo?: string): Promise<string> {
+    return this.beginGoogleAuthorization(returnTo);
+  }
+
+  async beginGoogleLink(userId: string, returnTo?: string): Promise<string> {
+    return this.beginGoogleAuthorization(returnTo, userId);
+  }
+
+  private async beginGoogleAuthorization(
+    returnTo?: string,
+    linkUserId?: string,
+  ): Promise<string> {
     const state = this.randomToken();
     const nonce = this.randomToken();
     const authorization = await this.google.createAuthorizationRequest(
@@ -175,6 +201,7 @@ export class AuthService {
         codeVerifier: authorization.codeVerifier,
         nonce,
         returnTo: this.safeReturnTo(returnTo),
+        ...(linkUserId ? { linkUserId } : {}),
       },
       GOOGLE_STATE_TTL_MS,
     );
@@ -184,7 +211,7 @@ export class AuthService {
   async completeGoogleLogin(
     code: string,
     state: string,
-  ): Promise<GoogleLoginSession> {
+  ): Promise<GoogleLoginSession | TwoFactorRequired> {
     const context = await this.googleStates.consume(state);
     if (!context) throw new InvalidGoogleStateException();
     const identity = await this.google.exchangeCode(
@@ -192,10 +219,33 @@ export class AuthService {
       context.codeVerifier,
       context.nonce,
     );
-    const user = await this.resolveGoogleUser(identity);
+    const user = context.linkUserId
+      ? await this.usersService.linkGoogleAccount(context.linkUserId, identity)
+      : await this.resolveGoogleUser(identity);
+    if (user.isTwoFactorEnabled && !context.linkUserId) {
+      return this.requireTwoFactor(user.id, context.returnTo);
+    }
     return {
       user,
       returnTo: context.returnTo,
+      ...(await this.sessions.create(user.id)),
+    };
+  }
+
+  async completeTwoFactorLogin(
+    challengeToken: string,
+    code: string,
+  ): Promise<GoogleLoginSession> {
+    const challenge = await this.twoFactorChallenges.takeAttempt(challengeToken);
+    if (!challenge) throw new TwoFactorChallengeInvalidException();
+    const user = await this.usersService.findActiveById(challenge.userId);
+    if (!user?.isTwoFactorEnabled) {
+      throw new TwoFactorChallengeInvalidException();
+    }
+    await this.twoFactor.verifyCode(user.id, code);
+    return {
+      user,
+      returnTo: challenge.returnTo,
       ...(await this.sessions.create(user.id)),
     };
   }
@@ -271,5 +321,20 @@ export class AuthService {
 
   private randomToken(): string {
     return randomBytes(32).toString('base64url');
+  }
+
+  private async requireTwoFactor(
+    userId: string,
+    returnTo: string,
+  ): Promise<TwoFactorRequired> {
+    return {
+      requiresTwoFactor: true,
+      challengeToken: await this.twoFactorChallenges.create(
+        userId,
+        returnTo,
+        TWO_FACTOR_LOGIN_TTL_MS,
+      ),
+      returnTo,
+    };
   }
 }

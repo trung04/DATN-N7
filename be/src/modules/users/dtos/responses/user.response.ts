@@ -14,8 +14,13 @@ export class UserResponse {
   status: UserStatus;
   role: UserRole;
   isEmailVerified: boolean;
+  isTwoFactorEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export class MyProfileResponse extends UserResponse {
+  bio: string | null;
 }
 
 export class UserListResponse {

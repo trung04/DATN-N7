@@ -32,6 +32,7 @@ import { ResetUserPasswordRequest } from '../dtos/requests/reset-user-password.r
 import { UpdateUserRequest } from '../dtos/requests/update-user.request';
 import { UpdateMyProfileRequest } from '../dtos/requests/update-my-profile.request';
 import {
+  MyProfileResponse,
   UserListResponse,
   UserResponse,
 } from '../dtos/responses/user.response';
@@ -47,20 +48,22 @@ export class UsersController {
   @Get('me')
   @Roles(UserRole.TOURIST, UserRole.HOTEL_OWNER, UserRole.ADMIN)
   @ApiOperation({ summary: 'Get the authenticated user profile' })
-  @ApiOkResponse({ type: UserResponse })
-  getMyProfile(@CurrentUser() user: UserEntity): UserResponse {
-    return UserMapper.toResponse(user);
+  @ApiOkResponse({ type: MyProfileResponse })
+  async getMyProfile(@CurrentUser() user: UserEntity): Promise<MyProfileResponse> {
+    return UserMapper.toMyProfileResponse(
+      await this.usersService.findMyProfile(user.id),
+    );
   }
 
   @Patch('me')
   @Roles(UserRole.TOURIST, UserRole.HOTEL_OWNER, UserRole.ADMIN)
   @ApiOperation({ summary: 'Update the authenticated user profile' })
-  @ApiOkResponse({ type: UserResponse })
+  @ApiOkResponse({ type: MyProfileResponse })
   async updateMyProfile(
     @CurrentUser() user: UserEntity,
     @Body() input: UpdateMyProfileRequest,
-  ): Promise<UserResponse> {
-    return UserMapper.toResponse(
+  ): Promise<MyProfileResponse> {
+    return UserMapper.toMyProfileResponse(
       await this.usersService.updateMyProfile(user.id, input),
     );
   }

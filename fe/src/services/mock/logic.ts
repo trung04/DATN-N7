@@ -1,4 +1,4 @@
-import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreference, TravelRecommendation, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreferenceInput, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'
@@ -150,6 +150,11 @@ export const mock = {
     assert(valid, 'LOGIN', 'Mật khẩu không chính xác.', 401)
     return user
   },
+  verifyTwoFactor: async (_code: string): Promise<TwoFactorVerification> => { throw new Error('2FA cần backend API.') },
+  setupTwoFactor: async (): Promise<TwoFactorSetup> => { throw new Error('2FA cần backend API.') },
+  confirmTwoFactor: async (_code: string): Promise<TwoFactorRecoveryCodes> => { throw new Error('2FA cần backend API.') },
+  regenerateTwoFactorRecoveryCodes: async (_code: string): Promise<TwoFactorRecoveryCodes> => { throw new Error('2FA cần backend API.') },
+  disableTwoFactor: async (_code: string): Promise<void> => { throw new Error('2FA cần backend API.') },
   logout: async (): Promise<void> => undefined,
   register: async (name: string, usernameOrEmail: string, emailOrPassword: string, maybePassword?: string) => {
     const email = maybePassword === undefined ? usernameOrEmail : emailOrPassword
@@ -210,6 +215,7 @@ export const mock = {
     user.phone = values.phone ?? undefined
     user.dateOfBirth = values.dateOfBirth
     user.gender = values.gender
+    user.bio = values.bio
     if (user.adminMetadata) user.adminMetadata = { ...user.adminMetadata, displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null, updatedAt: new Date().toISOString() }
     return user
   }),
@@ -220,9 +226,18 @@ export const mock = {
     assert(valid, 'PASSWORD', 'Mật khẩu xác thực không đúng.', 401)
     return commit(data => { const record = data.users.find(u => u.id === userId); assert(record, 'USER', 'Không tìm thấy tài khoản.'); record.deletionRequestedAt = new Date().toISOString(); return record })
   },
-  savePreference: async (userId: string, pref: Omit<TravelPreference, 'userId'>) => commit(data => {
+  savePreference: async (userId: string, pref: TravelPreferenceInput) => commit(data => {
     data.preferences = data.preferences.filter(p => p.userId !== userId)
-    const next = { ...pref, userId }; data.preferences.push(next); return next
+    const next = {
+      userId,
+      categories: pref.categoryCodes.map(code => ({ code, name: code })),
+      topics: pref.topicCodes.map(code => ({ code, name: code })),
+      budget: pref.budget,
+      style: pref.style,
+      transport: pref.transport,
+      destinations: pref.destinations,
+    }
+    data.preferences.push(next); return next
   }),
   clearPreference: async (userId: string) => commit(data => { data.preferences = data.preferences.filter(p => p.userId !== userId) }),
   toggleFavorite: async (userId: string, id: string) => commit(data => {
@@ -233,7 +248,8 @@ export const mock = {
   recommend: async (query: string, userId?: string): Promise<TravelRecommendation[]> => {
     const data = readData()
     const pref = data.preferences.find(p => p.userId === userId)
-    const terms = (query + ' ' + (pref?.interests.join(' ') ?? '')).toLowerCase().split(/\s+/).filter(x => x.length > 2)
+    const preferenceTerms = pref ? [...pref.categories, ...pref.topics].map(item => item.name).join(' ') : ''
+    const terms = (query + ' ' + preferenceTerms).toLowerCase().split(/\s+/).filter(x => x.length > 2)
     const items = [
       ...data.destinations.map(x => ({ id: x.id, type: 'destination' as const, name: x.name, city: x.city, price: x.price, tags: x.tags, description: x.description })),
       ...data.hotels.map(x => ({ id: x.id, type: 'hotel' as const, name: x.name, city: x.city, price: data.rooms.find(r => r.hotelId === x.id)?.basePrice ?? 0, tags: x.amenities, description: x.description })),

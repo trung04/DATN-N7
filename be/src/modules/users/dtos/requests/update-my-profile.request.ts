@@ -37,4 +37,10 @@ export class UpdateMyProfileRequest {
   @IsOptional()
   @IsEnum(UserGender)
   gender?: UserGender | null;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(1000)
+  bio?: string | null;
 }

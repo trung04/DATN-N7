@@ -36,6 +36,16 @@ export class GoogleAccountConflictException extends DomainException {
   }
 }
 
+export class GoogleAccountEmailMismatchException extends DomainException {
+  constructor() {
+    super(
+      'The Google email address does not match the authenticated account.',
+      'GOOGLE_ACCOUNT_EMAIL_MISMATCH',
+      'conflict',
+    );
+  }
+}
+
 export class EmptyUserUpdateException extends DomainException {
   constructor() {
     super(

@@ -16,6 +16,7 @@ const Favorites = lazy(() => import('@/features/public/account').then(m => ({ de
 const Recommendations = lazy(() => import('@/features/public/account').then(m => ({ default: m.RecommendationsPage })))
 const Login = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.LoginPage })))
 const GoogleComplete = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.GoogleCompletePage })))
+const TwoFactorLogin = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.TwoFactorLoginPage })))
 const Register = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.RegisterPage })))
 const VerifyOtp = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.VerifyOtpPage })))
 const ForgotPassword = lazy(() => import('@/features/auth/pages').then(m => ({ default: m.ForgotPasswordPage })))
@@ -49,6 +50,7 @@ const AdminUsers = lazy(() => import('@/features/admin/users').then(m => ({ defa
 const AdminPartners = lazy(() => import('@/features/admin/hotel-owners').then(m => ({ default: m.AdminHotelOwnersPage })))
 const AdminAmenities = lazy(() => import('@/features/admin/amenities').then(m => ({ default: m.AdminAmenitiesPage })))
 const AdminPlaces = lazy(() => import('@/features/admin/places').then(m => ({ default: m.AdminPlacesPage })))
+const AdminPlaceTaxonomies = lazy(() => import('@/features/admin/place-taxonomies').then(m => ({ default: m.AdminPlaceTaxonomiesPage })))
 const AdminCancellationPolicies = lazy(() => import('@/features/partner/cancellation-policies').then(m => ({ default: () => <m.CancellationPoliciesPage admin /> })))
 const AdminSettlements = lazy(() => import('@/features/admin/settlements').then(m => ({ default: m.AdminSettlementsPage })))
 const AdminSettlementDetail = lazy(() => import('@/features/admin/settlements').then(m => ({ default: m.AdminSettlementDetailPage })))
@@ -87,9 +89,10 @@ export function AppRouter() {
       <Route path="/admin/dang-nhap" element={<Login expectedRole="admin" />} />
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/google/complete" element={<GoogleComplete />} />
+      <Route path="/auth/two-factor" element={<TwoFactorLogin />} />
       <Route path="/auth/register" element={<Register />} /><Route path="/auth/verify-otp" element={<VerifyOtp />} /><Route path="/auth/forgot-password" element={<ForgotPassword />} /><Route path="/auth/reset-password" element={<ResetPassword />} />
     </Route>
     <Route element={<Guard role="partner" />}><Route path="/partner" element={<DashboardLayout kind="partner" />}><Route index element={<PartnerHome />} /><Route path="hotels" element={<PartnerHotels />} /><Route path="hotels/new" element={<PartnerHotelForm />} /><Route path="hotels/:id/edit" element={<PartnerHotelForm />} /><Route path="rooms" element={<PartnerRooms />} /><Route path="rooms/new" element={<PartnerRoomForm />} /><Route path="rooms/:id/edit" element={<PartnerRoomForm />} /><Route path="amenities" element={<PartnerAmenities />} /><Route path="cancellation-policies" element={<PartnerCancellationPolicies />} /><Route path="bookings" element={<PartnerBookings />} /><Route path="reviews" element={<PartnerReviews />} /><Route path="reports" element={<PartnerReports />} /><Route path="settlements" element={<PartnerSettlements />} /><Route path="profile" element={<PartnerProfile />} /></Route></Route>
-    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="users" element={<AdminUsers />} /><Route path="partners" element={<AdminPartners />} /><Route path="hotels" element={<AdminHotels />} /><Route path="hotels/:id" element={<AdminHotelDetail />} /><Route path="amenities" element={<AdminAmenities />} /><Route path="places" element={<AdminPlaces />} /><Route path="cancellation-policies" element={<AdminCancellationPolicies />} /><Route path="bookings" element={<AdminBookings />} /><Route path="settlements" element={<AdminSettlements />} /><Route path="settlements/:id" element={<AdminSettlementDetail />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reports" element={<AdminReports />} /></Route></Route>
+    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="users" element={<AdminUsers />} /><Route path="partners" element={<AdminPartners />} /><Route path="hotels" element={<AdminHotels />} /><Route path="hotels/:id" element={<AdminHotelDetail />} /><Route path="amenities" element={<AdminAmenities />} /><Route path="places" element={<AdminPlaces />} /><Route path="place-taxonomies" element={<AdminPlaceTaxonomies />} /><Route path="cancellation-policies" element={<AdminCancellationPolicies />} /><Route path="bookings" element={<AdminBookings />} /><Route path="settlements" element={<AdminSettlements />} /><Route path="settlements/:id" element={<AdminSettlementDetail />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reports" element={<AdminReports />} /></Route></Route>
   </Routes></Suspense>
 }

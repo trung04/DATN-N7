@@ -105,3 +105,31 @@ export class AuthEmailDeliveryException extends DomainException {
     super('The verification email could not be delivered. Please try again later.', 'AUTH_EMAIL_DELIVERY_FAILED', 'service_unavailable');
   }
 }
+
+export class TwoFactorCodeInvalidException extends DomainException {
+  constructor() {
+    super('The two-factor code is invalid or expired.', 'TWO_FACTOR_CODE_INVALID', 'unauthorized');
+  }
+}
+
+export class TwoFactorNotConfiguredException extends DomainException {
+  constructor() {
+    super('Two-factor authentication is not configured.', 'TWO_FACTOR_NOT_CONFIGURED', 'conflict');
+  }
+}
+
+export class TwoFactorAlreadyEnabledException extends DomainException {
+  constructor() {
+    super('Two-factor authentication is already enabled.', 'TWO_FACTOR_ALREADY_ENABLED', 'conflict');
+  }
+}
+
+export class TwoFactorChallengeInvalidException extends DomainException {
+  constructor() {
+    super(
+      'The two-factor login challenge is invalid, expired, or has too many failed attempts.',
+      'TWO_FACTOR_CHALLENGE_INVALID',
+      'unauthorized',
+    );
+  }
+}

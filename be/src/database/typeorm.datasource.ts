@@ -11,6 +11,7 @@ import { HotelOwnerEntity } from '../modules/users/entities/hotel-owner.entity';
 import { TopicEntity } from '../modules/users/entities/topic.entity';
 import { TouristEntity } from '../modules/users/entities/tourist.entity';
 import { TravelPreferenceTopicEntity } from '../modules/users/entities/travel-preference-topic.entity';
+import { TravelPreferenceCategoryEntity } from '../modules/users/entities/travel-preference-category.entity';
 import { TravelPreferenceEntity } from '../modules/users/entities/travel-preference.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
 import { UserImageEntity } from '../modules/users/entities/user-image.entity';
@@ -88,6 +89,10 @@ import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015
 import { AddImageFallbackUrl1794500012000 } from './migrations/1794500012000-AddImageFallbackUrl';
 import { AddHotelCoordinates1794500013000 } from './migrations/1794500013000-AddHotelCoordinates';
 import { AddHotelDocumentFiles1794500014000 } from './migrations/1794500014000-AddHotelDocumentFiles';
+import { CreateTouristProfiles1794500016000 } from './migrations/1794500016000-CreateTouristProfiles';
+import { AddTravelPreferenceCategories1794500017000 } from './migrations/1794500017000-AddTravelPreferenceCategories';
+import { TwoFactorCredentialEntity } from '../modules/auth/entities/two-factor-credential.entity';
+import { CreateUserTwoFactorCredentials1794500018000 } from './migrations/1794500018000-CreateUserTwoFactorCredentials';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -113,6 +118,7 @@ export default new DataSource({
     TopicEntity,
     TravelPreferenceEntity,
     TravelPreferenceTopicEntity,
+    TravelPreferenceCategoryEntity,
     ImageEntity,
     UserImageEntity,
     UserFavoriteEntity,
@@ -141,6 +147,7 @@ export default new DataSource({
     ReviewModerationHistoryEntity,
     NotificationEntity,
     NotificationEmailDeliveryEntity,
+    TwoFactorCredentialEntity,
   ],
   migrations: [
     CreateAmenities1793696400000,
@@ -189,6 +196,9 @@ export default new DataSource({
     AddImageFallbackUrl1794500012000,
     AddHotelCoordinates1794500013000,
     AddHotelDocumentFiles1794500014000,
+    CreateTouristProfiles1794500016000,
+    AddTravelPreferenceCategories1794500017000,
+    CreateUserTwoFactorCredentials1794500018000,
   ],
   synchronize: false,
   logging: false,

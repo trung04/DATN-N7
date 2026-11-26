@@ -9,6 +9,7 @@ import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
   GoogleAccountConflictException,
+  GoogleAccountEmailMismatchException,
   InvalidDateOfBirthException,
   UserEmailConflictException,
   UserNotFoundException,
@@ -21,6 +22,14 @@ import type {
   UserPage,
   UserRepository,
 } from '../interfaces/user.repository.interface';
+import { TOURIST_PROFILE_REPOSITORY } from '../interfaces/tourist-profile.repository.interface';
+import type { TouristProfileRepository } from '../interfaces/tourist-profile.repository.interface';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+
+export interface MyProfileData {
+  user: UserEntity;
+  bio: string | null;
+}
 
 @Injectable()
 export class UsersService {
@@ -29,6 +38,8 @@ export class UsersService {
     private readonly repository: UserRepository,
     @Inject(PASSWORD_HASHER)
     private readonly passwordHasher: PasswordHasher,
+    @Inject(TOURIST_PROFILE_REPOSITORY)
+    private readonly touristProfiles: TouristProfileRepository,
   ) {}
 
   async create(input: CreateUserRequest): Promise<UserEntity> {
@@ -128,10 +139,43 @@ export class UsersService {
     });
   }
 
+  async linkGoogleAccount(
+    userId: string,
+    identity: { subject: string; email: string },
+  ): Promise<UserEntity> {
+    const user = await this.findById(userId);
+    if (this.normalizeEmail(identity.email) !== user.email) {
+      throw new GoogleAccountEmailMismatchException();
+    }
+    const linked = await this.repository.findByGoogleAccountId(identity.subject);
+    if (linked && linked.id !== user.id) throw new GoogleAccountConflictException();
+    if (user.googleAccountId === identity.subject) return user;
+    if (user.googleAccountId) throw new GoogleAccountConflictException();
+    user.googleAccountId = identity.subject;
+    user.isEmailVerified = true;
+    return this.repository.save(user);
+  }
+
+  async setTwoFactorEnabled(userId: string, enabled: boolean): Promise<UserEntity> {
+    const user = await this.findById(userId);
+    user.isTwoFactorEnabled = enabled;
+    return this.repository.save(user);
+  }
+
   async findById(id: string): Promise<UserEntity> {
     const user = await this.repository.findById(id);
     if (!user) throw new UserNotFoundException(id);
     return user;
+  }
+
+  async findMyProfile(id: string): Promise<MyProfileData> {
+    const user = await this.findById(id);
+    return {
+      user,
+      bio: user.role === UserRole.TOURIST
+        ? await this.touristProfiles.findBioByUserId(user.id)
+        : null,
+    };
   }
 
   async assignRole(id: string, role: UserRole): Promise<UserEntity> {
@@ -186,13 +230,17 @@ export class UsersService {
   async updateMyProfile(
     id: string,
     input: UpdateMyProfileRequest,
-  ): Promise<UserEntity> {
+  ): Promise<MyProfileData> {
     const user = await this.findById(id);
+    if (input.bio !== undefined && user.role !== UserRole.TOURIST) {
+      throw new AuthorizationDeniedException();
+    }
     if (
       input.displayName === undefined &&
       input.phoneNumber === undefined &&
       input.dateOfBirth === undefined &&
-      input.gender === undefined
+      input.gender === undefined &&
+      input.bio === undefined
     ) {
       throw new EmptyUserUpdateException();
     }
@@ -205,7 +253,16 @@ export class UsersService {
       user.dateOfBirth = input.dateOfBirth;
     }
     if (input.gender !== undefined) user.gender = input.gender;
-    return this.repository.save(user);
+    const saved = await this.repository.save(user);
+    const bio = input.bio === undefined
+      ? (saved.role === UserRole.TOURIST
+        ? await this.touristProfiles.findBioByUserId(saved.id)
+        : null)
+      : await this.touristProfiles.saveBio(
+        saved.id,
+        this.normalizeNullable(input.bio),
+      );
+    return { user: saved, bio };
   }
 
   async resetPassword(

@@ -82,7 +82,8 @@ function googleErrorMessage(error: string | null): string {
   switch (error) {
     case 'google_cancelled': return 'Bạn đã hủy đăng nhập bằng Google.'
     case 'google_failed': return 'Không thể xác thực với Google. Vui lòng thử lại.'
-    case 'account_link_required': return 'Email này đã được đăng ký. Hãy chọn đúng tài khoản Google đã liên kết hoặc dùng phương thức đăng nhập trước đây.'
+    case 'account_link_required': return 'Email này đã được đăng ký nhưng chưa liên kết Google. Hãy đăng nhập bằng mật khẩu, rồi liên kết Google trong trang hồ sơ.'
+    case 'google_link_email_mismatch': return 'Tài khoản Google phải dùng cùng email với tài khoản hiện tại.'
     case 'google_session_failed': return 'Không thể khôi phục phiên đăng nhập Google. Vui lòng thử lại.'
     default: return ''
   }
@@ -97,6 +98,37 @@ export function GoogleCompletePage() {
   const retryParams = new URLSearchParams({ error: 'google_session_failed' })
   if (returnTo) retryParams.set('returnTo', returnTo)
   return <Navigate to={'/auth/login?' + retryParams.toString()} replace />
+}
+
+export function TwoFactorLoginPage() {
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const login = useSession(s => s.login)
+  const [code, setCode] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const requestedReturnTo = localReturnPath(params.get('returnTo'))
+
+  return <Card className="auth-form-card p-6 sm:p-8">
+    <h1 className="auth-form-title text-2xl font-semibold">Xác thực 2 bước</h1>
+    <p className="mt-2 text-sm leading-6 text-slate-500">Nhập mã 6 chữ số từ ứng dụng xác thực hoặc một mã khôi phục.</p>
+    <form className="mt-6 grid gap-4" onSubmit={async event => {
+      event.preventDefault()
+      setBusy(true)
+      setMessage('')
+      try {
+        const result = await repo.verifyTwoFactor(code.trim())
+        login(result.user)
+        navigate(loginDestination(result.user.role, requestedReturnTo || localReturnPath(result.returnTo)), { replace: true })
+      } catch (error) { setMessage(errorMessage(error)) }
+      finally { setBusy(false) }
+    }}>
+      <FormField label="Mã xác thực hoặc mã khôi phục"><input value={code} onChange={event => setCode(event.target.value.toUpperCase().slice(0, 9))} autoComplete="one-time-code" required /></FormField>
+      <Feedback message={message} kind="error" />
+      <Button disabled={busy}>{busy ? 'Đang xác minh...' : 'Xác minh'}</Button>
+    </form>
+    <p className="mt-5 text-center text-sm"><Link className="font-semibold text-[#10545b] hover:underline" to="/dang-nhap">Quay lại đăng nhập</Link></p>
+  </Card>
 }
 
 export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
@@ -117,14 +149,20 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
     <form className="mt-6 grid gap-4" onSubmit={handleSubmit(async values => {
       setMessage('')
       try {
-        const user = await repo.login(values.username, values.password)
-        if (expectedRole && user.role !== expectedRole) {
-          try { await repo.logout() } catch { /* Keep the role rejection visible even if session cleanup fails. */ }
-          setMessage(`Tài khoản này thuộc nhóm ${roleLabel[user.role]}. Hãy chọn đúng cổng đăng nhập bên dưới.`)
+        const result = await repo.login(values.username, values.password)
+        if ('requiresTwoFactor' in result) {
+          const query = new URLSearchParams()
+          if (returnTo) query.set('returnTo', returnTo)
+          navigate('/auth/two-factor' + (query.size ? `?${query.toString()}` : ''), { replace: true })
           return
         }
-        login(user)
-        navigate(loginDestination(user.role, returnTo), { replace: true })
+        if (expectedRole && result.role !== expectedRole) {
+          try { await repo.logout() } catch { /* Keep the role rejection visible even if session cleanup fails. */ }
+          setMessage(`Tài khoản này thuộc nhóm ${roleLabel[result.role]}. Hãy chọn đúng cổng đăng nhập bên dưới.`)
+          return
+        }
+        login(result)
+        navigate(loginDestination(result.role, returnTo), { replace: true })
       } catch (error) { setMessage(errorMessage(error)) }
     })}>
       <FormField label="Tên đăng nhập hoặc email" error={errors.username?.message}><input autoComplete="username" aria-invalid={Boolean(errors.username)} {...register('username')} /></FormField>

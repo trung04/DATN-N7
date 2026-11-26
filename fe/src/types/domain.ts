@@ -41,8 +41,12 @@ export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NEEDS_IN
 export type ReviewStatus = 'VISIBLE' | 'HIDDEN' | 'PENDING'
 
 export interface AdminUserMetadata { username: string; googleAccountLinked: boolean; firstName: string | null; lastName: string | null; displayName: string | null; phoneNumber: string | null; dateOfBirth: string | null; gender: AdminUserGender | null; status: AdminUserStatus; role: AdminUserRole; isEmailVerified: boolean; createdAt: string; updatedAt: string }
-export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; passwordHash?: string; deletionRequestedAt?: string; dateOfBirth?: string | null; gender?: AdminUserGender | null; adminMetadata?: AdminUserMetadata }
-export interface UserProfileInput { name: string; phone?: string | null; dateOfBirth?: string | null; gender?: AdminUserGender | null }
+export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; googleAccountLinked?: boolean; isTwoFactorEnabled?: boolean; passwordHash?: string; deletionRequestedAt?: string; dateOfBirth?: string | null; gender?: AdminUserGender | null; bio?: string | null; adminMetadata?: AdminUserMetadata }
+export interface TwoFactorRequired { requiresTwoFactor: true }
+export interface TwoFactorSetup { secret: string; otpauthUri: string }
+export interface TwoFactorRecoveryCodes { recoveryCodes: string[] }
+export interface TwoFactorVerification { user: User; returnTo: string }
+export interface UserProfileInput { name: string; phone?: string | null; dateOfBirth?: string | null; gender?: AdminUserGender | null; bio?: string | null }
 export type PartnerHotelStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED' | 'INACTIVE' | 'SUSPENDED'
 export type HotelDocumentType = 'BUSINESS_LICENSE' | 'HOTEL_LICENSE' | 'OWNERSHIP_DOCUMENT' | 'TAX_DOCUMENT' | 'OTHER'
 export interface HotelDocumentFile { id: string; url: string; contentType: string; byteSize: number; width: number; height: number }
@@ -81,7 +85,13 @@ export type ManagedSettlementStatus = 'PENDING' | 'PROCESSING' | 'SETTLED' | 'FA
 export interface ManagedBookingRoom { id: string; roomId: string; roomNumberSnapshot: string; roomTypeSnapshot: string; maxOccupancySnapshot: number; adultCount?: number | null; maxAdultsSnapshot?: number | null; maxChildrenSnapshot?: number | null; adultAgeFromSnapshot?: number | null; freeChildMaxAgeSnapshot?: number | null; childSurchargePerNightSnapshot?: number | null; childGuests?: Array<{ ageAtCheckIn: number; surchargePerNightSnapshot: number }>; pricePerNight: number; currency: string; numberOfNights: number; subtotal: number }
 export interface ManagedBooking { id: string; hotelId: string; touristId: string; bookingCode: string; createdAt: string; checkInDate: string; checkOutDate: string; adultCount: number; childCount: number; guestName: string; guestEmail: string; guestPhone: string; specialRequests: string | null; bookingStatus: ManagedBookingStatus; cancelledAt: string | null; totalAmount: number; currency: string; amount: number; paymentMethod: string | null; paymentStatus: ManagedPaymentStatus; paidAt: string | null; settlementBaseAmount: number | null; commissionAmount: number | null; partnerReceivableAmount: number | null; settlementStatus: ManagedSettlementStatus; settledAt: string | null; cancellationPolicyId: string | null; cancellationFeeRateSnapshot: number | null; cancellationDescriptionSnapshot: string | null; cancellationFeeAmount: number | null; refundAmount: number | null; refundReason: string | null; refundStatus: ManagedRefundStatus; refundRequestedAt: string | null; refundProcessingAt: string | null; refundAttempt: number; refundFailureReason: string | null; refundFailedAt: string | null; refundedAt: string | null; refundTransactionId: string | null; roomItems: ManagedBookingRoom[] }
 export interface BookingListQuery { page: number; limit: number; search?: string; hotelId?: string; bookingStatus?: ManagedBookingStatus; paymentStatus?: ManagedPaymentStatus; settlementStatus?: ManagedSettlementStatus; refundStatus?: ManagedRefundStatus; createdFrom?: string; createdTo?: string; sortBy: 'createdAt' | 'bookingCode' | 'totalAmount' | 'amount'; sortOrder: 'ASC' | 'DESC' }
-export interface TravelPreference { userId: string; interests: string[]; budget: number; style: string; transport: string; destinations: string[] }
+export interface PreferenceTaxonomy { code: string; name: string }
+export interface PlaceTaxonomy extends PreferenceTaxonomy { id: string; description: string | null }
+export interface CreatePlaceTaxonomyInput { code: string; name: string; description: string | null }
+export interface UpdatePlaceTaxonomyInput { name?: string; description?: string | null }
+export interface PreferenceOptions { categories: PreferenceTaxonomy[]; topics: PreferenceTaxonomy[] }
+export interface TravelPreference { userId: string; categories: PreferenceTaxonomy[]; topics: PreferenceTaxonomy[]; budget: number; style: string; transport: string; destinations: string[] }
+export interface TravelPreferenceInput { categoryCodes: string[]; topicCodes: string[]; budget: number; style: string; transport: string; destinations: string[] }
 export interface Destination { id: string; name: string; city: string; region: string; category: string; description: string; tags: string[]; price: number; openingHours?: string; image?: string; rating?: number; lat?: number; lng?: number }
 export type PlaceStatus = 'ACTIVE' | 'INACTIVE'
 export interface PlaceCatalogOption { code: string; name: string }
