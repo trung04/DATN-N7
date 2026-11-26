@@ -43,7 +43,24 @@ export interface PlanPreview {
   }>;
 }
 
+export interface PlaceSearchInput {
+  query: string;
+  city?: string;
+  category?: string;
+  sortBy: 'relevance' | 'name' | 'rating';
+  sortOrder: 'ASC' | 'DESC';
+  offset: number;
+  limit: number;
+}
+
+export interface PlaceSearchPage {
+  ids: string[];
+  total: number;
+  usedSemanticRanking: boolean;
+}
+
 export interface TravelAiIntegration {
   recommend(input: RecommendInput): Promise<Recommendation[]>;
   preview(input: PlanInput): Promise<PlanPreview>;
+  searchPlaces(input: PlaceSearchInput): Promise<PlaceSearchPage>;
 }

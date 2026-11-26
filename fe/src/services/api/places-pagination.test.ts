@@ -28,7 +28,6 @@ describe('public places pagination API', () => {
     const result = await api.publicPlaces({
       page: 2,
       limit: 10,
-      search: 'cầu',
       city: 'Đà Nẵng',
       categoryCode: 'ATTRACTION',
       sortBy: 'averageRating',
@@ -40,7 +39,6 @@ describe('public places pagination API', () => {
     expect(placeRequests[0]?.params).toEqual({
       page: 2,
       limit: 10,
-      search: 'cầu',
       city: 'Đà Nẵng',
       categoryCode: 'ATTRACTION',
       status: 'ACTIVE',
@@ -49,6 +47,34 @@ describe('public places pagination API', () => {
     })
     expect(result.meta).toEqual({ page: 2, limit: 10, total: 1700 })
     expect(result.data[0]).toMatchObject({ id: 'place-1', name: 'Cầu Rồng', category: 'Điểm tham quan', rating: 4.7 })
+  })
+
+  it('sends a semantic search with the selected filters and pagination', async () => {
+    const signal = new AbortController().signal
+    const result = await api.publicPlaces({
+      page: 2,
+      limit: 10,
+      search: '  nơi ngắm hoàng hôn  ',
+      city: 'Đà Nẵng',
+      categoryCode: 'ATTRACTION',
+      sortBy: 'name',
+      sortOrder: 'ASC',
+      relevance: true,
+    }, signal)
+
+    const config = transport.mock.calls[0]?.[0] as AxiosRequestConfig
+    expect(config).toMatchObject({ method: 'post', url: '/ai/places/search', signal })
+    expect(JSON.parse(config.data as string)).toEqual({
+      page: 2,
+      limit: 10,
+      search: 'nơi ngắm hoàng hôn',
+      city: 'Đà Nẵng',
+      categoryCode: 'ATTRACTION',
+      sortBy: 'name',
+      sortOrder: 'ASC',
+      relevance: true,
+    })
+    expect(result.meta).toEqual({ page: 2, limit: 10, total: 1700 })
   })
 
   it('loads public filter options without loading place pages', async () => {

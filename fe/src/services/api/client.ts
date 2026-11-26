@@ -40,7 +40,9 @@ export interface PublicPlaceQuery {
   categoryCode?: string
   sortBy: 'name' | 'averageRating'
   sortOrder: 'ASC' | 'DESC'
+  relevance?: boolean
 }
+export type PublicPlacePage<T> = Page<T> & { searchMode?: 'semantic' | 'keyword' }
 export interface PublicPlaceOptions {
   cities: string[]
   categories: PlaceCatalogOptions['categories']
@@ -440,7 +442,7 @@ type PlaceManagementApi = {
 }
 
 type PublicPlacesApi = {
-  publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<Page<Destination>>
+  publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<PublicPlacePage<Destination>>
   publicPlace: (placeId: string, signal?: AbortSignal) => Promise<Destination>
   publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
 }
@@ -575,12 +577,21 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   partnerData: userId => request({ method: 'GET', url: '/partners/by-user/' + userId + '/overview' }),
   adminData: () => request({ method: 'GET', url: '/admin/overview' }),
   publicPlaces: async (query, signal) => {
-    const page = await request<Page<BackendPlace>>({
-      method: 'GET',
-      url: '/places',
-      params: { ...query, status: 'ACTIVE' },
-      signal,
-    })
+    const { relevance, search, ...filters } = query
+    const keyword = search?.trim()
+    const page = keyword
+      ? await request<PublicPlacePage<BackendPlace>>({
+          method: 'POST',
+          url: '/ai/places/search',
+          data: { ...filters, search: keyword, relevance },
+          signal,
+        })
+      : await request<PublicPlacePage<BackendPlace>>({
+          method: 'GET',
+          url: '/places',
+          params: { ...filters, status: 'ACTIVE' },
+          signal,
+        })
     return { ...page, data: page.data.map(mapBackendPlace) }
   },
   publicPlace: (placeId, signal) => request<BackendPlace>({ method: 'GET', url: '/places/' + placeId, signal }).then(mapBackendPlace),

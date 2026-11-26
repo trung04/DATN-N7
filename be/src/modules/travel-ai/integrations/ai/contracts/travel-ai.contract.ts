@@ -1,8 +1,41 @@
 import { TravelAiException } from '../../../exceptions/travel-ai.exceptions';
 import type {
+  PlaceSearchInput,
+  PlaceSearchPage,
   PlanPreview,
   Recommendation,
 } from '../../../interfaces/travel-ai.integration';
+
+export function readPlaceSearch(
+  value: unknown,
+  input: PlaceSearchInput,
+): PlaceSearchPage {
+  const result = record(value);
+  const total = number(result.total);
+  if (
+    !Number.isSafeInteger(total) ||
+    total < 0 ||
+    result.limit !== input.limit ||
+    result.offset !== input.offset ||
+    result.retrieval !== 'local_exact_bge_bm25_rrf'
+  )
+    invalid();
+
+  const rows = list(result.results, input.limit).map(record);
+  const ids = rows.map((row) => text(row.place_id, 128));
+  if (
+    ids.length !== Math.min(input.limit, Math.max(0, total - input.offset)) ||
+    new Set(ids).size !== ids.length
+  )
+    invalid();
+  return {
+    ids,
+    total,
+    usedSemanticRanking: rows.some(
+      (row) => typeof row.semantic_score === 'number',
+    ),
+  };
+}
 
 function invalid(): never {
   throw new TravelAiException('invalid');
