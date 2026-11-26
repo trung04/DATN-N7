@@ -13,6 +13,7 @@ const profile: User = {
   role: 'tourist',
   verified: true,
   bio: 'Bio cũ',
+  googleAccountLinked: false,
 }
 
 const { saveProfile } = vi.hoisted(() => ({ saveProfile: vi.fn() }))
@@ -52,6 +53,9 @@ describe('ProfilePage tourist bio', () => {
         <MemoryRouter><ProfilePage /></MemoryRouter>
       </QueryClientProvider>,
     )
+
+    expect(screen.getByRole('link', { name: 'Liên kết Google' }))
+      .toHaveAttribute('href', '/api/v1/auth/google/link/start?returnTo=%2Fprofile%3FgoogleLinked%3D1')
 
     await user.click(screen.getByRole('button', { name: 'Chỉnh sửa' }))
     const bio = screen.getByRole('textbox', { name: /Giới thiệu bản thân/ })
