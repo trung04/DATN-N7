@@ -71,7 +71,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
-      DATABASE_HOST: postgres
+      DATABASE_HOST: ${POSTGRES_HOST:-postgres}
       DATABASE_PORT: "5432"
       DATABASE_NAME: ${POSTGRES_NAME}
       DATABASE_USER: ${POSTGRES_USER}
