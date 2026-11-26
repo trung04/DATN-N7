@@ -3,7 +3,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestCo
 import { DomainError } from '@/lib/errors'
 import { hasValidCoordinates } from '@/lib/coordinates'
 import type { HotelLocationResult } from '@/lib/hotel-location-search'
-import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
@@ -437,6 +437,17 @@ type PublicPlacesApi = {
   publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
 }
 
+type PlaceTaxonomiesApi = {
+  placeCategories: () => Promise<PlaceTaxonomy[]>
+  createPlaceCategory: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  updatePlaceCategory: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  deletePlaceCategory: (id: string) => Promise<void>
+  placeTopics: () => Promise<PlaceTaxonomy[]>
+  createPlaceTopic: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  updatePlaceTopic: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  deletePlaceTopic: (id: string) => Promise<void>
+}
+
 type CancellationPoliciesApi = {
   cancellationPolicies: (hotelId: string, page?: number) => Promise<Page<CancellationPolicy>>
   cancellationPolicySchedule: (hotelId: string) => Promise<CancellationPolicySchedule>
@@ -547,7 +558,7 @@ async function loadMyItineraries(userId: string) {
   return { trips, stops, activities }
 }
 
-export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & PlaceTaxonomiesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
   myProfile: () => Promise<User>
   myFavorites: () => Promise<ApiFavorite[]>
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
@@ -581,6 +592,14 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
     const options = await request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options', signal })
     return { cities: options.cities, categories: options.categories }
   },
+  placeCategories: () => request<PlaceTaxonomy[]>({ method: 'GET', url: '/place-categories' }),
+  createPlaceCategory: input => request<PlaceTaxonomy>({ method: 'POST', url: '/place-categories', data: input }),
+  updatePlaceCategory: (id, input) => request<PlaceTaxonomy>({ method: 'PATCH', url: '/place-categories/' + id, data: input }),
+  deletePlaceCategory: id => request<void>({ method: 'DELETE', url: '/place-categories/' + id }),
+  placeTopics: () => request<PlaceTaxonomy[]>({ method: 'GET', url: '/topics' }),
+  createPlaceTopic: input => request<PlaceTaxonomy>({ method: 'POST', url: '/topics', data: input }),
+  updatePlaceTopic: (id, input) => request<PlaceTaxonomy>({ method: 'PATCH', url: '/topics/' + id, data: input }),
+  deletePlaceTopic: id => request<void>({ method: 'DELETE', url: '/topics/' + id }),
   adminPlaces: query => request<Page<PlaceAdminListItem>>({ method: 'GET', url: '/places', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC', ...query } }),
   adminPlace: placeId => request<AdminPlace>({ method: 'GET', url: '/places/' + placeId }),
   placeCatalogOptions: () => request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options' }),

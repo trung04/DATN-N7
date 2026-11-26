@@ -43,7 +43,7 @@ describe('AdminPlaceTaxonomiesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Thêm category' }))
     expect(createPlaceCategory).not.toHaveBeenCalled()
 
-    await user.type(screen.getByRole('textbox', { name: 'Mã' }), 'museum')
+    await user.type(screen.getByRole('textbox', { name: /^Mã/ }), 'museum')
     await user.type(screen.getByRole('textbox', { name: 'Tên' }), 'Bảo tàng')
     await user.click(screen.getByRole('button', { name: 'Lưu category' }))
 

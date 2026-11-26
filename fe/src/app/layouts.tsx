@@ -29,6 +29,7 @@ const adminNav = [
   { to: '/admin/hotels', label: 'Duyệt khách sạn', icon: Hotel },
   { to: '/admin/amenities', label: 'Tiện nghi', icon: Tags },
   { to: '/admin/places', label: 'Điểm đến', icon: MapPin },
+  { to: '/admin/place-taxonomies', label: 'Phân loại địa điểm', icon: Tags },
 ]
 
 function Brand() { return <Link to="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-[#1E3A5F]"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1E3A5F] text-white"><Compass size={21} /></span>Hành Trình Việt</Link> }
