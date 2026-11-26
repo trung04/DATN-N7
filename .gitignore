@@ -11,6 +11,9 @@
 **/.env.*
 !.env.example
 
+# Docker compose
+compose.yml0
+
 # Logs
 **/*.log
 npm-debug.log*
