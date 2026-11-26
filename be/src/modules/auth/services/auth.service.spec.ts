@@ -16,6 +16,11 @@ import type {
   GoogleIdentityProvider,
 } from '../interfaces/google-identity-provider.interface';
 import type { GoogleOAuthStateStore } from '../interfaces/google-oauth-state-store.interface';
+import type { AuthChallengeStore } from '../interfaces/auth-challenge-store.interface';
+import type { EmailSender } from '../interfaces/email-sender.interface';
+import type { TwoFactorLoginChallengeStore } from '../interfaces/two-factor-login-challenge-store.interface';
+import { TwoFactorService } from './two-factor.service';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 
 const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
@@ -28,6 +33,7 @@ const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
     status: UserStatus.ACTIVE,
     role: UserRole.TOURIST,
     deletedAt: null,
+    isTwoFactorEnabled: false,
     ...overrides,
   });
 
@@ -58,6 +64,10 @@ describe('AuthService', () => {
   let sessions: jest.Mocked<AuthSessionStore>;
   let states: jest.Mocked<GoogleOAuthStateStore>;
   let google: jest.Mocked<GoogleIdentityProvider>;
+  let authChallenges: jest.Mocked<AuthChallengeStore>;
+  let emailSender: jest.Mocked<EmailSender>;
+  let twoFactorChallenges: jest.Mocked<TwoFactorLoginChallengeStore>;
+  let twoFactor: { verifyCode: jest.Mock };
   let service: AuthService;
 
   beforeEach(() => {
@@ -81,11 +91,27 @@ describe('AuthService', () => {
       createAuthorizationRequest: jest.fn(),
       exchangeCode: jest.fn(),
     };
+    authChallenges = {
+      issue: jest.fn(),
+      consume: jest.fn(),
+      clear: jest.fn(),
+    };
+    emailSender = { isConfigured: jest.fn(), sendOtp: jest.fn() };
+    twoFactorChallenges = {
+      create: jest.fn(),
+      takeAttempt: jest.fn(),
+    };
+    twoFactor = { verifyCode: jest.fn() };
     service = new AuthService(
       users as unknown as UsersService,
       sessions,
       states,
       google,
+      authChallenges,
+      emailSender,
+      new ConfigService({ AUTH_OTP_PEPPER: 'o'.repeat(32) }),
+      twoFactorChallenges,
+      twoFactor as unknown as TwoFactorService,
     );
   });
 
@@ -102,6 +128,36 @@ describe('AuthService', () => {
     await expect(
       service.login({ username: 'traveler', password: 'wrong-password' }),
     ).rejects.toBeInstanceOf(InvalidCredentialsException);
+  });
+
+  it('returns a short-lived challenge instead of a session when password login requires 2FA', async () => {
+    const existing = user({ isTwoFactorEnabled: true });
+    users.validateCredentials.mockResolvedValue(existing);
+    twoFactorChallenges.create.mockResolvedValue('two-factor-challenge');
+
+    await expect(
+      service.login({ username: 'traveler', password: 'Password123' }),
+    ).resolves.toEqual({
+      requiresTwoFactor: true,
+      challengeToken: 'two-factor-challenge',
+      returnTo: '/',
+    });
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('exchanges a valid 2FA challenge and code for the full session', async () => {
+    const existing = user({ isTwoFactorEnabled: true });
+    twoFactorChallenges.takeAttempt.mockResolvedValue({
+      userId: existing.id,
+      returnTo: '/trips',
+    });
+    users.findActiveById.mockResolvedValue(existing);
+    sessions.create.mockResolvedValue(tokens);
+
+    await expect(
+      service.completeTwoFactorLogin('two-factor-challenge', '123456'),
+    ).resolves.toEqual({ user: existing, returnTo: '/trips', ...tokens });
+    expect(twoFactor.verifyCode).toHaveBeenCalledWith(existing.id, '123456');
   });
 
   it('stores one-time Google state with PKCE and a safe return path', async () => {
@@ -159,6 +215,28 @@ describe('AuthService', () => {
       { user: existing, returnTo: '/trips', ...tokens },
     );
     expect(users.createGoogleUser.mock.calls).toHaveLength(0);
+  });
+
+  it('defers the Google session until 2FA succeeds for an enabled account', async () => {
+    const existing = user({
+      googleAccountId: identity.subject,
+      isTwoFactorEnabled: true,
+    });
+    states.consume.mockResolvedValue({
+      codeVerifier: 'verifier',
+      nonce: 'nonce',
+      returnTo: '/trips',
+    });
+    google.exchangeCode.mockResolvedValue(identity);
+    users.findByGoogleAccountId.mockResolvedValue(existing);
+    twoFactorChallenges.create.mockResolvedValue('google-two-factor-challenge');
+
+    await expect(service.completeGoogleLogin('code', 'state')).resolves.toEqual({
+      requiresTwoFactor: true,
+      challengeToken: 'google-two-factor-challenge',
+      returnTo: '/trips',
+    });
+    expect(sessions.create).not.toHaveBeenCalled();
   });
 
   it('creates a Google-only user when the identity is new', async () => {
