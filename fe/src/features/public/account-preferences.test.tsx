@@ -31,7 +31,7 @@ vi.mock('@/hooks/data', () => ({
     data: {
       preference: {
         userId: 'tourist-1', categories: [], topics: [], budget: 6_000_000,
-        style: 'Cân bằng', transport: 'Máy bay', destinations: [],
+        style: 'CULTURE_AND_FOOD', transport: 'WALKING', destinations: [],
       },
     },
     isLoading: false,
@@ -64,6 +64,8 @@ describe('PreferencesPage category and topic tags', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'Chỉnh sửa' }))
+    expect(screen.getByRole('combobox', { name: 'Phong cách' })).toHaveValue('CULTURE_AND_FOOD')
+    expect(screen.getByRole('combobox', { name: 'Phương tiện' })).toHaveValue('WALKING')
     await user.click(screen.getByRole('checkbox', { name: 'Điểm tham quan' }))
     await user.click(screen.getByRole('checkbox', { name: 'Biển' }))
     await user.click(screen.getByRole('button', { name: 'Lưu sở thích' }))
@@ -71,6 +73,8 @@ describe('PreferencesPage category and topic tags', () => {
     expect(savePreference).toHaveBeenCalledWith('tourist-1', expect.objectContaining({
       categoryCodes: ['ATTRACTION'],
       topicCodes: ['BEACH'],
+      style: 'CULTURE_AND_FOOD',
+      transport: 'WALKING',
     }))
   })
 })

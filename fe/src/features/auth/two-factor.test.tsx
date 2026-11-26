@@ -62,7 +62,7 @@ describe('two-factor sign-in', () => {
   })
 
   it('accepts an authenticator or recovery code and restores the requested destination', async () => {
-    verifyTwoFactor.mockResolvedValue({ user: traveler, returnTo: '/trips' })
+    verifyTwoFactor.mockResolvedValue({ user: traveler, returnTo: '/' })
     const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={['/auth/two-factor?returnTo=%2Ftrips']}>

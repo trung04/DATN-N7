@@ -119,7 +119,7 @@ export function TwoFactorLoginPage() {
       try {
         const result = await repo.verifyTwoFactor(code.trim())
         login(result.user)
-        navigate(loginDestination(result.user.role, localReturnPath(result.returnTo) || requestedReturnTo), { replace: true })
+        navigate(loginDestination(result.user.role, requestedReturnTo || localReturnPath(result.returnTo)), { replace: true })
       } catch (error) { setMessage(errorMessage(error)) }
       finally { setBusy(false) }
     }}>

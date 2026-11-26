@@ -14,6 +14,24 @@ import { QRCodeSVG } from 'qrcode.react'
 import type { TwoFactorSetup } from '@/types/domain'
 
 const genderLabels: Record<string, string> = { FEMALE: 'Nữ', MALE: 'Nam', OTHER: 'Khác', UNDISCLOSED: 'Không muốn tiết lộ' }
+const preferenceStyles = [
+  { value: 'Tiết kiệm', label: 'Tiết kiệm' },
+  { value: 'Cân bằng', label: 'Cân bằng' },
+  { value: 'Thoải mái', label: 'Thoải mái' },
+  { value: 'Nghỉ dưỡng', label: 'Nghỉ dưỡng' },
+  { value: 'CULTURE_AND_FOOD', label: 'Văn hóa & ẩm thực' },
+]
+const preferenceTransports = [
+  { value: 'Máy bay', label: 'Máy bay' },
+  { value: 'Ô tô', label: 'Ô tô' },
+  { value: 'Tàu hỏa', label: 'Tàu hỏa' },
+  { value: 'Xe máy', label: 'Xe máy' },
+  { value: 'WALKING', label: 'Đi bộ' },
+]
+const includeCurrentOption = (options: Array<{ value: string; label: string }>, current: string) =>
+  options.some(option => option.value === current) || !current
+    ? options
+    : [{ value: current, label: current }, ...options]
 export function ProfilePage() {
   const user = useSession(s => s.user)
   const logout = useSession(s => s.logout)
@@ -217,7 +235,7 @@ export function PreferencesPage() {
       }}>
         <fieldset><legend className="mb-3 text-sm font-semibold">Loại địa điểm</legend><div className="flex flex-wrap gap-2">{options.data?.categories.map(item => <label key={item.code} className={'cursor-pointer rounded-full border px-3 py-2 text-sm ' + (selectedCategories.includes(item.code) ? 'border-[#1E3A5F] bg-[#EAF0F6] text-[#1E3A5F]' : 'border-slate-200')}><input className="sr-only" type="checkbox" checked={selectedCategories.includes(item.code)} onChange={() => toggle(item.code, selectedCategories, setSelectedCategories)} />{item.name}</label>)}</div></fieldset>
         <fieldset><legend className="mb-3 text-sm font-semibold">Chủ đề</legend><div className="flex flex-wrap gap-2">{options.data?.topics.map(item => <label key={item.code} className={'cursor-pointer rounded-full border px-3 py-2 text-sm ' + (selectedTopics.includes(item.code) ? 'border-[#1E3A5F] bg-[#EAF0F6] text-[#1E3A5F]' : 'border-slate-200')}><input className="sr-only" type="checkbox" checked={selectedTopics.includes(item.code)} onChange={() => toggle(item.code, selectedTopics, setSelectedTopics)} />{item.name}</label>)}</div></fieldset>
-        <div className="grid gap-4 sm:grid-cols-2"><FormField label="Ngân sách tham khảo (VND)"><input type="number" min="0" step="100000" value={budget} onChange={event => setBudget(Number(event.target.value))} /></FormField><FormField label="Phong cách"><select value={style} onChange={event => setStyle(event.target.value)}><option>Tiết kiệm</option><option>Cân bằng</option><option>Thoải mái</option><option>Nghỉ dưỡng</option></select></FormField><FormField label="Phương tiện"><select value={transport} onChange={event => setTransport(event.target.value)}><option>Máy bay</option><option>Ô tô</option><option>Tàu hỏa</option><option>Xe máy</option></select></FormField><FormField label="Điểm đến yêu thích" hint="Ngăn cách bằng dấu phẩy"><input value={destinations} onChange={event => setDestinations(event.target.value)} /></FormField></div>
+        <div className="grid gap-4 sm:grid-cols-2"><FormField label="Ngân sách tham khảo (VND)"><input type="number" min="0" step="100000" value={budget} onChange={event => setBudget(Number(event.target.value))} /></FormField><FormField label="Phong cách"><select value={style} onChange={event => setStyle(event.target.value)}>{includeCurrentOption(preferenceStyles, style).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></FormField><FormField label="Phương tiện"><select value={transport} onChange={event => setTransport(event.target.value)}>{includeCurrentOption(preferenceTransports, transport).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></FormField><FormField label="Điểm đến yêu thích" hint="Ngăn cách bằng dấu phẩy"><input value={destinations} onChange={event => setDestinations(event.target.value)} /></FormField></div>
         <Feedback message={message} kind="error" /><div className="flex gap-2"><Button>Lưu sở thích</Button><Button type="button" variant="secondary" onClick={() => setEdit(false)}>Hủy</Button></div>
       </form> : preference ? <div className="grid gap-5">
         <div><h2 className="text-sm font-semibold">Loại địa điểm</h2><div className="mt-2 flex flex-wrap gap-2">{preference.categories.map(item => <span key={item.code} className="rounded-full bg-[#EAF0F6] px-3 py-1 text-sm text-[#1E3A5F]">{item.name}</span>)}</div></div>
