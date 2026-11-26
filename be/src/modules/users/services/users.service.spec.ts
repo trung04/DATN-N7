@@ -140,6 +140,22 @@ describe('UsersService', () => {
     expect(created.username).toMatch(/^g_[a-f0-9]{24}$/);
   });
 
+  it('links a matching verified Google identity to the authenticated account', async () => {
+    const existing = user({ isEmailVerified: true });
+    repository.findById.mockResolvedValue(existing);
+    repository.findByGoogleAccountId.mockResolvedValue(null);
+    saveUser.mockImplementation(async value => value);
+
+    const linked = await (service as unknown as {
+      linkGoogleAccount(userId: string, identity: { subject: string; email: string }): Promise<UserEntity>
+    }).linkGoogleAccount(existing.id, {
+      subject: 'google-subject', email: 'TRAVELER@example.com',
+    });
+
+    expect(linked.googleAccountId).toBe('google-subject');
+    expect(saveUser).toHaveBeenCalledWith(existing);
+  });
+
   it('rejects a future date of birth', async () => {
     repository.findByUsername.mockResolvedValue(null);
     repository.findByEmail.mockResolvedValue(null);

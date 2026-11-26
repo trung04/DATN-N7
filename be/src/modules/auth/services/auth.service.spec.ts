@@ -119,6 +119,22 @@ describe('AuthService', () => {
     });
   });
 
+  it('stores the authenticated user in state when linking Google', async () => {
+    google.createAuthorizationRequest.mockResolvedValue({
+      url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      codeVerifier: 'code-verifier',
+    });
+
+    await expect(
+      (service as unknown as { beginGoogleLink(userId: string, returnTo?: string): Promise<string> })
+        .beginGoogleLink(user().id, '/profile'),
+    ).resolves.toBe('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(states.save.mock.calls[0][1]).toMatchObject({
+      linkUserId: user().id,
+      returnTo: '/profile',
+    });
+  });
+
   it('rejects an expired or replayed Google state', async () => {
     states.consume.mockResolvedValue(null);
 
