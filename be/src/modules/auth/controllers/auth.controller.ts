@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import type { CookieOptions, Request, Response } from 'express';
 import type { UserEntity } from '../../users/entities/user.entity';
+import { GoogleAccountEmailMismatchException } from '../../users/exceptions/user.exceptions';
 import { Public } from '../../authorization/decorators/public.decorator';
 import { UserResponse } from '../../users/dtos/responses/user.response';
 import { UserMapper } from '../../users/mappers/user.mapper';
@@ -105,6 +106,17 @@ export class AuthController {
     response.redirect(await this.authService.beginGoogleLogin(query.returnTo));
   }
 
+  @Get('google/link/start')
+  async googleLinkStart(
+    @CurrentUser() user: UserEntity,
+    @Query() query: GoogleStartRequest,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.redirect(
+      await this.authService.beginGoogleLink(user.id, query.returnTo),
+    );
+  }
+
   @Get('google/callback')
   @Public()
   async googleCallback(
@@ -140,6 +152,10 @@ export class AuthController {
     } catch (error) {
       if (error instanceof GoogleAccountLinkRequiredException) {
         response.redirect(this.frontendErrorUrl('account_link_required'));
+        return;
+      }
+      if (error instanceof GoogleAccountEmailMismatchException) {
+        response.redirect(this.frontendErrorUrl('google_link_email_mismatch'));
         return;
       }
       if (

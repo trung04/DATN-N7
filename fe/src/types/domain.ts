@@ -41,7 +41,7 @@ export type VerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'NEEDS_IN
 export type ReviewStatus = 'VISIBLE' | 'HIDDEN' | 'PENDING'
 
 export interface AdminUserMetadata { username: string; googleAccountLinked: boolean; firstName: string | null; lastName: string | null; displayName: string | null; phoneNumber: string | null; dateOfBirth: string | null; gender: AdminUserGender | null; status: AdminUserStatus; role: AdminUserRole; isEmailVerified: boolean; createdAt: string; updatedAt: string }
-export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; passwordHash?: string; deletionRequestedAt?: string; dateOfBirth?: string | null; gender?: AdminUserGender | null; bio?: string | null; adminMetadata?: AdminUserMetadata }
+export interface User { id: string; name: string; email: string; role: Role; phone?: string; avatar?: string; verified: boolean; googleAccountLinked?: boolean; passwordHash?: string; deletionRequestedAt?: string; dateOfBirth?: string | null; gender?: AdminUserGender | null; bio?: string | null; adminMetadata?: AdminUserMetadata }
 export interface UserProfileInput { name: string; phone?: string | null; dateOfBirth?: string | null; gender?: AdminUserGender | null; bio?: string | null }
 export type PartnerHotelStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED' | 'INACTIVE' | 'SUSPENDED'
 export type HotelDocumentType = 'BUSINESS_LICENSE' | 'HOTEL_LICENSE' | 'OWNERSHIP_DOCUMENT' | 'TAX_DOCUMENT' | 'OTHER'

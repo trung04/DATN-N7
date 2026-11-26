@@ -3,6 +3,7 @@ import { createHmac, randomBytes, randomInt } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import {
   GoogleAccountConflictException,
+  GoogleAccountEmailMismatchException,
   UserEmailConflictException,
 } from '../../users/exceptions/user.exceptions';
 import { UserEntity, UserStatus } from '../../users/entities/user.entity';
@@ -163,6 +164,17 @@ export class AuthService {
   }
 
   async beginGoogleLogin(returnTo?: string): Promise<string> {
+    return this.beginGoogleAuthorization(returnTo);
+  }
+
+  async beginGoogleLink(userId: string, returnTo?: string): Promise<string> {
+    return this.beginGoogleAuthorization(returnTo, userId);
+  }
+
+  private async beginGoogleAuthorization(
+    returnTo?: string,
+    linkUserId?: string,
+  ): Promise<string> {
     const state = this.randomToken();
     const nonce = this.randomToken();
     const authorization = await this.google.createAuthorizationRequest(
@@ -175,6 +187,7 @@ export class AuthService {
         codeVerifier: authorization.codeVerifier,
         nonce,
         returnTo: this.safeReturnTo(returnTo),
+        ...(linkUserId ? { linkUserId } : {}),
       },
       GOOGLE_STATE_TTL_MS,
     );
@@ -192,7 +205,9 @@ export class AuthService {
       context.codeVerifier,
       context.nonce,
     );
-    const user = await this.resolveGoogleUser(identity);
+    const user = context.linkUserId
+      ? await this.usersService.linkGoogleAccount(context.linkUserId, identity)
+      : await this.resolveGoogleUser(identity);
     return {
       user,
       returnTo: context.returnTo,

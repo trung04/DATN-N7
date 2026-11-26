@@ -189,6 +189,7 @@ export function mapBackendUser(user: BackendUser): User {
     role: roleMap[user.role],
     phone: user.phoneNumber ?? undefined,
     verified: user.isEmailVerified,
+    googleAccountLinked: user.googleAccountLinked ?? false,
     ...(user.dateOfBirth !== undefined ? { dateOfBirth: user.dateOfBirth } : {}),
     ...(user.gender !== undefined ? { gender: user.gender } : {}),
     ...(user.bio !== undefined ? { bio: user.bio } : {}),
@@ -199,6 +200,11 @@ const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 export function googleLoginUrl(returnTo: string | null = null): string {
   const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/start'
+  if (!returnTo) return startPath
+  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
+}
+export function googleLinkUrl(returnTo: string | null = null): string {
+  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/link/start'
   if (!returnTo) return startPath
   return startPath + '?' + new URLSearchParams({ returnTo }).toString()
 }

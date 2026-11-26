@@ -9,6 +9,7 @@ import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
 import {
   EmptyUserUpdateException,
   GoogleAccountConflictException,
+  GoogleAccountEmailMismatchException,
   InvalidDateOfBirthException,
   UserEmailConflictException,
   UserNotFoundException,
@@ -136,6 +137,23 @@ export class UsersService {
       isEmailVerified: true,
       isTwoFactorEnabled: false,
     });
+  }
+
+  async linkGoogleAccount(
+    userId: string,
+    identity: { subject: string; email: string },
+  ): Promise<UserEntity> {
+    const user = await this.findById(userId);
+    if (this.normalizeEmail(identity.email) !== user.email) {
+      throw new GoogleAccountEmailMismatchException();
+    }
+    const linked = await this.repository.findByGoogleAccountId(identity.subject);
+    if (linked && linked.id !== user.id) throw new GoogleAccountConflictException();
+    if (user.googleAccountId === identity.subject) return user;
+    if (user.googleAccountId) throw new GoogleAccountConflictException();
+    user.googleAccountId = identity.subject;
+    user.isEmailVerified = true;
+    return this.repository.save(user);
   }
 
   async findById(id: string): Promise<UserEntity> {

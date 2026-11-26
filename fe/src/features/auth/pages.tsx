@@ -82,7 +82,8 @@ function googleErrorMessage(error: string | null): string {
   switch (error) {
     case 'google_cancelled': return 'Bạn đã hủy đăng nhập bằng Google.'
     case 'google_failed': return 'Không thể xác thực với Google. Vui lòng thử lại.'
-    case 'account_link_required': return 'Email này đã được đăng ký. Hãy chọn đúng tài khoản Google đã liên kết hoặc dùng phương thức đăng nhập trước đây.'
+    case 'account_link_required': return 'Email này đã được đăng ký nhưng chưa liên kết Google. Hãy đăng nhập bằng mật khẩu, rồi liên kết Google trong trang hồ sơ.'
+    case 'google_link_email_mismatch': return 'Tài khoản Google phải dùng cùng email với tài khoản hiện tại.'
     case 'google_session_failed': return 'Không thể khôi phục phiên đăng nhập Google. Vui lòng thử lại.'
     default: return ''
   }

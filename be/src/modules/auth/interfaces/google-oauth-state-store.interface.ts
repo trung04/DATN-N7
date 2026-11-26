@@ -4,6 +4,7 @@ export interface GoogleOAuthState {
   codeVerifier: string;
   nonce: string;
   returnTo: string;
+  linkUserId?: string;
 }
 
 export interface GoogleOAuthStateStore {

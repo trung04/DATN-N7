@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader } from '@/components/common'
@@ -9,6 +9,7 @@ import { currency, errorMessage } from '@/lib/utils'
 import { useSession } from '@/stores/session'
 import { useCatalog, useFavorites, useMyPreference, useMyProfile, usePreferenceOptions } from '@/hooks/data'
 import { DestinationCard, HotelCard } from './catalog'
+import { googleLinkUrl } from '@/services/api/client'
 
 const genderLabels: Record<string, string> = { FEMALE: 'Nữ', MALE: 'Nam', OTHER: 'Khác', UNDISCLOSED: 'Không muốn tiết lộ' }
 export function ProfilePage() {
@@ -16,6 +17,7 @@ export function ProfilePage() {
   const logout = useSession(s => s.logout)
   const login = useSession(s => s.login)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { data: profile, isLoading, error } = useMyProfile()
   const [editing, setEditing] = useState(false)
@@ -75,6 +77,16 @@ export function ProfilePage() {
         {profile?.deletionRequestedAt && <div className="text-amber-800">Đã gửi yêu cầu xóa tài khoản.</div>}
         <Feedback message={message} kind="success" />
       </dl>}
+    </Card>
+    <Card className="mt-6 max-w-2xl p-6">
+      <h2 className="text-lg font-semibold">Bảo mật và phương thức đăng nhập</h2>
+      {searchParams.get('googleLinked') === '1' && <Feedback message="Đã liên kết tài khoản Google." kind="success" />}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div><p className="font-medium text-slate-900">Tài khoản Google</p><p className="text-sm text-slate-500">{profile?.googleAccountLinked ? 'Đã liên kết' : 'Chưa liên kết'}</p></div>
+        {profile?.googleAccountLinked
+          ? <span className="text-sm font-semibold text-emerald-700">Đã liên kết</span>
+          : <Button asChild variant="secondary"><a href={googleLinkUrl('/profile?googleLinked=1')}>Liên kết Google</a></Button>}
+      </div>
     </Card>
     <div className="mt-6 flex flex-wrap gap-3"><Button asChild variant="secondary"><Link to="/preferences">Sở thích du lịch</Link></Button><Button asChild variant="secondary"><Link to="/bookings">Booking của tôi</Link></Button><Button asChild variant="secondary"><Link to="/trips">Chuyến đi</Link></Button></div>
     <div className="mt-10 max-w-2xl border-t border-slate-200 pt-6"><h2 className="font-semibold text-slate-900">Yêu cầu xóa tài khoản</h2><p className="mt-2 text-sm text-slate-500">Yêu cầu sẽ được ghi nhận và xác minh trước khi xử lý xóa tài khoản.</p><Button className="mt-4" variant="danger" onClick={() => setDeleteOpen(true)}>Gửi yêu cầu xóa</Button></div>
