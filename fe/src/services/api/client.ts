@@ -3,7 +3,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestCo
 import { DomainError } from '@/lib/errors'
 import { hasValidCoordinates } from '@/lib/coordinates'
 import type { HotelLocationResult } from '@/lib/hotel-location-search'
-import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, TwoFactorRecoveryCodes, TwoFactorRequired, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
@@ -96,6 +96,7 @@ interface BackendUser {
   role: 'TOURIST' | 'HOTEL_OWNER' | 'ADMIN'
   isEmailVerified: boolean
   googleAccountLinked?: boolean
+  isTwoFactorEnabled?: boolean
   status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'DEACTIVATED'
   createdAt?: string
   updatedAt?: string
@@ -190,6 +191,7 @@ export function mapBackendUser(user: BackendUser): User {
     phone: user.phoneNumber ?? undefined,
     verified: user.isEmailVerified,
     googleAccountLinked: user.googleAccountLinked ?? false,
+    isTwoFactorEnabled: user.isTwoFactorEnabled ?? false,
     ...(user.dateOfBirth !== undefined ? { dateOfBirth: user.dateOfBirth } : {}),
     ...(user.gender !== undefined ? { gender: user.gender } : {}),
     ...(user.bio !== undefined ? { bio: user.bio } : {}),
@@ -564,7 +566,8 @@ async function loadMyItineraries(userId: string) {
   return { trips, stops, activities }
 }
 
-export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & PlaceTaxonomiesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & PlaceTaxonomiesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+  login: (username: string, password: string) => Promise<User | TwoFactorRequired>
   myProfile: () => Promise<User>
   myFavorites: () => Promise<ApiFavorite[]>
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
@@ -696,7 +699,12 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   reportSummary: query => request<ReportSummary>({ method: 'GET', url: '/reports/summary', params: query }),
   reportTimeseries: query => request<ReportTimeseries>({ method: 'GET', url: '/reports/timeseries', params: query }),
   currentUser: () => request<BackendUser>({ method: 'GET', url: '/auth/me' }).then(mapBackendUser),
-  login: (username, password) => request<BackendUser>({ method: 'POST', url: '/auth/login', data: { username, password } }).then(mapBackendUser),
+  login: (username, password) => request<BackendUser | TwoFactorRequired>({ method: 'POST', url: '/auth/login', data: { username, password } }).then(result => 'requiresTwoFactor' in result ? result : mapBackendUser(result)),
+  verifyTwoFactor: (code: string) => request<BackendUser & { returnTo: string }>({ method: 'POST', url: '/auth/2fa/verify', data: { code } }).then(result => ({ user: mapBackendUser(result), returnTo: result.returnTo } satisfies TwoFactorVerification)),
+  setupTwoFactor: () => request<TwoFactorSetup>({ method: 'POST', url: '/auth/2fa/setup' }),
+  confirmTwoFactor: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/confirm', data: { code } }),
+  regenerateTwoFactorRecoveryCodes: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/recovery-codes', data: { code } }),
+  disableTwoFactor: (code: string) => request<void>({ method: 'POST', url: '/auth/2fa/disable', data: { code } }),
   logout: () => request<void>({ method: 'POST', url: '/auth/logout' }),
   register: (name, username, email, password) => request({ method: 'POST', url: '/auth/register', data: { displayName: name, username, email, password } }),
   verifyOtp: (email, otp) => request({ method: 'POST', url: '/auth/verify-otp', data: { email, otp } }),

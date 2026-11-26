@@ -10,6 +10,8 @@ import { useSession } from '@/stores/session'
 import { useCatalog, useFavorites, useMyPreference, useMyProfile, usePreferenceOptions } from '@/hooks/data'
 import { DestinationCard, HotelCard } from './catalog'
 import { googleLinkUrl } from '@/services/api/client'
+import { QRCodeSVG } from 'qrcode.react'
+import type { TwoFactorSetup } from '@/types/domain'
 
 const genderLabels: Record<string, string> = { FEMALE: 'Nữ', MALE: 'Nam', OTHER: 'Khác', UNDISCLOSED: 'Không muốn tiết lộ' }
 export function ProfilePage() {
@@ -29,6 +31,12 @@ export function ProfilePage() {
   const [password, setPassword] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [message, setMessage] = useState('')
+  const [securityMessage, setSecurityMessage] = useState('')
+  const [twoFactorSetup, setTwoFactorSetup] = useState<TwoFactorSetup | null>(null)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
+  const [twoFactorAction, setTwoFactorAction] = useState<'disable' | 'regenerate' | null>(null)
+  const [securityBusy, setSecurityBusy] = useState(false)
 
   if (isLoading) return <LoadingState />
   if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
@@ -86,6 +94,71 @@ export function ProfilePage() {
         {profile?.googleAccountLinked
           ? <span className="text-sm font-semibold text-emerald-700">Đã liên kết</span>
           : <Button asChild variant="secondary"><a href={googleLinkUrl('/profile?googleLinked=1')}>Liên kết Google</a></Button>}
+      </div>
+      <div className="mt-5 border-t border-slate-200 pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="font-medium text-slate-900">Xác thực 2 bước (2FA)</p><p className="text-sm text-slate-500">{user?.isTwoFactorEnabled ? 'Đang bật bằng ứng dụng xác thực' : 'Bảo vệ tài khoản bằng mã TOTP và mã khôi phục'}</p></div>
+          {user?.isTwoFactorEnabled
+            ? <div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => { setTwoFactorAction('regenerate'); setTwoFactorCode(''); setSecurityMessage('') }}>Tạo lại mã khôi phục</Button><Button variant="danger" onClick={() => { setTwoFactorAction('disable'); setTwoFactorCode(''); setSecurityMessage('') }}>Tắt 2FA</Button></div>
+            : <Button disabled={securityBusy} onClick={async () => {
+              setSecurityBusy(true); setSecurityMessage(''); setRecoveryCodes([])
+              try { setTwoFactorSetup(await repo.setupTwoFactor()) }
+              catch (cause) { setSecurityMessage(errorMessage(cause)) }
+              finally { setSecurityBusy(false) }
+            }}>Bật xác thực 2 bước</Button>}
+        </div>
+
+        {twoFactorSetup && <div className="mt-5 grid gap-5 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[auto_1fr]">
+          <div className="rounded-lg bg-white p-3"><QRCodeSVG value={twoFactorSetup.otpauthUri} size={176} role="img" aria-label="Mã QR thiết lập xác thực 2 bước" /></div>
+          <div>
+            <h3 className="font-semibold text-slate-900">Quét mã bằng ứng dụng xác thực</h3>
+            <p className="mt-1 text-sm text-slate-600">Nếu không quét được, nhập khóa thủ công:</p>
+            <code className="mt-2 block break-all rounded bg-white px-3 py-2 text-sm font-semibold">{twoFactorSetup.secret}</code>
+            <form className="mt-4 grid gap-3" onSubmit={async event => {
+              event.preventDefault(); setSecurityBusy(true); setSecurityMessage('')
+              try {
+                const result = await repo.confirmTwoFactor(twoFactorCode)
+                setRecoveryCodes(result.recoveryCodes)
+                setTwoFactorSetup(null)
+                setTwoFactorCode('')
+                if (user) login({ ...user, isTwoFactorEnabled: true })
+                await queryClient.invalidateQueries({ queryKey: ['my-profile', user?.id] })
+              } catch (cause) { setSecurityMessage(errorMessage(cause)) }
+              finally { setSecurityBusy(false) }
+            }}>
+              <FormField label="Mã xác thực"><input value={twoFactorCode} onChange={event => setTwoFactorCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" required /></FormField>
+              <div className="flex gap-2"><Button disabled={securityBusy}>Xác nhận bật 2FA</Button><Button type="button" variant="secondary" onClick={() => { setTwoFactorSetup(null); setTwoFactorCode('') }}>Hủy</Button></div>
+            </form>
+          </div>
+        </div>}
+
+        {twoFactorAction && <form className="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4" onSubmit={async event => {
+          event.preventDefault(); setSecurityBusy(true); setSecurityMessage('')
+          try {
+            if (twoFactorAction === 'disable') {
+              await repo.disableTwoFactor(twoFactorCode)
+              if (user) login({ ...user, isTwoFactorEnabled: false })
+              setSecurityMessage('Đã tắt xác thực 2 bước.')
+            } else {
+              const result = await repo.regenerateTwoFactorRecoveryCodes(twoFactorCode)
+              setRecoveryCodes(result.recoveryCodes)
+            }
+            setTwoFactorAction(null); setTwoFactorCode('')
+            await queryClient.invalidateQueries({ queryKey: ['my-profile', user?.id] })
+          } catch (cause) { setSecurityMessage(errorMessage(cause)) }
+          finally { setSecurityBusy(false) }
+        }}>
+          <p className="text-sm font-medium text-slate-800">Nhập mã từ ứng dụng xác thực hoặc mã khôi phục để {twoFactorAction === 'disable' ? 'tắt 2FA' : 'tạo bộ mã khôi phục mới'}.</p>
+          <FormField label="Mã xác thực hoặc mã khôi phục"><input value={twoFactorCode} onChange={event => setTwoFactorCode(event.target.value.toUpperCase().slice(0, 9))} autoComplete="one-time-code" required /></FormField>
+          <div className="flex gap-2"><Button disabled={securityBusy}>{twoFactorAction === 'disable' ? 'Xác nhận tắt 2FA' : 'Tạo mã mới'}</Button><Button type="button" variant="secondary" onClick={() => setTwoFactorAction(null)}>Hủy</Button></div>
+        </form>}
+
+        {recoveryCodes.length > 0 && <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h3 className="font-semibold text-amber-950">Lưu mã khôi phục</h3>
+          <p className="mt-1 text-sm text-amber-900">Các mã này chỉ hiển thị một lần. Mỗi mã chỉ dùng được một lần.</p>
+          <ul className="mt-3 grid grid-cols-2 gap-2 font-mono text-sm font-semibold text-amber-950 sm:grid-cols-4">{recoveryCodes.map(code => <li key={code}>{code}</li>)}</ul>
+        </div>}
+        <Feedback message={securityMessage} kind={securityMessage.startsWith('Đã') ? 'success' : 'error'} />
       </div>
     </Card>
     <div className="mt-6 flex flex-wrap gap-3"><Button asChild variant="secondary"><Link to="/preferences">Sở thích du lịch</Link></Button><Button asChild variant="secondary"><Link to="/bookings">Booking của tôi</Link></Button><Button asChild variant="secondary"><Link to="/trips">Chuyến đi</Link></Button></div>

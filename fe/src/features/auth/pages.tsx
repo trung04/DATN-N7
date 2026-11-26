@@ -100,6 +100,37 @@ export function GoogleCompletePage() {
   return <Navigate to={'/auth/login?' + retryParams.toString()} replace />
 }
 
+export function TwoFactorLoginPage() {
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const login = useSession(s => s.login)
+  const [code, setCode] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const requestedReturnTo = localReturnPath(params.get('returnTo'))
+
+  return <Card className="auth-form-card p-6 sm:p-8">
+    <h1 className="auth-form-title text-2xl font-semibold">Xác thực 2 bước</h1>
+    <p className="mt-2 text-sm leading-6 text-slate-500">Nhập mã 6 chữ số từ ứng dụng xác thực hoặc một mã khôi phục.</p>
+    <form className="mt-6 grid gap-4" onSubmit={async event => {
+      event.preventDefault()
+      setBusy(true)
+      setMessage('')
+      try {
+        const result = await repo.verifyTwoFactor(code.trim())
+        login(result.user)
+        navigate(loginDestination(result.user.role, localReturnPath(result.returnTo) || requestedReturnTo), { replace: true })
+      } catch (error) { setMessage(errorMessage(error)) }
+      finally { setBusy(false) }
+    }}>
+      <FormField label="Mã xác thực hoặc mã khôi phục"><input value={code} onChange={event => setCode(event.target.value.toUpperCase().slice(0, 9))} autoComplete="one-time-code" required /></FormField>
+      <Feedback message={message} kind="error" />
+      <Button disabled={busy}>{busy ? 'Đang xác minh...' : 'Xác minh'}</Button>
+    </form>
+    <p className="mt-5 text-center text-sm"><Link className="font-semibold text-[#10545b] hover:underline" to="/dang-nhap">Quay lại đăng nhập</Link></p>
+  </Card>
+}
+
 export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -118,14 +149,20 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
     <form className="mt-6 grid gap-4" onSubmit={handleSubmit(async values => {
       setMessage('')
       try {
-        const user = await repo.login(values.username, values.password)
-        if (expectedRole && user.role !== expectedRole) {
-          try { await repo.logout() } catch { /* Keep the role rejection visible even if session cleanup fails. */ }
-          setMessage(`Tài khoản này thuộc nhóm ${roleLabel[user.role]}. Hãy chọn đúng cổng đăng nhập bên dưới.`)
+        const result = await repo.login(values.username, values.password)
+        if ('requiresTwoFactor' in result) {
+          const query = new URLSearchParams()
+          if (returnTo) query.set('returnTo', returnTo)
+          navigate('/auth/two-factor' + (query.size ? `?${query.toString()}` : ''), { replace: true })
           return
         }
-        login(user)
-        navigate(loginDestination(user.role, returnTo), { replace: true })
+        if (expectedRole && result.role !== expectedRole) {
+          try { await repo.logout() } catch { /* Keep the role rejection visible even if session cleanup fails. */ }
+          setMessage(`Tài khoản này thuộc nhóm ${roleLabel[result.role]}. Hãy chọn đúng cổng đăng nhập bên dưới.`)
+          return
+        }
+        login(result)
+        navigate(loginDestination(result.role, returnTo), { replace: true })
       } catch (error) { setMessage(errorMessage(error)) }
     })}>
       <FormField label="Tên đăng nhập hoặc email" error={errors.username?.message}><input autoComplete="username" aria-invalid={Boolean(errors.username)} {...register('username')} /></FormField>

@@ -1,4 +1,4 @@
-import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreferenceInput, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import type { AdminUser, AdminUserPage, AdminUserQuery, AppData, Booking, BookingInput, CreateAdminUserInput, Itinerary, Payment, PlannerInput, PlannerResult, RoomType, Stopover, TravelActivity, TravelPreferenceInput, TwoFactorRecoveryCodes, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import { assert } from '@/lib/errors'
 import { addDay, nights, overlap, stayDays, todayPlus, uid } from '@/lib/utils'
 import { DEMO_PASSWORD } from './seed'
@@ -150,6 +150,11 @@ export const mock = {
     assert(valid, 'LOGIN', 'Mật khẩu không chính xác.', 401)
     return user
   },
+  verifyTwoFactor: async (_code: string): Promise<TwoFactorVerification> => { throw new Error('2FA cần backend API.') },
+  setupTwoFactor: async (): Promise<TwoFactorSetup> => { throw new Error('2FA cần backend API.') },
+  confirmTwoFactor: async (_code: string): Promise<TwoFactorRecoveryCodes> => { throw new Error('2FA cần backend API.') },
+  regenerateTwoFactorRecoveryCodes: async (_code: string): Promise<TwoFactorRecoveryCodes> => { throw new Error('2FA cần backend API.') },
+  disableTwoFactor: async (_code: string): Promise<void> => { throw new Error('2FA cần backend API.') },
   logout: async (): Promise<void> => undefined,
   register: async (name: string, usernameOrEmail: string, emailOrPassword: string, maybePassword?: string) => {
     const email = maybePassword === undefined ? usernameOrEmail : emailOrPassword
