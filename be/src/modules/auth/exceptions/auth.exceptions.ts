@@ -123,3 +123,13 @@ export class TwoFactorAlreadyEnabledException extends DomainException {
     super('Two-factor authentication is already enabled.', 'TWO_FACTOR_ALREADY_ENABLED', 'conflict');
   }
 }
+
+export class TwoFactorChallengeInvalidException extends DomainException {
+  constructor() {
+    super(
+      'The two-factor login challenge is invalid, expired, or has too many failed attempts.',
+      'TWO_FACTOR_CHALLENGE_INVALID',
+      'unauthorized',
+    );
+  }
+}

@@ -21,6 +21,7 @@ import { UserMapper } from '../../users/mappers/user.mapper';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { GoogleStartRequest } from '../dtos/requests/google-auth.request';
 import { LoginRequest } from '../dtos/requests/login.request';
+import { TwoFactorCodeRequest } from '../dtos/requests/two-factor.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
 import { EmailOtpRequest } from '../dtos/requests/email-otp.request';
 import { RequestPasswordResetRequest, ResetPasswordRequest } from '../dtos/requests/request-password-reset.request';
@@ -35,6 +36,10 @@ import {
 import { ACCESS_COOKIE, REFRESH_COOKIE } from '../guards/access-session.guard';
 import { TrustedOriginGuard } from '../guards/trusted-origin.guard';
 import { AuthService } from '../services/auth.service';
+import { TwoFactorService } from '../services/two-factor.service';
+
+const TWO_FACTOR_COOKIE = 'login_2fa';
+const TWO_FACTOR_COOKIE_MAX_AGE_MS = 5 * 60 * 1000;
 
 @ApiTags('Authentication')
 @Controller({ path: 'auth', version: '1' })
@@ -42,6 +47,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly config: ConfigService,
+    private readonly twoFactorService: TwoFactorService,
   ) {}
 
   @Post('register')
@@ -91,8 +97,13 @@ export class AuthController {
   async login(
     @Body() input: LoginRequest,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<UserResponse> {
+  ): Promise<UserResponse | { requiresTwoFactor: true }> {
     const result = await this.authService.login(input);
+    if ('requiresTwoFactor' in result) {
+      this.setTwoFactorCookie(response, result.challengeToken);
+      response.status(HttpStatus.ACCEPTED);
+      return { requiresTwoFactor: true };
+    }
     this.setSessionCookies(response, result);
     return UserMapper.toResponse(result.user);
   }
@@ -142,6 +153,16 @@ export class AuthController {
     }
     try {
       const result = await this.authService.completeGoogleLogin(code, state);
+      if ('requiresTwoFactor' in result) {
+        this.setTwoFactorCookie(response, result.challengeToken);
+        const destination = new URL(
+          '/auth/two-factor',
+          this.frontendOrigin(),
+        );
+        destination.searchParams.set('returnTo', result.returnTo);
+        response.redirect(destination.toString());
+        return;
+      }
       this.setSessionCookies(response, result);
       const destination = new URL(
         '/auth/google/complete',
@@ -169,6 +190,62 @@ export class AuthController {
       }
       throw error;
     }
+  }
+
+  @Post('2fa/verify')
+  @Public()
+  @UseGuards(TrustedOriginGuard)
+  @HttpCode(HttpStatus.OK)
+  async verifyTwoFactor(
+    @Body() input: TwoFactorCodeRequest,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<UserResponse & { returnTo: string }> {
+    const token = this.cookie(request, TWO_FACTOR_COOKIE);
+    if (!token) throw new InvalidSessionException();
+    const result = await this.authService.completeTwoFactorLogin(
+      token,
+      input.code,
+    );
+    this.setSessionCookies(response, result);
+    this.clearTwoFactorCookie(response);
+    return { ...UserMapper.toResponse(result.user), returnTo: result.returnTo };
+  }
+
+  @Post('2fa/setup')
+  @UseGuards(TrustedOriginGuard)
+  setupTwoFactor(
+    @CurrentUser() user: UserEntity,
+  ): Promise<{ secret: string; otpauthUri: string }> {
+    return this.twoFactorService.beginSetup(user.id);
+  }
+
+  @Post('2fa/confirm')
+  @UseGuards(TrustedOriginGuard)
+  confirmTwoFactor(
+    @CurrentUser() user: UserEntity,
+    @Body() input: TwoFactorCodeRequest,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return this.twoFactorService.confirmSetup(user.id, input.code);
+  }
+
+  @Post('2fa/recovery-codes')
+  @UseGuards(TrustedOriginGuard)
+  regenerateTwoFactorRecoveryCodes(
+    @CurrentUser() user: UserEntity,
+    @Body() input: TwoFactorCodeRequest,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return this.twoFactorService.regenerateRecoveryCodes(user.id, input.code);
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(TrustedOriginGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  disableTwoFactor(
+    @CurrentUser() user: UserEntity,
+    @Body() input: TwoFactorCodeRequest,
+  ): Promise<void> {
+    return this.twoFactorService.disable(user.id, input.code);
   }
 
   @Post('refresh')
@@ -231,6 +308,20 @@ export class AuthController {
   private clearSessionCookies(response: Response): void {
     response.clearCookie(ACCESS_COOKIE, this.cookieOptions('/'));
     response.clearCookie(REFRESH_COOKIE, this.cookieOptions('/api/v1/auth'));
+  }
+
+  private setTwoFactorCookie(response: Response, token: string): void {
+    response.cookie(TWO_FACTOR_COOKIE, token, {
+      ...this.cookieOptions('/api/v1/auth/2fa'),
+      maxAge: TWO_FACTOR_COOKIE_MAX_AGE_MS,
+    });
+  }
+
+  private clearTwoFactorCookie(response: Response): void {
+    response.clearCookie(
+      TWO_FACTOR_COOKIE,
+      this.cookieOptions('/api/v1/auth/2fa'),
+    );
   }
 
   private cookieOptions(path: string): CookieOptions {
