@@ -74,7 +74,7 @@ export class PlacesService {
     return this.repository.findCatalogOptions();
   }
 
-  findPage(input: ListPlacesRequest): Promise<PlacePage> {
+  findPage(input: ListPlacesRequest, rankedIds?: readonly string[]): Promise<PlacePage> {
     return this.repository.findPage({
       page: input.page,
       limit: input.limit,
@@ -87,6 +87,7 @@ export class PlacesService {
       minRating: input.minRating,
       sortBy: input.sortBy,
       sortOrder: input.sortOrder,
+      ...(rankedIds && { rankedIds }),
     });
   }
 

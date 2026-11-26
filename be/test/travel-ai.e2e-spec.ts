@@ -22,6 +22,7 @@ import { TravelAiController } from '../src/modules/travel-ai/controllers/travel-
 import { FastApiTravelAiClient } from '../src/modules/travel-ai/integrations/ai/fastapi-travel-ai.client';
 import { TRAVEL_AI } from '../src/modules/travel-ai/interfaces/travel-ai.integration';
 import { TravelAiService } from '../src/modules/travel-ai/services/travel-ai.service';
+import { PlaceSearchService } from '../src/modules/travel-ai/services/place-search.service';
 import { UserRole } from '../src/modules/users/entities/user.entity';
 import { TravelPreferencesService } from '../src/modules/users/services/travel-preferences.service';
 
@@ -60,14 +61,24 @@ describe('Travel AI facade (local HTTP upstream)', () => {
     body: unknown;
   }> = [];
   const preferences = jest.fn().mockResolvedValue({ interests: ['Biển'] });
+  const findPlaces = jest.fn();
+  const searchInput = {
+    page: 2,
+    limit: 1,
+    search: 'nơi ngắm hoàng hôn',
+    city: 'Đà Nẵng',
+    categoryCode: 'ATTRACTION',
+    relevance: true,
+  };
 
   async function fakeAi(req: IncomingMessage, res: ServerResponse) {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk as Buffer));
+    const body = JSON.parse(Buffer.concat(chunks).toString()) as unknown;
     outbound.push({
       url: req.url,
       key: req.headers['x-api-key'] as string | undefined,
-      body: JSON.parse(Buffer.concat(chunks).toString()) as unknown,
+      body,
     });
     if (stall) return;
     if (upstreamStatus !== 200) {
@@ -86,6 +97,16 @@ describe('Travel AI facade (local HTTP upstream)', () => {
             reasons: ['Gần biển'],
           },
         ],
+      });
+      return;
+    }
+    if (req.url === '/api/v1/search/places') {
+      reply(res, 200, {
+        retrieval: 'local_exact_bge_bm25_rrf',
+        offset: 1,
+        limit: 1,
+        total: 2,
+        results: [{ place_id: placeId, semantic_score: 0.8 }],
       });
       return;
     }
@@ -134,6 +155,7 @@ describe('Travel AI facade (local HTTP upstream)', () => {
       controllers: [TravelAiController],
       providers: [
         TravelAiService,
+        PlaceSearchService,
         { provide: TRAVEL_AI, useClass: FastApiTravelAiClient },
         { provide: APP_FILTER, useClass: ProblemDetailsFilter },
         { provide: APP_GUARD, useClass: AccessSessionGuard },
@@ -164,6 +186,10 @@ describe('Travel AI facade (local HTTP upstream)', () => {
         {
           provide: PlacesService,
           useValue: {
+            findPage: findPlaces,
+            findCatalogOptions: jest.fn().mockResolvedValue({
+              categories: [{ code: 'ATTRACTION', name: 'Điểm tham quan' }],
+            }),
             findDetailsById: jest.fn().mockResolvedValue({
               place: {
                 id: placeId,
@@ -197,6 +223,7 @@ describe('Travel AI facade (local HTTP upstream)', () => {
     stall = false;
     outbound.length = 0;
     preferences.mockClear();
+    findPlaces.mockReset();
   });
 
   afterAll(async () => {
@@ -210,6 +237,72 @@ describe('Travel AI facade (local HTTP upstream)', () => {
       .post('/api/v1/ai/recommendations')
       .set('Cookie', session)
       .send(data);
+
+  it('searches anonymously and hydrates only active places from the catalog', async () => {
+    findPlaces.mockResolvedValue({
+      total: 1,
+      items: [
+        {
+          place: { id: placeId, name: 'Địa điểm trong ứng dụng' },
+          price: null,
+        },
+      ],
+    });
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/ai/places/search')
+      .send(searchInput)
+      .expect(200);
+
+    expect(outbound).toEqual([
+      {
+        url: '/api/v1/search/places',
+        key: serviceKey,
+        body: {
+          method: 'hybrid',
+          query: searchInput.search,
+          filters: { city: 'Đà Nẵng', category: 'Điểm tham quan' },
+          sort_by: 'relevance',
+          sort_order: 'asc',
+          offset: 1,
+          limit: 1,
+        },
+      },
+    ]);
+    expect(findPlaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        search: undefined,
+        status: PlaceStatus.ACTIVE,
+        city: searchInput.city,
+        categoryCode: searchInput.categoryCode,
+      }),
+      [placeId],
+    );
+    expect(response.body).toMatchObject({
+      data: [{ id: placeId, name: 'Địa điểm trong ứng dụng' }],
+      meta: { page: 2, limit: 1, total: 2 },
+      searchMode: 'semantic',
+    });
+  });
+
+  it('uses keyword search if FastAPI is unavailable', async () => {
+    upstreamStatus = 503;
+    findPlaces.mockResolvedValue({ total: 0, items: [] });
+    await request(app.getHttpServer())
+      .post('/api/v1/ai/places/search')
+      .send(searchInput)
+      .expect(200, {
+        data: [],
+        meta: { page: 2, limit: 1, total: 0 },
+        searchMode: 'keyword',
+      });
+    expect(findPlaces).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...searchInput,
+        status: PlaceStatus.ACTIVE,
+      }),
+    );
+  });
 
   it('protects the endpoint and rejects supplied user identity', async () => {
     await request(app.getHttpServer())
@@ -286,7 +379,7 @@ describe('Travel AI facade (local HTTP upstream)', () => {
           preferences: ['Biển'],
           query: 'Cân bằng. Ưu tiên buổi sáng',
           stops_per_day: 3,
-        routing_provider: 'configured',
+          routing_provider: 'configured',
           allow_estimated_routes: true,
         },
       },

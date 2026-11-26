@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Heart, MapPin, Sparkles, Star } from 'lucide-react'
@@ -173,13 +173,20 @@ export function HotelCard({ item, price, search = '' }: { item: Hotel; price: nu
 
 export function ExplorePage() {
   const [params, setParams] = useSearchParams()
+  const latestParams = useRef(params)
+  useLayoutEffect(() => { latestParams.current = params }, [params])
   const requestedPage = readPage(params)
   const requestedSize = readPageSize(params)
-  const q = params.get('q') ?? ''
+  const q = params.get('q')?.trim() ?? ''
   const city = params.get('city') ?? ''
   const category = params.get('category') ?? ''
-  const sort = params.get('sort') ?? 'name'
-  const [keyword, setKeyword] = useState(params.get('q') ?? '')
+  const searchEnabled = Boolean(q) && !isMock
+  const selectedSort = params.get('sort')
+  const sort = selectedSort === 'rating' || selectedSort === 'name'
+    ? selectedSort
+    : searchEnabled ? 'relevance' : 'name'
+  const [draft, setDraft] = useState<{ query: string; value: string } | null>(null)
+  const keyword = draft?.query === q ? draft.value : q
   const places = usePublicPlaces({
     page: requestedPage,
     limit: requestedSize,
@@ -188,17 +195,70 @@ export function ExplorePage() {
     categoryCode: category || undefined,
     sortBy: sort === 'rating' ? 'averageRating' : 'name',
     sortOrder: sort === 'rating' ? 'DESC' : 'ASC',
+    ...(sort === 'relevance' && { relevance: true }),
   })
   const options = usePublicPlaceOptions()
   const { page, size, setPage, setSize } = usePagination(places.data?.meta.total)
   const update = (key: string, value: string) => {
-    const next = new URLSearchParams(params)
+    const next = new URLSearchParams(latestParams.current)
     if (value) next.set(key, value); else next.delete(key)
     next.delete('page')
+    latestParams.current = next
     setParams(next)
   }
+  const reset = () => {
+    setDraft(null)
+    latestParams.current = new URLSearchParams()
+    setParams(latestParams.current)
+  }
   const items = places.data?.data ?? []
-  return <div className="container-app section-pad"><PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." /><div className="mb-7 grid gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 md:grid-cols-[2fr_1fr_1fr_1fr]"><form onSubmit={e => { e.preventDefault(); update('q', keyword.trim()) }}><label className="text-sm font-medium">Từ khóa<input placeholder="Tên hoặc sở thích" value={keyword} onChange={e => setKeyword(e.target.value)} /></label></form><label className="text-sm font-medium">Thành phố<select value={city} onChange={e => update('city', e.target.value)}><option value="">Tất cả</option>{(options.data?.cities ?? []).map(value => <option key={value} value={value}>{value}</option>)}</select></label><label className="text-sm font-medium">Loại hình<select value={category} onChange={e => update('category', e.target.value)}><option value="">Tất cả</option>{(options.data?.categories ?? []).map(option => <option key={option.code} value={option.code}>{option.name}</option>)}</select></label><label className="text-sm font-medium">Sắp xếp<select value={sort} onChange={e => update('sort', e.target.value)}><option value="name">Tên A–Z</option><option value="rating">Đánh giá cao</option></select></label></div>{places.isLoading ? <LoadingState /> : places.error ? <ErrorState message={errorMessage(places.error)} retry={() => { void places.refetch() }} /> : items.length ? <><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <DestinationCard key={item.id} item={item} />)}</div><Pagination page={page} size={size} total={places.data?.meta.total ?? 0} onPageChange={setPage} onSizeChange={setSize} /></> : <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={() => { setKeyword(''); setParams({}) }}>Xóa bộ lọc</Button>} />}</div>
+  return <div className="container-app section-pad">
+    <PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." />
+    <div className="mb-7 grid gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+      <form onSubmit={e => { e.preventDefault(); setDraft(null); update('q', keyword.trim()) }} className="flex items-end gap-2">
+        <label className="min-w-0 flex-1 text-sm font-medium">Tìm địa điểm
+          <input
+            placeholder="Ví dụ: nơi ngắm hoàng hôn"
+            value={keyword}
+            maxLength={200}
+            onChange={e => setDraft({ query: q, value: e.target.value })}
+          />
+        </label>
+        <Button type="submit">Tìm</Button>
+      </form>
+      <label className="text-sm font-medium">Thành phố
+        <select value={city} onChange={e => update('city', e.target.value)}>
+          <option value="">Tất cả</option>
+          {(options.data?.cities ?? []).map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+      </label>
+      <label className="text-sm font-medium">Loại hình
+        <select value={category} onChange={e => update('category', e.target.value)}>
+          <option value="">Tất cả</option>
+          {(options.data?.categories ?? []).map(option => <option key={option.code} value={option.code}>{option.name}</option>)}
+        </select>
+      </label>
+      <label className="text-sm font-medium">Sắp xếp
+        <select value={sort} onChange={e => update('sort', e.target.value)}>
+          {searchEnabled && <option value="relevance">Phù hợp nhất</option>}
+          <option value="name">Tên A–Z</option>
+          <option value="rating">Đánh giá cao</option>
+        </select>
+      </label>
+    </div>
+    {places.isFetching && !places.isLoading && <p role="status" className="mb-3 text-sm text-slate-600">Đang cập nhật kết quả…</p>}
+    {searchEnabled && !places.isFetching && !places.error && places.data?.searchMode === 'keyword' && (
+      <p role="status" className="mb-3 text-sm text-slate-600">Đang hiển thị kết quả theo từ khóa.</p>
+    )}
+    {places.isLoading ? <LoadingState /> : places.error ? (
+      <ErrorState message={errorMessage(places.error)} retry={() => { void places.refetch() }} />
+    ) : items.length ? <>
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <DestinationCard key={item.id} item={item} />)}</div>
+      <Pagination page={page} size={size} total={places.data?.meta.total ?? 0} onPageChange={setPage} onSizeChange={setSize} />
+    </> : (
+      <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={reset}>Xóa bộ lọc</Button>} />
+    )}
+  </div>
 }
 export function DestinationDetailPage() {
   const { id } = useParams()

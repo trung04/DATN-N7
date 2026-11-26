@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TravelAiException } from '../../exceptions/travel-ai.exceptions';
 import type {
+  PlaceSearchInput,
+  PlaceSearchPage,
   PlanInput,
   PlanPreview,
   RecommendInput,
@@ -9,17 +11,21 @@ import type {
   TravelAiIntegration,
 } from '../../interfaces/travel-ai.integration';
 import {
+  readPlaceSearch,
   readPreview,
   readRecommendations,
 } from './contracts/travel-ai.contract';
 
 const maxResponseBytes = 2 * 1024 * 1024;
 const maxConcurrentRequests = 6;
+const maxConcurrentSearches = 3;
+const searchTimeoutMs = 12000;
 
 @Injectable()
 export class FastApiTravelAiClient implements TravelAiIntegration {
   private readonly logger = new Logger(FastApiTravelAiClient.name);
   private readonly activeUsers = new Set<string>();
+  private activeSearches = 0;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -50,28 +56,45 @@ export class FastApiTravelAiClient implements TravelAiIntegration {
     return readPreview(result, input.userId);
   }
 
+  async searchPlaces(input: PlaceSearchInput): Promise<PlaceSearchPage> {
+    const result = await this.post('/api/v1/search/places', null, {
+      query: input.query,
+      method: 'hybrid',
+      filters: { city: input.city, category: input.category },
+      sort_by: input.sortBy,
+      sort_order: input.sortOrder.toLowerCase(),
+      offset: input.offset,
+      limit: input.limit,
+    });
+    return readPlaceSearch(result, input);
+  }
+
   private async post(
     path: string,
-    userId: string,
+    userId: string | null,
     body: object,
   ): Promise<unknown> {
     const key = this.config.getOrThrow<string>('AI_API_KEY').trim();
     if (!key) throw new TravelAiException('configuration');
 
     const baseUrl = this.config.getOrThrow<string>('AI_BASE_URL');
+    const timeoutMs = this.config.getOrThrow<number>('AI_TIMEOUT_MS');
     const signal = AbortSignal.timeout(
-      this.config.getOrThrow<number>('AI_TIMEOUT_MS'),
+      userId ? timeoutMs : Math.min(timeoutMs, searchTimeoutMs),
     );
     const startedAt = Date.now();
     let status: number | undefined;
 
     if (
-      this.activeUsers.has(userId) ||
-      this.activeUsers.size >= maxConcurrentRequests
+      this.activeUsers.size + this.activeSearches >= maxConcurrentRequests ||
+      (userId
+        ? this.activeUsers.has(userId)
+        : this.activeSearches >= maxConcurrentSearches)
     ) {
       throw new TravelAiException('throttled');
     }
-    this.activeUsers.add(userId);
+    if (userId) this.activeUsers.add(userId);
+    else this.activeSearches++;
     try {
       const response = await fetch(new URL(path, baseUrl), {
         method: 'POST',
@@ -105,7 +128,8 @@ export class FastApiTravelAiClient implements TravelAiIntegration {
       });
       throw failure;
     } finally {
-      this.activeUsers.delete(userId);
+      if (userId) this.activeUsers.delete(userId);
+      else this.activeSearches--;
     }
   }
 

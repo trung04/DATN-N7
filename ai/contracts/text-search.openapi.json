@@ -214,6 +214,18 @@
             "title": "Infer Filters",
             "default": true
           },
+          "sort_by": {
+            "type": "string",
+            "enum": ["relevance", "name", "rating"],
+            "title": "Sort By",
+            "default": "relevance"
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": ["asc", "desc"],
+            "title": "Sort Order",
+            "default": "asc"
+          },
           "limit": {
             "type": "integer",
             "maximum": 100.0,
