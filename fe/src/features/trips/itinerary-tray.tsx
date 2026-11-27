@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { EmptyState, FormField } from '@/components/common'
 import { currency, day } from '@/lib/utils'
-import type { Destination, Itinerary, Stopover, TravelActivity } from '@/types/domain'
+import type { Itinerary, Stopover, TravelActivity } from '@/types/domain'
 import { intervalOverlapsDay, stopOverlapsDay } from './trip-schedule'
 
 export type DeleteTarget = { kind: 'stop' | 'activity'; id: string; stopId?: string }
@@ -13,7 +13,6 @@ type Props = {
   trip: Itinerary
   stops: Stopover[]
   activities: TravelActivity[]
-  places: Destination[]
   days: string[]
   activeDay: string
   activeStopId?: string
@@ -34,7 +33,7 @@ type Props = {
   onDelete: (target: DeleteTarget) => void
 }
 
-export function ItineraryTray({ trip, stops, activities, places, days, activeDay, activeStopId, stopForm, activityForm, onChangeDay, onAddStop, onEditStop, onChangeStop, onSaveStop, onCancelStop, onAddActivity, onEditActivity, onChangeActivity, onSaveActivity, onCancelActivity, onLocateStop, onDelete }: Props) {
+export function ItineraryTray({ trip, stops, activities, days, activeDay, activeStopId, stopForm, activityForm, onChangeDay, onAddStop, onEditStop, onChangeStop, onSaveStop, onCancelStop, onAddActivity, onEditActivity, onChangeActivity, onSaveActivity, onCancelActivity, onLocateStop, onDelete }: Props) {
   const visibleStops = stops.filter(stop => stopOverlapsDay(stop, activeDay))
   const activityFormDay = activityForm?.start.slice(0, 10)
   const editorOpen = Boolean(stopForm || (activityForm && !activityForm.id))
@@ -45,7 +44,7 @@ export function ItineraryTray({ trip, stops, activities, places, days, activeDay
 
     {!editorOpen && <DayTabs days={days} activeDay={activeDay} stops={stops} onChange={onChangeDay} />}
 
-    {stopForm ? <StopEditor value={stopForm} places={places} onChange={onChangeStop} onSave={onSaveStop} onCancel={onCancelStop} /> : activityForm && !activityForm.id ? <ActivityEditor value={activityForm} panel onChange={onChangeActivity} onSave={onSaveActivity} onCancel={onCancelActivity} /> : <>
+    {stopForm ? <StopEditor value={stopForm} onChange={onChangeStop} onSave={onSaveStop} onCancel={onCancelStop} /> : activityForm && !activityForm.id ? <ActivityEditor value={activityForm} panel onChange={onChangeActivity} onSave={onSaveActivity} onCancel={onCancelActivity} /> : <>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 [scrollbar-gutter:stable]">
         {visibleStops.length ? <div className="relative grid min-w-0 gap-3 pl-9 before:absolute before:bottom-2 before:left-[13px] before:top-2 before:w-0.5 before:bg-[#DAE2FD]">
           {visibleStops.map((stop, index) => {
@@ -100,10 +99,10 @@ function DayTabs({ days, activeDay, stops, onChange }: { days: string[]; activeD
   return <div className="flex shrink-0 items-center gap-1 border-b border-[#DAE2FD] bg-white px-3 py-2"><IconButton label="Ngày trước" disabled={activeIndex <= 0} onClick={() => onChange(days[activeIndex - 1] ?? activeDay)}><ChevronLeft size={15} /></IconButton><div className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-lg bg-[#EAEDFF] p-1 [scrollbar-width:none]">{days.map((date, index) => { const count = stops.filter(stop => stopOverlapsDay(stop, date)).length; const active = date === activeDay; return <button type="button" key={date} aria-pressed={active} onClick={() => onChange(date)} className={'shrink-0 rounded-md px-3 py-2 text-sm transition-colors ' + (active ? 'bg-white font-semibold text-[#00236F] shadow-sm' : 'text-[#444651] hover:bg-white/70')}>Ngày {index + 1} · <span className="text-[#757682]">{count}</span></button> })}</div><IconButton label="Ngày sau" disabled={activeIndex >= days.length - 1} onClick={() => onChange(days[activeIndex + 1] ?? activeDay)}><ChevronRight size={15} /></IconButton></div>
 }
 
-function StopEditor({ value, places, onChange, onSave, onCancel }: { value: Stopover; places: Destination[]; onChange: (value: Stopover) => void; onSave: () => Promise<void>; onCancel: () => void }) {
+function StopEditor({ value, onChange, onSave, onCancel }: { value: Stopover; onChange: (value: Stopover) => void; onSave: () => Promise<void>; onCancel: () => void }) {
   const custom = Number.isFinite(value.lat) && Number.isFinite(value.lng) && !value.placeId
   return <form className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white" onSubmit={event => { event.preventDefault(); void onSave() }}><div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto overflow-x-hidden p-4">
-    {custom ? <><FormField label="Tên điểm dừng"><input required value={value.name} onChange={event => onChange({ ...value, name: event.target.value })} /></FormField><FormField label="Địa chỉ"><input value={value.address} onChange={event => onChange({ ...value, address: event.target.value })} /></FormField><p className="text-xs text-slate-500">Vị trí Mapbox: {value.lat?.toFixed(5)}, {value.lng?.toFixed(5)}</p></> : <FormField label="Địa điểm"><select required value={value.placeId ?? ''} onChange={event => { const place = places.find(item => item.id === event.target.value); onChange({ ...value, placeId: place?.id, name: place?.name ?? '', address: place?.region || place?.city || '', lat: place?.lat, lng: place?.lng }) }}><option value="">Chọn địa điểm</option>{places.map(place => <option key={place.id} value={place.id}>{place.name} · {place.city}</option>)}</select></FormField>}
+    {custom ? <><FormField label="Tên điểm dừng"><input required value={value.name} onChange={event => onChange({ ...value, name: event.target.value })} /></FormField><FormField label="Địa chỉ"><input value={value.address} onChange={event => onChange({ ...value, address: event.target.value })} /></FormField><p className="text-xs text-slate-500">Vị trí Mapbox: {value.lat?.toFixed(5)}, {value.lng?.toFixed(5)}</p></> : <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-sm font-semibold text-slate-800">{value.name}</p><p className="mt-1 text-xs text-slate-500">{value.address}</p><p className="mt-2 text-xs text-slate-500">Để đổi địa điểm, chọn marker khác trên bản đồ.</p></div>}
     <div className="grid min-w-0 grid-cols-2 gap-2"><FormField label="Bắt đầu"><input className="min-w-0" required type="datetime-local" value={value.start} onChange={event => onChange({ ...value, start: event.target.value })} /></FormField><FormField label="Kết thúc"><input className="min-w-0" required type="datetime-local" value={value.end} onChange={event => onChange({ ...value, end: event.target.value })} /></FormField></div>
     <FormField label="Ghi chú"><textarea className="min-h-24" value={value.note} onChange={event => onChange({ ...value, note: event.target.value })} /></FormField>
   </div><div className="flex shrink-0 justify-end gap-2 border-t border-[#DAE2FD] p-3"><Button type="button" size="sm" variant="secondary" onClick={onCancel}>Hủy</Button><Button size="sm">{value.id ? 'Lưu thay đổi' : 'Thêm điểm dừng'}</Button></div></form>

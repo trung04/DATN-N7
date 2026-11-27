@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api/client'
 import { isMock, repo } from '@/services'
 import { useSession } from '@/stores/session'
-import type { Booking, Destination, Payment, PreferenceOptions, Refund, TravelPreference } from '@/types/domain'
+import type { Booking, Destination, MapPlaceQuery, Payment, PreferenceOptions, Refund, TravelPreference } from '@/types/domain'
 import type { PublicPlacePage, PublicPlaceQuery } from '@/services/api/client'
 
 async function mockPublicPlaces(query: PublicPlaceQuery): Promise<PublicPlacePage<Destination>> {
@@ -51,6 +51,18 @@ export function usePublicPlace(placeId: string | undefined) {
       return (await repo.publicData()).destinations.find(place => place.id === placeId) ?? null
     },
     enabled: Boolean(placeId),
+  })
+}
+export function useMapPlaces(query: MapPlaceQuery | null) {
+  return useQuery({
+    queryKey: ['map-places', query],
+    queryFn: ({ signal }) => {
+      if (!query) throw new Error('Map viewport is required')
+      return api.mapPlaces(query, signal)
+    },
+    enabled: !isMock && Boolean(query),
+    placeholderData: previous => previous,
+    staleTime: 30_000,
   })
 }
 export function useFavorites() {

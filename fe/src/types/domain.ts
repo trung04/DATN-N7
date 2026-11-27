@@ -93,6 +93,9 @@ export interface PreferenceOptions { categories: PreferenceTaxonomy[]; topics: P
 export interface TravelPreference { userId: string; categories: PreferenceTaxonomy[]; topics: PreferenceTaxonomy[]; budget: number; style: string; transport: string; destinations: string[] }
 export interface TravelPreferenceInput { categoryCodes: string[]; topicCodes: string[]; budget: number; style: string; transport: string; destinations: string[] }
 export interface Destination { id: string; name: string; city: string; region: string; category: string; description: string; tags: string[]; price: number; openingHours?: string; image?: string; rating?: number; lat?: number; lng?: number }
+export interface MapPlacePoint { id: string; name: string; categoryCode: string | null; categoryName: string | null; lat: number; lng: number }
+export interface MapPlaceQuery { bbox: [number, number, number, number]; zoom: number; categoryCodes: string[] }
+export interface MapPlacePage { data: MapPlacePoint[]; meta: { returned: number; limit: number; truncated: boolean; zoom: number } }
 export type PlaceStatus = 'ACTIVE' | 'INACTIVE'
 export interface PlaceCatalogOption { code: string; name: string }
 export interface PlaceCatalogOptions { cities: string[]; categories: PlaceCatalogOption[]; topics: PlaceCatalogOption[] }

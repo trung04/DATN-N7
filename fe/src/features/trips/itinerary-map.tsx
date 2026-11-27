@@ -1,54 +1,52 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
-import mapboxgl, { type Map as MapboxMap, type Marker } from 'mapbox-gl'
+import mapboxgl, { type GeoJSONSource, type Map as MapboxMap, type Marker } from 'mapbox-gl'
 import { Check, LocateFixed, Navigation, Search, Square, X } from 'lucide-react'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import type { Destination, Stopover } from '@/types/domain'
+import type { MapPlacePoint, MapPlaceQuery, Stopover } from '@/types/domain'
+import { useMapPlaces, usePublicPlaceOptions } from '@/hooks/data'
 import { MapboxGeocodingError, searchMapboxAddresses, searchPermanentMapboxAddress, type MapboxGeocodingResult } from '@/lib/mapbox-geocoding'
 import { distanceKm, nextLiveStop } from './itinerary-live-progress'
 import { stopOverlapsDay } from './trip-schedule'
+import { mapPlacesToGeoJson, toggleCategory } from './map-place-geojson'
 
 const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim()
 
 type Coordinates = [number, number]
 
-function coordinates(place: Destination): Coordinates | null {
-  return Number.isFinite(place.lat) && Number.isFinite(place.lng) ? [place.lng!, place.lat!] : null
+function stopCoordinates(stop: Stopover): Coordinates | null {
+  return Number.isFinite(stop.lat) && Number.isFinite(stop.lng) ? [stop.lng!, stop.lat!] : null
 }
 
-function stopCoordinates(stop: Stopover, places: Destination[]): Coordinates | null {
-  if (!stop.placeId && Number.isFinite(stop.lat) && Number.isFinite(stop.lng)) return [stop.lng!, stop.lat!]
-  const place = places.find(item => item.id === stop.placeId)
-  return place ? coordinates(place) : null
-}
+const emptyMapPlaces = mapPlacesToGeoJson([])
 
 export function ItineraryMap({
   city,
-  places,
   stops,
   activeDay,
   activeStopId,
   onMapClick,
-  onChoosePlace,
+  onChoosePlaceId,
   onSelectStop,
 }: {
   city: string
-  places: Destination[]
   stops: Stopover[]
   activeDay: string
   activeStopId?: string
   onMapClick: (point: Coordinates, customStopName?: string, customStopAddress?: string) => void
-  onChoosePlace: (place: Destination) => void
+  onChoosePlaceId: (placeId: string) => void
   onSelectStop: (stopId: string) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap | null>(null)
-  const markersRef = useRef<Marker[]>([])
+  const stopMarkersRef = useRef<Marker[]>([])
   const searchMarkerRef = useRef<Marker | null>(null)
   const liveLocationMarkerRef = useRef<Marker | null>(null)
   const centeredOnLiveLocationRef = useRef(false)
+  const fittedInitialStopsRef = useRef(false)
+  const viewportTimerRef = useRef<number | null>(null)
   const pendingCustomStopNameRef = useRef<string | null>(null)
   const onMapClickEvent = useEffectEvent(onMapClick)
-  const onChoosePlaceEvent = useEffectEvent(onChoosePlace)
+  const onChoosePlaceIdEvent = useEffectEvent(onChoosePlaceId)
   const onSelectStopEvent = useEffectEvent(onSelectStop)
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState('')
@@ -66,28 +64,32 @@ export function ItineraryMap({
   const [liveLocation, setLiveLocation] = useState<{ coordinates: Coordinates; accuracy: number } | null>(null)
   const [liveLocationError, setLiveLocationError] = useState('')
   const [completedStopIds, setCompletedStopIds] = useState<string[]>([])
+  const [viewport, setViewport] = useState<Omit<MapPlaceQuery, 'categoryCodes'> | null>(null)
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const placeOptions = usePublicPlaceOptions()
+  const mapQuery = useMemo<MapPlaceQuery | null>(() => viewport ? { ...viewport, categoryCodes: selectedCategories } : null, [selectedCategories, viewport])
+  const mapPlaces = useMapPlaces(mapQuery)
+  const visiblePlaces = useMemo(() => mapPlaces.data?.data ?? [], [mapPlaces.data?.data])
 
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
     if (!query) return []
-    return places.filter(place => {
-      if (!coordinates(place)) return false
-      const searchable = `${place.name} ${place.city} ${place.region} ${place.category} ${place.tags.join(' ')}`
+    return visiblePlaces.filter(place => {
+      const searchable = `${place.name} ${place.categoryName ?? ''}`
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
       return searchable.includes(query)
     }).slice(0, 7)
-  }, [places, searchQuery])
+  }, [visiblePlaces, searchQuery])
 
-  const chooseSearchResult = (place: Destination) => {
-    const point = coordinates(place)
-    if (!point) return
+  const chooseSearchResult = (place: MapPlacePoint) => {
+    const point: Coordinates = [place.lng, place.lat]
     searchMarkerRef.current?.remove()
     searchMarkerRef.current = null
     setSelectedMapboxResult(null)
     setSearchQuery(place.name)
     setSearchOpen(false)
     mapRef.current?.flyTo({ center: point, zoom: 15, duration: 700 })
-    onChoosePlace(place)
+    onChoosePlaceId(place.id)
     const stop = stops.find(item => item.placeId === place.id)
     if (stop) onSelectStop(stop.id)
   }
@@ -147,11 +149,6 @@ export function ItineraryMap({
   }
 
   const initialCenter = useMemo<Coordinates>(() => {
-    const points = places.map(coordinates).filter((point): point is Coordinates => point !== null)
-    if (points.length) return [
-      points.reduce((sum, point) => sum + point[0], 0) / points.length,
-      points.reduce((sum, point) => sum + point[1], 0) / points.length,
-    ]
     const cityCenters: Record<string, Coordinates> = {
       'Đà Nẵng': [108.2022, 16.0544],
       'Hà Nội': [105.8342, 21.0278],
@@ -161,7 +158,7 @@ export function ItineraryMap({
       'Hồ Chí Minh': [106.6297, 10.8231],
     }
     return cityCenters[city] ?? [106.5, 16]
-  }, [city, places])
+  }, [city])
   const mapInitialCenterRef = useRef(initialCenter)
 
   const dayStops = useMemo(
@@ -172,7 +169,7 @@ export function ItineraryMap({
     () => nextLiveStop(stops, activeDay, completedStopIds, activeStopId),
     [activeDay, activeStopId, completedStopIds, stops],
   )
-  const liveTargetPoint = liveTarget ? stopCoordinates(liveTarget, places) : null
+  const liveTargetPoint = liveTarget ? stopCoordinates(liveTarget) : null
   const liveDistance = liveLocation && liveTargetPoint
     ? distanceKm(liveLocation.coordinates, liveTargetPoint)
     : null
@@ -227,6 +224,18 @@ export function ItineraryMap({
       return
     }
     mapRef.current = map
+    const captureViewport = () => {
+      const bounds = map.getBounds()
+      const round = (value: number) => Number(value.toFixed(5))
+      setViewport({
+        bbox: [round(bounds.getWest()), round(bounds.getSouth()), round(bounds.getEast()), round(bounds.getNorth())],
+        zoom: Math.max(0, Math.min(22, Math.floor(map.getZoom()))),
+      })
+    }
+    const scheduleViewport = () => {
+      if (viewportTimerRef.current !== null) window.clearTimeout(viewportTimerRef.current)
+      viewportTimerRef.current = window.setTimeout(captureViewport, 300)
+    }
     const loadTimer = window.setTimeout(() => {
       if (!map.loaded()) setMapError('Bản đồ tải quá lâu. Kiểm tra kết nối mạng, quyền token Mapbox và WebGL của trình duyệt.')
     }, 12000)
@@ -236,14 +245,89 @@ export function ItineraryMap({
     map.on('load', () => {
       window.clearTimeout(loadTimer)
       map.resize()
+      map.addSource('discovery-places', {
+        type: 'geojson',
+        data: emptyMapPlaces,
+        cluster: true,
+        clusterMaxZoom: 14,
+        clusterRadius: 52,
+      })
+      map.addLayer({
+        id: 'place-clusters',
+        type: 'circle',
+        source: 'discovery-places',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#1E3A5F',
+          'circle-radius': ['step', ['get', 'point_count'], 18, 25, 23, 75, 28],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        },
+      })
+      map.addLayer({
+        id: 'place-cluster-count',
+        type: 'symbol',
+        source: 'discovery-places',
+        filter: ['has', 'point_count'],
+        layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
+        paint: { 'text-color': '#ffffff' },
+      })
+      map.addLayer({
+        id: 'place-points',
+        type: 'circle',
+        source: 'discovery-places',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#0F766E',
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 5, 15, 9],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        },
+      })
+      map.addLayer({
+        id: 'place-labels',
+        type: 'symbol',
+        source: 'discovery-places',
+        minzoom: 13,
+        filter: ['!', ['has', 'point_count']],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 11,
+          'text-offset': [0, 1.4],
+          'text-anchor': 'top',
+          'text-optional': true,
+        },
+        paint: { 'text-color': '#172033', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+      })
+      map.on('click', 'place-clusters', event => {
+        const feature = event.features?.[0]
+        const clusterId = Number(feature?.properties?.cluster_id)
+        if (!feature || !Number.isFinite(clusterId) || feature.geometry.type !== 'Point') return
+        const source = map.getSource('discovery-places') as GeoJSONSource
+        source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+          if (error || zoom === null || feature.geometry.type !== 'Point') return
+          map.easeTo({ center: feature.geometry.coordinates as Coordinates, zoom })
+        })
+      })
+      map.on('click', 'place-points', event => {
+        const placeId = event.features?.[0]?.properties?.id as string | undefined
+        if (placeId) onChoosePlaceIdEvent(placeId)
+      })
+      for (const layerId of ['place-clusters', 'place-points']) {
+        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer' })
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = '' })
+      }
+      captureViewport()
       setMapReady(true)
     })
+    map.on('moveend', scheduleViewport)
     map.on('error', event => {
       window.clearTimeout(loadTimer)
       console.error('Mapbox map error:', event.error)
       setMapError('Mapbox không tải được bản đồ. Kiểm tra quyền truy cập token, kết nối mạng và WebGL.')
     })
     map.on('click', event => {
+      if (map.queryRenderedFeatures(event.point, { layers: ['place-clusters', 'place-points'] }).length) return
       const customStopName = pendingCustomStopNameRef.current
       if (customStopName) {
         pendingCustomStopNameRef.current = null
@@ -252,14 +336,14 @@ export function ItineraryMap({
         onMapClickEvent([event.lngLat.lng, event.lngLat.lat], customStopName)
         return
       }
-      onMapClickEvent([event.lngLat.lng, event.lngLat.lat])
     })
     requestAnimationFrame(() => map.resize())
     return () => {
       window.clearTimeout(loadTimer)
+      if (viewportTimerRef.current !== null) window.clearTimeout(viewportTimerRef.current)
       resizeObserver.disconnect()
-      markersRef.current.forEach(marker => marker.remove())
-      markersRef.current = []
+      stopMarkersRef.current.forEach(marker => marker.remove())
+      stopMarkersRef.current = []
       searchMarkerRef.current?.remove()
       searchMarkerRef.current = null
       liveLocationMarkerRef.current?.remove()
@@ -272,29 +356,17 @@ export function ItineraryMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
-    markersRef.current.forEach(marker => marker.remove())
-    markersRef.current = []
+    const source = map.getSource('discovery-places') as GeoJSONSource | undefined
+    source?.setData(mapPlacesToGeoJson(visiblePlaces))
+  }, [mapReady, visiblePlaces])
 
-    const stopByPlaceId = new Map(stops.filter(stop => stop.placeId).map(stop => [stop.placeId!, stop]))
-    for (const place of places) {
-      const point = coordinates(place)
-      if (!point) continue
-      const stop = stopByPlaceId.get(place.id)
-      const markerElement = document.createElement('button')
-      markerElement.type = 'button'
-      markerElement.className = stop ? 'itinerary-map-marker itinerary-map-marker-stop' : 'itinerary-map-marker itinerary-map-marker-place'
-      markerElement.setAttribute('aria-label', stop ? `Điểm dừng: ${place.name}` : `Chọn ${place.name}`)
-      markerElement.title = place.name
-      markerElement.textContent = stop ? String(stops.indexOf(stop) + 1) : ''
-      markerElement.addEventListener('click', event => {
-        event.stopPropagation()
-        onChoosePlaceEvent(place)
-        if (stop) onSelectStopEvent(stop.id)
-      })
-      markersRef.current.push(new mapboxgl.Marker({ element: markerElement, anchor: stop ? 'bottom' : 'center' }).setLngLat(point).addTo(map))
-    }
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    stopMarkersRef.current.forEach(marker => marker.remove())
+    stopMarkersRef.current = []
 
-    stops.filter(stop => !stop.placeId && Number.isFinite(stop.lat) && Number.isFinite(stop.lng)).forEach(stop => {
+    stops.filter(stop => Number.isFinite(stop.lat) && Number.isFinite(stop.lng)).forEach(stop => {
       const markerElement = document.createElement('button')
       markerElement.type = 'button'
       markerElement.className = 'itinerary-map-marker itinerary-map-marker-stop'
@@ -305,33 +377,31 @@ export function ItineraryMap({
         event.stopPropagation()
         onSelectStopEvent(stop.id)
       })
-      markersRef.current.push(new mapboxgl.Marker({ element: markerElement, anchor: 'bottom' }).setLngLat([stop.lng!, stop.lat!]).addTo(map))
+      stopMarkersRef.current.push(new mapboxgl.Marker({ element: markerElement, anchor: 'bottom' }).setLngLat([stop.lng!, stop.lat!]).addTo(map))
     })
 
     const allStopCoordinates = stops.flatMap(stop => {
-      const point = stopCoordinates(stop, places)
+      const point = stopCoordinates(stop)
       return point ? [point] : []
     })
 
-    const boundsPoints = allStopCoordinates.length
-      ? allStopCoordinates
-      : places.map(coordinates).filter((point): point is Coordinates => point !== null)
-    if (!activeStopId && boundsPoints.length) {
-      if (boundsPoints.length === 1) map.flyTo({ center: boundsPoints[0], zoom: 13, duration: 700 })
+    if (!fittedInitialStopsRef.current && allStopCoordinates.length) {
+      fittedInitialStopsRef.current = true
+      if (allStopCoordinates.length === 1) map.flyTo({ center: allStopCoordinates[0], zoom: 13, duration: 700 })
       else {
         const bounds = new mapboxgl.LngLatBounds()
-        boundsPoints.forEach(point => bounds.extend(point))
+        allStopCoordinates.forEach(point => bounds.extend(point))
         map.fitBounds(bounds, { padding: 64, maxZoom: 13, duration: 700 })
       }
     }
-  }, [places, stops, mapReady, activeStopId])
+  }, [stops, mapReady])
 
   useEffect(() => {
     if (!activeStopId) return
     const stop = stops.find(item => item.id === activeStopId)
-    const point = stop ? stopCoordinates(stop, places) : null
+    const point = stop ? stopCoordinates(stop) : null
     if (point) mapRef.current?.flyTo({ center: point, zoom: 14, duration: 700 })
-  }, [activeStopId, places, stops])
+  }, [activeStopId, stops])
 
   useEffect(() => {
     if (!liveTracking) return
@@ -422,12 +492,16 @@ export function ItineraryMap({
         />
         {searchQuery && <button type="button" aria-label="Xóa nội dung tìm kiếm" className="absolute right-3 top-3 rounded p-0.5 text-slate-500 hover:bg-slate-100" onClick={() => { setSearchQuery(''); setSearchOpen(true); setMapboxResults([]); setMapboxSearchError(''); setMapboxSearching(false); setSelectedMapboxResult(null); searchMarkerRef.current?.remove(); searchMarkerRef.current = null }}><X size={17} /></button>}
       </div>
+      {placeOptions.data?.categories.length ? <div aria-label="Lọc loại địa điểm" className="mt-2 flex max-w-full flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur">
+        {placeOptions.data.categories.map(category => { const active = selectedCategories.includes(category.code); return <button key={category.code} type="button" aria-pressed={active} className={'rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ' + (active ? 'border-[#1E3A5F] bg-[#1E3A5F] text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-[#1E3A5F] hover:text-[#1E3A5F]')} onClick={() => setSelectedCategories(current => toggleCategory(current, category.code))}>{category.name}</button> })}
+        {selectedCategories.length > 0 && <button type="button" className="rounded-full px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100" onClick={() => setSelectedCategories([])}>Xóa lọc</button>}
+      </div> : null}
       {searchOpen && searchQuery.trim() && <div id="itinerary-map-search-results" role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
         {searchResults.length > 0 && <>
-          <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Địa điểm trong danh mục</p>
+          <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Địa điểm trong khung bản đồ</p>
           {searchResults.map(place => <button key={place.id} type="button" role="option" aria-selected="false" className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50" onMouseDown={event => event.preventDefault()} onClick={() => chooseSearchResult(place)}>
             <span className="block truncate text-sm font-semibold text-slate-800">{place.name}</span>
-            <span className="mt-0.5 block truncate text-xs text-slate-500">{place.region ? `${place.region}, ` : ''}{place.city}</span>
+            <span className="mt-0.5 block truncate text-xs text-slate-500">{place.categoryName ?? 'Chưa phân loại'}</span>
           </button>)}
         </>}
         <>
@@ -453,6 +527,8 @@ export function ItineraryMap({
       {liveLocationError && <div role="alert" className="mt-2 rounded-lg border border-amber-200 bg-white/95 px-3 py-2 text-xs text-amber-800 shadow">{liveLocationError}</div>}
     </div>
     {!mapReady && !mapError && <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-slate-100/70 text-sm text-slate-600">Đang tải bản đồ...</div>}
+    {mapReady && mapPlaces.isFetching && <div className="pointer-events-none absolute bottom-14 left-3 z-10 rounded-lg bg-white/95 px-3 py-2 text-xs text-slate-600 shadow">Đang cập nhật địa điểm trong khung bản đồ…</div>}
+    {mapReady && mapPlaces.error && <div role="alert" className="absolute bottom-14 left-3 z-10 rounded-lg border border-red-200 bg-white/95 px-3 py-2 text-xs text-red-700 shadow">Không thể tải địa điểm. Hãy di chuyển bản đồ để thử lại.</div>}
     {mapError && <div role="alert" className="absolute left-4 right-16 top-[4.5rem] z-10 max-w-xl rounded-xl border border-red-200 bg-white/95 p-4 text-sm text-red-700 shadow">{mapError}</div>}
     {selectingCustomStop && <div role="status" className="absolute bottom-14 left-3 z-10 max-w-[min(90%,28rem)] rounded-lg bg-white/95 px-3 py-2 text-sm text-slate-700 shadow">Bấm vị trí muốn ghim, rồi nhập tên và địa chỉ điểm dừng.<button type="button" className="ml-2 font-semibold text-[#1E3A5F] hover:underline" onClick={() => { pendingCustomStopNameRef.current = null; setSelectingCustomStop(false) }}>Hủy</button></div>}
     {selectedMapboxResult && !selectingCustomStop && <div role="status" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-600 shadow"><p className="truncate font-semibold text-slate-800">{selectedMapboxResult.name}</p><p className="truncate">{selectedMapboxResult.address}</p><button type="button" disabled={resolvingPermanentSearch} className="mt-2 rounded-md bg-[#1E3A5F] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#294e7b] disabled:cursor-wait disabled:opacity-60" onClick={() => void addSelectedMapboxResultAsStop()}>{resolvingPermanentSearch ? 'Đang xác nhận địa điểm…' : 'Thêm làm điểm dừng'}</button>{permanentSearchError && <><p className="mt-2 text-amber-800">{permanentSearchError}</p><button type="button" className="mt-1 font-semibold text-[#1E3A5F] hover:underline" onClick={startCustomStopPin}>Ghim thủ công và nhập thông tin</button></>}</div>}

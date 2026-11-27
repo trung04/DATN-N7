@@ -3,7 +3,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestCo
 import { DomainError } from '@/lib/errors'
 import { hasValidCoordinates } from '@/lib/coordinates'
 import type { HotelLocationResult } from '@/lib/hotel-location-search'
-import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, TwoFactorRecoveryCodes, TwoFactorRequired, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, MapPlacePage, MapPlaceQuery, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, TwoFactorRecoveryCodes, TwoFactorRequired, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
@@ -27,6 +27,11 @@ interface BackendPlace {
   status?: 'ACTIVE' | 'INACTIVE'
   price?: { isFree: boolean; minPrice: number; maxPrice: number; currency: string; pricingUnit?: string; description?: string | null } | null
 }
+interface BackendMapPlacePoint {
+  id: string; name: string; categoryCode: string | null; categoryName: string | null
+  latitude: number; longitude: number
+}
+interface BackendMapPlacePage { data: BackendMapPlacePoint[]; meta: MapPlacePage['meta'] }
 const placeCategoryLabels: Record<string, string> = {
   ATTRACTION: 'Điểm tham quan',
   RESTAURANT: 'Nhà hàng',
@@ -446,6 +451,7 @@ type PublicPlacesApi = {
   publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<PublicPlacePage<Destination>>
   publicPlace: (placeId: string, signal?: AbortSignal) => Promise<Destination>
   publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
+  mapPlaces: (query: MapPlaceQuery, signal?: AbortSignal) => Promise<MapPlacePage>
 }
 
 type PlaceTaxonomiesApi = {
@@ -548,8 +554,8 @@ async function loadMyItineraries(userId: string) {
       placeId: stop.placeId ?? undefined,
       name: stop.customName ?? place?.name ?? 'Địa điểm đã lưu',
       address: stop.customAddress ?? place?.address ?? place?.city ?? '',
-      lat: stop.latitude ?? undefined,
-      lng: stop.longitude ?? undefined,
+      lat: stop.latitude ?? place?.latitude ?? undefined,
+      lng: stop.longitude ?? place?.longitude ?? undefined,
       start: toDateTimeInput(stop.arrivalTime),
       end: toDateTimeInput(stop.departureTime),
       order: stop.stopOrder,
@@ -612,6 +618,29 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   publicPlaceOptions: async signal => {
     const options = await request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options', signal })
     return { cities: options.cities, categories: options.categories }
+  },
+  mapPlaces: async (query, signal) => {
+    const page = await request<BackendMapPlacePage>({
+      method: 'GET',
+      url: '/places/map',
+      params: {
+        bbox: query.bbox.join(','),
+        zoom: query.zoom,
+        categoryCodes: [...query.categoryCodes].sort().join(',') || undefined,
+      },
+      signal,
+    })
+    return {
+      ...page,
+      data: page.data.map(place => ({
+        id: place.id,
+        name: place.name,
+        categoryCode: place.categoryCode,
+        categoryName: place.categoryName,
+        lat: place.latitude,
+        lng: place.longitude,
+      })),
+    }
   },
   placeCategories: () => request<PlaceTaxonomy[]>({ method: 'GET', url: '/place-categories' }),
   createPlaceCategory: input => request<PlaceTaxonomy>({ method: 'POST', url: '/place-categories', data: input }),
