@@ -8,7 +8,7 @@ import { Toast } from '@/components/ui/toast'
 import { EmptyState, ErrorState, LoadingState } from '@/components/common'
 import { addDay, errorMessage, nights } from '@/lib/utils'
 import { repo } from '@/services'
-import { useCatalog, useMyItineraries } from '@/hooks/data'
+import { useMyItineraries, usePublicPlace } from '@/hooks/data'
 import { useSession } from '@/stores/session'
 import type { Destination, Stopover, TravelActivity } from '@/types/domain'
 import { ItineraryMap } from './itinerary-map-adapter'
@@ -20,14 +20,14 @@ export function TripDetailPage() {
   const location = useLocation()
   const user = useSession(state => state.user)
   const { data, isLoading, error } = useMyItineraries()
-  const { data: catalog } = useCatalog()
   const queryClient = useQueryClient()
   const [activeDay, setActiveDay] = useState('')
   const [activeStopId, setActiveStopId] = useState<string>()
   const [stopForm, setStopForm] = useState<Stopover | null>(null)
   const [activityForm, setActivityForm] = useState<TravelActivity | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
-  const [mapCandidate, setMapCandidate] = useState<{ place: Destination; distance: number } | null>(null)
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string>()
+  const selectedPlace = usePublicPlace(selectedPlaceId)
   const initialNotice = (location.state as { notice?: string } | null)?.notice
   const [toast, setToast] = useState<{ id: number; message: string; kind: 'success' | 'error' } | null>(() => initialNotice ? { id: 0, message: initialNotice, kind: initialNotice.startsWith('Đã') ? 'success' : 'error' } : null)
   const toastId = useRef(0)
@@ -35,8 +35,6 @@ export function TripDetailPage() {
   const showToast = (message: string, kind: 'success' | 'error') => setToast({ id: ++toastId.current, message, kind })
   const trip = data?.trips.find(item => item.id === id)
   const stops = useMemo(() => [...(data?.stops.filter(stop => stop.tripId === trip?.id) ?? [])].sort((a, b) => a.start.localeCompare(b.start)), [data?.stops, trip?.id])
-  const places = useMemo(() => (catalog?.destinations ?? []).filter(place => !place.city || place.city.toLocaleLowerCase('vi').includes((trip?.city ?? '').toLocaleLowerCase('vi'))), [catalog?.destinations, trip?.city])
-
   if (isLoading) return <LoadingState />
   if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
   if (!trip) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy chuyến đi" /></div>
@@ -51,7 +49,7 @@ export function TripDetailPage() {
     setActiveDay(date)
     setActiveStopId(undefined)
     setActivityForm(null)
-    setMapCandidate(null)
+    setSelectedPlaceId(undefined)
     setStopForm({ id: '', tripId: trip.id, placeId: place?.id, name: place?.name ?? '', address: place?.region || place?.city || '', lat: place?.lat, lng: place?.lng, ...times, order: stops.length + 1, note: '' })
   }
 
@@ -59,17 +57,18 @@ export function TripDetailPage() {
     const times = defaultStopTimes(activeDayKey, stops, activities)
     setActiveStopId(undefined)
     setActivityForm(null)
-    setMapCandidate(null)
+    setSelectedPlaceId(undefined)
     setStopForm({ id: '', tripId: trip.id, name, address: address ?? '', lat: point[1], lng: point[0], ...times, order: stops.length + 1, note: '' })
   }
 
-  const selectPlace = (place: Destination) => {
-    if (stopForm && !stopForm.id) {
-      setStopForm({ ...stopForm, placeId: place.id, name: place.name, address: place.region || place.city, lat: place.lat, lng: place.lng })
+  const selectPlaceById = (placeId: string) => {
+    const stop = stops.find(item => item.placeId === placeId)
+    if (stop) {
+      selectStop(stop.id)
       return
     }
     setActiveStopId(undefined)
-    setMapCandidate({ place, distance: 0 })
+    setSelectedPlaceId(placeId)
   }
 
   const handleMapClick = (point: [number, number], customStopName?: string, customStopAddress?: string) => {
@@ -77,14 +76,7 @@ export function TripDetailPage() {
       openCustomStopForm(customStopName, point, customStopAddress)
       return
     }
-    const nearest = places.flatMap(place => Number.isFinite(place.lat) && Number.isFinite(place.lng) ? [{ place, distance: distanceKm(point, [place.lng!, place.lat!]) }] : []).sort((a, b) => a.distance - b.distance)[0]
-    if (!nearest || nearest.distance > 5) {
-      setMapCandidate(null)
-      showToast('Không có địa điểm trong danh mục gần vị trí vừa chọn.', 'error')
-      return
-    }
-    selectPlace(nearest.place)
-    setMapCandidate({ place: nearest.place, distance: nearest.distance })
+    openCustomStopForm('Điểm dừng tùy chỉnh', point)
   }
 
   const saveStop = async () => {
@@ -129,18 +121,20 @@ export function TripDetailPage() {
   const selectStop = (stopId: string, preferredDay?: string) => {
     const stop = stops.find(item => item.id === stopId)
     if (stop) setActiveDay(preferredDay && stopOverlapsDay(stop, preferredDay) ? preferredDay : stop.start.slice(0, 10))
-    setMapCandidate(null)
+    setSelectedPlaceId(undefined)
     setActiveStopId(stopId)
   }
 
   return <div className="min-h-[calc(100vh-4rem)] bg-slate-100">
     {toast && <Toast key={toast.id} message={toast.message} kind={toast.kind} placement="bottom" onClose={closeToast} />}
     <div className="grid min-h-0 gap-3 bg-slate-100 p-3 lg:fixed lg:inset-x-0 lg:bottom-0 lg:top-16 lg:z-30 lg:grid-cols-[clamp(420px,36vw,520px)_minmax(0,1fr)]">
-      <ItineraryTray trip={trip} stops={stops} activities={activities} places={places} days={days} activeDay={activeDayKey} activeStopId={activeStopId} stopForm={stopForm} activityForm={activityForm} onChangeDay={setActiveDay} onAddStop={openStopForm} onEditStop={(stop, date) => { setActiveDay(date); setActivityForm(null); setStopForm(stop) }} onChangeStop={setStopForm} onSaveStop={saveStop} onCancelStop={() => setStopForm(null)} onAddActivity={addActivity} onEditActivity={setActivityForm} onChangeActivity={setActivityForm} onSaveActivity={saveActivity} onCancelActivity={() => setActivityForm(null)} onLocateStop={(stop, date) => selectStop(stop.id, date)} onDelete={setDeleteTarget} />
+      <ItineraryTray trip={trip} stops={stops} activities={activities} days={days} activeDay={activeDayKey} activeStopId={activeStopId} stopForm={stopForm} activityForm={activityForm} onChangeDay={setActiveDay} onAddStop={openStopForm} onEditStop={(stop, date) => { setActiveDay(date); setActivityForm(null); setStopForm(stop) }} onChangeStop={setStopForm} onSaveStop={saveStop} onCancelStop={() => setStopForm(null)} onAddActivity={addActivity} onEditActivity={setActivityForm} onChangeActivity={setActivityForm} onSaveActivity={saveActivity} onCancelActivity={() => setActivityForm(null)} onLocateStop={(stop, date) => selectStop(stop.id, date)} onDelete={setDeleteTarget} />
 
       <section className="relative min-h-[560px] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm lg:h-full lg:min-h-0">
-        <ItineraryMap city={trip.city} places={places} stops={stops} activeDay={activeDayKey} activeStopId={activeStopId} onMapClick={handleMapClick} onChoosePlace={selectPlace} onSelectStop={selectStop} />
-        {mapCandidate && <section aria-label="Địa điểm đang chọn" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-[#1E3A5F]">{mapCandidate.place.name}</p><p className="mt-0.5 truncate text-xs text-slate-500">{mapCandidate.place.region || mapCandidate.place.city}{mapCandidate.distance > 0.05 ? ` · cách ${mapCandidate.distance.toFixed(1)} km` : ''}</p><Button size="sm" className="mt-2" onClick={() => openStopForm(activeDayKey, mapCandidate.place)}><Plus size={14} />Thêm vào lịch trình · Ngày {days.indexOf(activeDayKey) + 1}</Button></div><Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label="Đóng địa điểm đang chọn" onClick={() => setMapCandidate(null)}><X size={15} /></Button></div></section>}
+        <ItineraryMap city={trip.city} stops={stops} activeDay={activeDayKey} activeStopId={activeStopId} onMapClick={handleMapClick} onChoosePlaceId={selectPlaceById} onSelectStop={selectStop} />
+        {selectedPlace.isFetching && <div role="status" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-xl border border-slate-200 bg-white/95 p-3 text-sm text-slate-600 shadow-lg">Đang tải chi tiết địa điểm…</div>}
+        {selectedPlace.error && <div role="alert" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-xl border border-red-200 bg-white/95 p-3 text-sm text-red-700 shadow-lg">{errorMessage(selectedPlace.error)}</div>}
+        {selectedPlace.data && <section aria-label="Địa điểm đang chọn" className="absolute left-3 right-14 top-[4.5rem] z-20 max-w-lg rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-[#1E3A5F]">{selectedPlace.data.name}</p><p className="mt-0.5 truncate text-xs text-slate-500">{selectedPlace.data.region || selectedPlace.data.city}</p><Button size="sm" className="mt-2" onClick={() => { if (selectedPlace.data) openStopForm(activeDayKey, selectedPlace.data) }}><Plus size={14} />Thêm vào lịch trình · Ngày {days.indexOf(activeDayKey) + 1}</Button></div><Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label="Đóng địa điểm đang chọn" onClick={() => setSelectedPlaceId(undefined)}><X size={15} /></Button></div></section>}
       </section>
     </div>
 
@@ -148,10 +142,3 @@ export function TripDetailPage() {
   </div>
 }
 
-function distanceKm(a: [number, number], b: [number, number]) {
-  const radians = (value: number) => value * Math.PI / 180
-  const latitude = radians(b[1] - a[1])
-  const longitude = radians(b[0] - a[0])
-  const value = Math.sin(latitude / 2) ** 2 + Math.cos(radians(a[1])) * Math.cos(radians(b[1])) * Math.sin(longitude / 2) ** 2
-  return 6371 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value))
-}

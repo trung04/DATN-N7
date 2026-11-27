@@ -9,12 +9,14 @@ import {
 import type {
   CreatePlaceData,
   FindPlacesOptions,
+  FindMapPlacesOptions,
   PlaceDetailsData,
   PlaceCatalogOptions,
   PlaceCatalogWriteData,
   PlacePage,
   PlaceRepository,
   PlaceSummaryData,
+  MapPlacePointData,
 } from '../interfaces/place.repository.interface';
 
 interface PlaceCatalogRow {
@@ -127,6 +129,82 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
       items: places.map((place) => this.toSummary(place, catalog.get(place.id))),
       total,
     };
+  }
+
+  async findMapPoints(
+    options: FindMapPlacesOptions,
+  ): Promise<MapPlacePointData[]> {
+    const rows = (await this.repository.query(
+      `
+        SELECT
+          place.id,
+          place.name,
+          category.code AS "categoryCode",
+          category.name AS "categoryName",
+          place.latitude,
+          place.longitude
+        FROM places place
+        LEFT JOIN LATERAL (
+          SELECT candidate.code, candidate.name
+          FROM place_category_mappings mapping
+          INNER JOIN place_categories candidate
+            ON candidate.id = mapping.place_category_id
+           AND candidate.deleted_at IS NULL
+          WHERE mapping.place_id = place.id
+            AND mapping.deleted_at IS NULL
+          ORDER BY mapping.created_at, candidate.code
+          LIMIT 1
+        ) category ON TRUE
+        WHERE place.deleted_at IS NULL
+          AND place.status = 'ACTIVE'
+          AND place.location IS NOT NULL
+          AND ST_Intersects(
+            place.location,
+            ST_MakeEnvelope($1, $2, $3, $4, 4326)::geography
+          )
+          AND (
+            cardinality($5::varchar[]) = 0
+            OR EXISTS (
+              SELECT 1
+              FROM place_category_mappings selected_mapping
+              INNER JOIN place_categories selected_category
+                ON selected_category.id = selected_mapping.place_category_id
+               AND selected_category.deleted_at IS NULL
+              WHERE selected_mapping.place_id = place.id
+                AND selected_mapping.deleted_at IS NULL
+                AND selected_category.code = ANY($5::varchar[])
+            )
+          )
+        ORDER BY place.average_rating DESC NULLS LAST,
+                 place.review_count DESC,
+                 place.id ASC
+        LIMIT $6
+      `,
+      [
+        options.west,
+        options.south,
+        options.east,
+        options.north,
+        options.categoryCodes,
+        options.limit,
+      ],
+    )) as Array<{
+      id: string;
+      name: string;
+      categoryCode: string | null;
+      categoryName: string | null;
+      latitude: string | number;
+      longitude: string | number;
+    }>;
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      categoryCode: row.categoryCode,
+      categoryName: row.categoryName,
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+    }));
   }
 
   async findCatalogOptions(): Promise<PlaceCatalogOptions> {

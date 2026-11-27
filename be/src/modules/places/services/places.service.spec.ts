@@ -10,6 +10,7 @@ import {
 } from '../exceptions/place.exceptions';
 import type { PlaceRepository } from '../interfaces/place.repository.interface';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
+import { MapPlacesRequest } from '../dtos/requests/map-places.request';
 import { PlacesService } from './places.service';
 
 const place = (overrides: Partial<PlaceEntity> = {}): PlaceEntity =>
@@ -59,6 +60,7 @@ describe('PlacesService', () => {
       findDetailsById: jest.fn(),
       findByExternalProviderId: jest.fn(),
       findPage: jest.fn(),
+      findMapPoints: jest.fn(),
       findCatalogOptions: jest.fn(),
       findPreferenceOptions: jest.fn(),
       create: createPlace,
@@ -184,5 +186,54 @@ describe('PlacesService', () => {
       sortBy: 'averageRating',
       sortOrder: 'DESC',
     });
+  });
+
+  it.each([
+    [8, 40],
+    [10, 80],
+    [12, 120],
+    [14, 200],
+  ])('limits map points for zoom %i to %i', async (zoom, limit) => {
+    repository.findMapPoints.mockResolvedValue([]);
+    const query = Object.assign(new MapPlacesRequest(), {
+      bbox: [108.12, 15.95, 108.3, 16.15] as [number, number, number, number],
+      zoom,
+      categoryCodes: ['ATTRACTION', 'RESTAURANT'],
+    });
+
+    await service.findMapPoints(query);
+
+    expect(repository.findMapPoints).toHaveBeenCalledWith({
+      west: 108.12,
+      south: 15.95,
+      east: 108.3,
+      north: 16.15,
+      categoryCodes: ['ATTRACTION', 'RESTAURANT'],
+      limit: limit + 1,
+    });
+  });
+
+  it('returns only the zoom budget and marks a truncated viewport', async () => {
+    repository.findMapPoints.mockResolvedValue(
+      Array.from({ length: 41 }, (_, index) => ({
+        id: String(index),
+        name: `Place ${index}`,
+        categoryCode: 'ATTRACTION',
+        categoryName: 'Điểm tham quan',
+        latitude: 16 + index / 10_000,
+        longitude: 108 + index / 10_000,
+      })),
+    );
+
+    const result = await service.findMapPoints(
+      Object.assign(new MapPlacesRequest(), {
+        bbox: [108.12, 15.95, 108.3, 16.15] as [number, number, number, number],
+        zoom: 8,
+        categoryCodes: [],
+      }),
+    );
+
+    expect(result.items).toHaveLength(40);
+    expect(result).toMatchObject({ limit: 40, truncated: true });
   });
 });

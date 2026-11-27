@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CreatePlaceRequest } from '../dtos/requests/create-place.request';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
+import { MapPlacesRequest } from '../dtos/requests/map-places.request';
 import { UpdatePlaceRequest } from '../dtos/requests/update-place.request';
 import { PlaceEntity, PlaceSourceType } from '../entities/place.entity';
 import {
@@ -15,6 +16,7 @@ import type {
   PlaceCatalogOptions,
   PlaceCatalogWriteData,
   PlaceDetailsData,
+  MapPlaceResult,
   PlacePage,
   PlaceRepository,
 } from '../interfaces/place.repository.interface';
@@ -98,6 +100,24 @@ export class PlacesService {
     });
   }
 
+  async findMapPoints(input: MapPlacesRequest): Promise<MapPlaceResult> {
+    const limit = this.mapPointLimit(input.zoom);
+    const [west, south, east, north] = input.bbox;
+    const points = await this.repository.findMapPoints({
+      west,
+      south,
+      east,
+      north,
+      categoryCodes: input.categoryCodes,
+      limit: limit + 1,
+    });
+    return {
+      items: points.slice(0, limit),
+      limit,
+      truncated: points.length > limit,
+    };
+  }
+
   async findById(id: string): Promise<PlaceEntity> {
     const place = await this.repository.findById(id);
     if (!place) throw new PlaceNotFoundException(id);
@@ -164,6 +184,13 @@ export class PlacesService {
   async delete(id: string): Promise<void> {
     const place = await this.findById(id);
     await this.repository.delete(place);
+  }
+
+  private mapPointLimit(zoom: number): number {
+    if (zoom <= 9) return 40;
+    if (zoom <= 11) return 80;
+    if (zoom <= 13) return 120;
+    return 200;
   }
 
   private async assertProviderAvailable(

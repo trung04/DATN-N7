@@ -26,9 +26,11 @@ import {
 } from '../../../common/openapi/api-crud.decorator';
 import { CreatePlaceRequest } from '../dtos/requests/create-place.request';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
+import { MapPlacesRequest } from '../dtos/requests/map-places.request';
 import { UpdatePlaceRequest } from '../dtos/requests/update-place.request';
 import {
   PlaceListResponse,
+  MapPlacesResponse,
   PlaceResponse,
 } from '../dtos/responses/place.response';
 import { PlaceMapper } from '../mappers/place.mapper';
@@ -72,6 +74,23 @@ export class PlacesController {
   @Public()
   async findCatalogOptions() {
     return this.placesService.findCatalogOptions();
+  }
+
+  @Get('map')
+  @Public()
+  async findMapPoints(
+    @Query() query: MapPlacesRequest,
+  ): Promise<MapPlacesResponse> {
+    const result = await this.placesService.findMapPoints(query);
+    return {
+      data: result.items,
+      meta: {
+        returned: result.items.length,
+        limit: result.limit,
+        truncated: result.truncated,
+        zoom: query.zoom,
+      },
+    };
   }
 
   @Get(':placeId')
