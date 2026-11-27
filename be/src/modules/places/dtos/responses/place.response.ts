@@ -99,3 +99,22 @@ export class PlaceListResponse {
     total: number;
   };
 }
+
+export class MapPlacePointResponse {
+  id: string;
+  name: string;
+  categoryCode: string | null;
+  categoryName: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+export class MapPlacesResponse {
+  data: MapPlacePointResponse[];
+  meta: {
+    returned: number;
+    limit: number;
+    truncated: boolean;
+    zoom: number;
+  };
+}

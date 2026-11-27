@@ -29,6 +29,30 @@ export interface PlacePage {
   total: number;
 }
 
+export interface FindMapPlacesOptions {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+  categoryCodes: readonly string[];
+  limit: number;
+}
+
+export interface MapPlacePointData {
+  id: string;
+  name: string;
+  categoryCode: string | null;
+  categoryName: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+export interface MapPlaceResult {
+  items: MapPlacePointData[];
+  limit: number;
+  truncated: boolean;
+}
+
 export interface PlaceCategoryData {
   code: string;
   name: string;
@@ -118,6 +142,7 @@ export interface PlaceRepository {
     externalProviderId: string,
   ): Promise<PlaceEntity | null>;
   findPage(options: FindPlacesOptions): Promise<PlacePage>;
+  findMapPoints(options: FindMapPlacesOptions): Promise<MapPlacePointData[]>;
   findCatalogOptions(): Promise<PlaceCatalogOptions>;
   findPreferenceOptions(): Promise<PlaceCatalogOptions>;
   create(data: CreatePlaceData, catalog: PlaceCatalogWriteData): Promise<PlaceEntity>;
