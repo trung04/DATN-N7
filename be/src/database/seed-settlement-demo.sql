@@ -1,6 +1,6 @@
 -- Additive demo seed for hotel-owner settlement screens.
 -- All generated payment references and bank details are synthetic. This script
--- does not call SePay and never creates a real or sandbox provider transaction.
+-- does not call a payment provider and never creates a real or sandbox provider transaction.
 -- Re-running it keeps the same tagged rows and does not duplicate them.
 -- PowerShell: Get-Content -Raw be/src/database/seed-settlement-demo.sql |
 --   docker compose exec -T postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
@@ -356,7 +356,7 @@ SELECT
   s.approved_at,
   s.paid_at,
   s.transfer_reference,
-  CASE WHEN s.status = 'PAID' THEN 'SEPAY_BANKHUB_SANDBOX' ELSE 'MANUAL' END,
+  CASE WHEN s.status = 'PAID' THEN 'LEGACY_SIMULATED' ELSE 'MANUAL' END,
   s.provider_transfer_id,
   CASE WHEN s.status = 'DRAFT' THEN 1 WHEN s.status = 'APPROVED' THEN 2 ELSE 3 END,
   now(), now()
@@ -420,7 +420,7 @@ CROSS JOIN LATERAL (
     (1, NULL::text, 'DRAFT'::text, 'DEMO-SEED: synthetic settlement batch created for presentation.', NULL::timestamptz),
     (2, 'DRAFT'::text, 'APPROVED'::text, 'DEMO-SEED: sample batch approved for presentation.', seed.approved_at),
     (3, 'APPROVED'::text, 'PROCESSING'::text, 'DEMO-SEED: synthetic payout-processing step; no provider transaction was created.', seed.paid_at),
-    (4, 'PROCESSING'::text, 'PAID'::text, 'DEMO-SEED ONLY: seeded paid display state; no SePay transaction or money movement was created.', seed.paid_at)
+    (4, 'PROCESSING'::text, 'PAID'::text, 'DEMO-SEED ONLY: seeded paid display state; no provider transaction or money movement was created.', seed.paid_at)
 ) AS ev(step, from_status, to_status, note, event_at)
 WHERE (seed.status = 'DRAFT' AND ev.step = 1)
    OR (seed.status = 'APPROVED' AND ev.step IN (1, 2))

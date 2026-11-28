@@ -67,6 +67,16 @@ export class RoomsController {
     return RoomMapper.toListResponse(page, query.page, query.limit);
   }
 
+  @Get('mine')
+  @ApiListOperation('List rooms managed by the current user', RoomListResponse)
+  async findManagedPage(
+    @CurrentUser() user: UserEntity,
+    @Query() query: ListRoomsRequest,
+  ): Promise<RoomListResponse> {
+    const page = await this.roomsService.findManagedPage(query, user);
+    return RoomMapper.toListResponse(page, query.page, query.limit);
+  }
+
   @Get('guest-policies')
   @Public()
   async listGuestPolicies(

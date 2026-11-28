@@ -1,6 +1,13 @@
+import type { HotelDocumentUploadInput } from '@/types/domain'
+import type { BookingSettings, PlatformSettingSection, PlatformSettingValue } from '@/types/domain'
+import type { BankOption } from '@/types/domain'
 import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { DomainError } from '@/lib/errors'
-import type { AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
+import { localizedErrorMessage } from '@/lib/error-messages'
+import { hasValidCoordinates } from '@/lib/coordinates'
+import { fetchAllPages } from '@/lib/pagination'
+import type { HotelLocationResult } from '@/lib/hotel-location-search'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
 interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
@@ -8,10 +15,11 @@ interface BackendHotel {
   id: string; placeId?: string | null; name: string; description: string | null; address: string
   starRating: number | null; checkInTime: string
   images: PartnerHotel['images']
+  latitude?: number | null; longitude?: number | null
 }
 interface BackendRoom {
   id: string; hotelId: string; maxOccupancy: number; pricePerNight: number
-  description: string | null; roomType: string; roomNumber: string
+  description: string | null; roomType: string; roomNumber: string; imageUrl?: string | null
   operationalStatus: 'AVAILABLE' | 'MAINTENANCE' | 'OUT_OF_SERVICE'
   amenities: Array<{ id: string; code: string; name: string }>
 }
@@ -93,7 +101,7 @@ const mapBookingStatus = (booking: BackendBooking): Booking['status'] => {
   if (booking.bookingStatus === 'CANCELLED') return 'CANCELLED'
   if (booking.bookingStatus === 'COMPLETED') return 'COMPLETED'
   if (booking.bookingStatus === 'CONFIRMED') return 'CONFIRMED'
-  if (booking.paymentStatus === 'EXPIRED' || (booking.paymentStatus === 'PENDING' && Date.parse(booking.reservationExpiresAt) <= Date.now())) return 'EXPIRED'
+  if (booking.paymentStatus === 'EXPIRED' || Date.parse(booking.reservationExpiresAt) <= Date.now()) return 'EXPIRED'
   return 'PENDING_PAYMENT'
 }
 
@@ -218,11 +226,20 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
   try { return (await client.request<T>(config)).data }
   catch (error) {
     if (error instanceof AxiosError) {
-      const response = error.response?.data as { detail?: string; message?: string; code?: string } | undefined
-      throw new DomainError(response?.code ?? 'HTTP_ERROR', response?.detail ?? response?.message ?? (error.response ? 'Máy chủ trả về lỗi. Vui lòng thử lại.' : 'Không thể kết nối máy chủ.'), error.response?.status ?? 0)
+      const response = error.response?.data as { detail?: unknown; message?: unknown; code?: string } | undefined
+      const status = error.response?.status ?? 0
+      throw new DomainError(response?.code ?? 'HTTP_ERROR', localizedErrorMessage(response?.detail ?? response?.message, response?.code, status), status)
     }
     throw error
   }
+}
+
+function writePlace(method: 'POST' | 'PATCH', url: string, input: PlaceAdminRequest, image?: File) {
+  if (!image) return request<AdminPlace>({ method, url, data: input })
+  const data = new FormData()
+  data.append('data', JSON.stringify(input))
+  data.append('file', image)
+  return request<AdminPlace>({ method, url, data, headers: { 'Content-Type': undefined }, timeout: 60000 })
 }
 
 async function publicCatalog() {
@@ -231,7 +248,50 @@ async function publicCatalog() {
     request<Page<BackendRoom>>({ method: 'GET', url: '/rooms', params: { page: 1, limit: 100 } }),
     request<Page<BackendPlace>>({ method: 'GET', url: '/places', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' } }),
   ])
-  const destinations: Destination[] = placePage.data.map(place => ({
+  const hotelPages = [hotelPage]
+  const hotelPageCount = Math.ceil(hotelPage.meta.total / hotelPage.meta.limit)
+  if (hotelPageCount > 1) {
+    const additionalHotelPages = await Promise.all(
+      Array.from({ length: hotelPageCount - 1 }, (_, index) =>
+        request<Page<BackendHotel>>({
+          method: 'GET',
+          url: '/hotels',
+          params: { page: index + 2, limit: hotelPage.meta.limit },
+        }),
+      ),
+    )
+    hotelPages.push(...additionalHotelPages)
+  }
+  const allHotelRecords = hotelPages.flatMap(page => page.data)
+  const roomPages = [roomPage]
+  const roomPageCount = Math.ceil(roomPage.meta.total / roomPage.meta.limit)
+  if (roomPageCount > 1) {
+    const additionalRoomPages = await Promise.all(
+      Array.from({ length: roomPageCount - 1 }, (_, index) =>
+        request<Page<BackendRoom>>({
+          method: 'GET',
+          url: '/rooms',
+          params: { page: index + 2, limit: roomPage.meta.limit },
+        }),
+      ),
+    )
+    roomPages.push(...additionalRoomPages)
+  }
+  const allRoomRecords = roomPages.flatMap(page => page.data)
+  const placePages = [placePage]
+  const placePageCount = Math.ceil(placePage.meta.total / placePage.meta.limit)
+  if (placePageCount > 1) {
+    placePages.push(...await Promise.all(
+      Array.from({ length: placePageCount - 1 }, (_, index) =>
+        request<Page<BackendPlace>>({
+          method: 'GET', url: '/places',
+          params: { page: index + 2, limit: placePage.meta.limit, sortBy: 'name', sortOrder: 'ASC' },
+        }),
+      ),
+    ))
+  }
+  const allPlaceRecords = placePages.flatMap(page => page.data)
+  const destinations: Destination[] = allPlaceRecords.map(place => ({
     id: place.id,
     name: place.name,
     city: place.city ?? '',
@@ -246,10 +306,11 @@ async function publicCatalog() {
     ...(place.longitude != null ? { lng: place.longitude } : {}),
     ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
   }))
-  const rooms: RoomType[] = roomPage.data.map(room => ({
+  const rooms: RoomType[] = allRoomRecords.map(room => ({
     id: room.id,
     hotelId: room.hotelId,
     name: room.roomType,
+    ...(room.imageUrl ? { image: apiAssetUrl(room.imageUrl) } : {}),
     description: room.description ?? '',
     capacity: room.maxOccupancy,
     area: 0,
@@ -259,25 +320,34 @@ async function publicCatalog() {
     roomNumber: room.roomNumber,
     operationalStatus: room.operationalStatus,
   }))
-  const hotels: Hotel[] = hotelPage.data.map(hotel => {
+  const ratingPages = await Promise.all(
+    Array.from({ length: Math.ceil(allHotelRecords.length / 100) }, (_, index) =>
+      request<ReviewSummary[]>({
+        method: 'GET', url: '/reviews/summaries',
+        params: { hotelIds: allHotelRecords.slice(index * 100, (index + 1) * 100).map(hotel => hotel.id).join(',') },
+      }),
+    ),
+  )
+  const ratings = new Map(ratingPages.flat().map(summary => [summary.hotelId, summary]))
+  const hotels: Hotel[] = allHotelRecords.map(hotel => {
     const address = hotel.address.split(',').map(part => part.trim()).filter(Boolean)
     const hotelRooms = rooms.filter(room => room.hotelId === hotel.id)
-    const linkedPlace = hotel.placeId ? placePage.data.find(place => place.id === hotel.placeId) : undefined
     return {
       id: hotel.id,
       ...(hotel.placeId ? { placeId: hotel.placeId } : {}),
-      ...(linkedPlace?.latitude != null ? { lat: linkedPlace.latitude } : {}),
-      ...(linkedPlace?.longitude != null ? { lng: linkedPlace.longitude } : {}),
+      ...(hasValidCoordinates(hotel.latitude, hotel.longitude) ? { lat: hotel.latitude!, lng: hotel.longitude! } : {}),
       name: hotel.name,
       city: address.at(-1) ?? hotel.address,
       area: address.length >= 2 ? address.at(-2) ?? '' : '',
       address: hotel.address,
       description: hotel.description ?? '',
       stars: hotel.starRating ?? 0,
+      rating: ratings.get(hotel.id)?.visibleCount ? ratings.get(hotel.id)!.averageRating : undefined,
       image: hotel.images?.[0] ? apiAssetUrl(hotel.images[0].url) : undefined,
+      imageIllustrative: hotel.images?.[0]?.illustrative ?? false,
       amenities: [...new Set(hotelRooms.flatMap(room => room.amenities))],
       partnerId: '',
-      cancellationPolicy: 'Chính sách phí được xác định khi hủy booking.',
+      cancellationPolicy: 'Chính sách phí được xác định khi hủy đơn đặt phòng.',
       cancellationTerms: {
         freeUntilHours: 0,
         lateFeeRate: 0,
@@ -293,13 +363,20 @@ async function publicCatalog() {
 
 type PartnerHotelsApi = {
   myHotels: (query: PartnerHotelQuery) => Promise<PartnerHotelPage>
+  searchHotelLocations: (query: string, signal: AbortSignal) => Promise<HotelLocationResult[]>
   myHotel: (hotelId: string) => Promise<PartnerHotel>
   createHotel: (input: PartnerHotelInput) => Promise<PartnerHotel>
   updateHotel: (hotelId: string, input: Partial<PartnerHotelInput>) => Promise<PartnerHotel>
+  uploadHotelDocument: (hotelId: string, input: HotelDocumentUploadInput, files: File[], documentId?: string) => Promise<PartnerHotel['documents'][number]>
   addHotelDocument: (hotelId: string, input: PartnerHotelDocumentInput) => Promise<PartnerHotel['documents'][number]>
   deleteHotelDocument: (hotelId: string, documentId: string) => Promise<void>
   uploadHotelImage: (hotelId: string, file: File) => Promise<PartnerHotel['images'][number]>
   deleteHotelImage: (hotelId: string, imageId: string) => Promise<void>
+  primaryHotelImage: (hotelId: string, imageId: string) => Promise<PartnerHotel['images'][number]>
+  roomImages: (roomId: string, managed?: boolean) => Promise<RoomImage[]>
+  uploadRoomImage: (roomId: string, file: File) => Promise<RoomImage>
+  deleteRoomImage: (roomId: string, imageId: string) => Promise<void>
+  primaryRoomImage: (roomId: string, imageId: string) => Promise<RoomImage>
   submitHotel: (hotelId: string) => Promise<PartnerHotel>
 }
 
@@ -314,10 +391,11 @@ type AdminHotelsApi = {
 }
 
 type PartnerRoomsApi = {
-  amenities: () => Promise<Page<AmenityOption>>
+  amenities: (page?: number, limit?: number) => Promise<Page<AmenityOption>>
   roomGuestPolicies: (hotelId: string | string[]) => Promise<RoomGuestPolicy[]>
   saveRoomGuestPolicy: (input: RoomGuestPolicyInput) => Promise<RoomGuestPolicy>
   managedRooms: (hotelId: string) => Promise<ManagedRoomPage>
+  managedRoomPage: (query: { page: number; limit: number; hotelId?: string }) => Promise<ManagedRoomPage>
   managedRoom: (roomId: string) => Promise<ManagedRoom>
   createManagedRoom: (input: ManagedRoomInput) => Promise<ManagedRoom>
   updateManagedRoom: (roomId: string, input: Partial<ManagedRoomInput>) => Promise<ManagedRoom>
@@ -327,13 +405,14 @@ type PartnerRoomsApi = {
 type HotelOwnersApi = {
   hotelOwners: (page: number, limit: number, search?: string) => Promise<HotelOwnerPage>
   hotelOwnerProfile: (userId: string) => Promise<HotelOwnerProfile>
+  hotelOwnerBanks: () => Promise<BankOption[]>
   createHotelOwnerProfile: (profile: HotelOwnerProfile) => Promise<HotelOwnerProfile>
   updateHotelOwnerProfile: (userId: string, profile: Partial<HotelOwnerProfile>) => Promise<HotelOwnerProfile>
   deleteHotelOwnerProfile: (userId: string) => Promise<void>
   createAmenity: (input: Pick<AmenityOption, 'code' | 'name'>) => Promise<AmenityOption>
   updateAmenity: (id: string, input: Partial<Pick<AmenityOption, 'code' | 'name'>>) => Promise<AmenityOption>
   deleteAmenity: (id: string) => Promise<void>
-  hotelAmenities: (hotelId: string) => Promise<Page<AmenityOption>>
+  hotelAmenities: (hotelId: string, page?: number, limit?: number) => Promise<Page<AmenityOption>>
   createHotelAmenity: (hotelId: string, input: Pick<AmenityOption, 'code' | 'name'>) => Promise<AmenityOption>
   updateHotelAmenity: (hotelId: string, id: string, input: Partial<Pick<AmenityOption, 'code' | 'name'>>) => Promise<AmenityOption>
   deleteHotelAmenity: (hotelId: string, id: string) => Promise<void>
@@ -343,13 +422,13 @@ type PlaceManagementApi = {
   adminPlaces: (query?: { page?: number; limit?: number; search?: string; status?: 'ACTIVE' | 'INACTIVE' }) => Promise<Page<PlaceAdminListItem>>
   adminPlace: (placeId: string) => Promise<AdminPlace>
   placeCatalogOptions: () => Promise<PlaceCatalogOptions>
-  createPlace: (input: PlaceAdminRequest) => Promise<AdminPlace>
-  updatePlace: (placeId: string, input: PlaceAdminRequest) => Promise<AdminPlace>
+  createPlace: (input: PlaceAdminRequest, image?: File) => Promise<AdminPlace>
+  updatePlace: (placeId: string, input: PlaceAdminRequest, image?: File) => Promise<AdminPlace>
   deletePlace: (placeId: string) => Promise<void>
 }
 
 type CancellationPoliciesApi = {
-  cancellationPolicies: (hotelId: string) => Promise<Page<CancellationPolicy>>
+  cancellationPolicies: (hotelId: string, page?: number) => Promise<Page<CancellationPolicy>>
   cancellationPolicySchedule: (hotelId: string) => Promise<CancellationPolicySchedule>
   createCancellationPolicy: (input: CancellationPolicyInput) => Promise<CancellationPolicy>
   updateCancellationPolicy: (id: string, input: Partial<CancellationPolicyInput>) => Promise<CancellationPolicy>
@@ -357,16 +436,22 @@ type CancellationPoliciesApi = {
 }
 
 type BookingsManagementApi = {
+  platformSettings: () => Promise<PlatformSettingSection[]>
+  savePlatformSettings: (section: string, revision: number, values: Record<string, PlatformSettingValue>) => Promise<PlatformSettingSection>
+  publicMapSettings: () => Promise<{ mapboxToken: string | null }>
+  bookingSettings: () => Promise<BookingSettings>
+  saveBookingSettings: (commissionRate: number) => Promise<BookingSettings>
   managedBookings: (query: BookingListQuery) => Promise<Page<ManagedBooking>>
   managedBooking: (bookingId: string) => Promise<ManagedBooking>
   completeManagedBooking: (bookingId: string) => Promise<ManagedBooking>
   refundManagedBooking: (bookingId: string, refundAmount: number, refundReason: string) => Promise<ManagedBooking>
-  syncManagedRefund: (bookingId: string) => Promise<ManagedBooking>
+  confirmManagedManualRefund: (bookingId: string, refundAmount: number, refundTransactionId: string) => Promise<ManagedBooking>
 }
 
 type SettlementsApi = {
   settlementBatches: (filters?: { hotelId?: string; status?: SettlementStatus }) => Promise<SettlementBatch[]>
   partnerSettlementBatches: () => Promise<SettlementBatch[]>
+  requestSettlementPayout: (id: string, revision: number) => Promise<SettlementBatch>
   settlementBatch: (id: string) => Promise<SettlementBatch>
   createSettlementBatch: (input: { hotelId: string; periodStart: string; periodEnd: string }) => Promise<SettlementBatch>
   approveSettlementBatch: (id: string) => Promise<SettlementBatch>
@@ -399,23 +484,23 @@ const toDateTimeInput = (value: string) => {
 const toBackendTime = (value: string) => new Date(value).toISOString()
 
 async function loadMyItineraries(userId: string) {
-  const page = await request<Page<BackendItinerary>>({
+  const itineraries = await fetchAllPages(page => request<Page<BackendItinerary>>({
     method: 'GET', url: '/itineraries',
-    params: { page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'DESC' },
-  })
-  const stopPages = await Promise.all(page.data.map(itinerary => request<Page<BackendStopover>>({
+    params: { page, limit: 100, sortBy: 'updatedAt', sortOrder: 'DESC' },
+  }))
+  const stopPages = await Promise.all(itineraries.map(itinerary => fetchAllPages(page => request<Page<BackendStopover>>({
     method: 'GET', url: '/itineraries/' + itinerary.id + '/stopovers',
-    params: { page: 1, limit: 100, sortBy: 'stopOrder', sortOrder: 'ASC' },
-  })))
-  const backendStops = stopPages.flatMap(response => response.data)
+    params: { page, limit: 100, sortBy: 'stopOrder', sortOrder: 'ASC' },
+  }))))
+  const backendStops = stopPages.flat()
   const placeIds = [...new Set(backendStops.flatMap(stop => stop.placeId ? [stop.placeId] : []))]
   const places = await Promise.all(placeIds.map(id => request<BackendPlace>({ method: 'GET', url: '/places/' + id })))
   const placeById = new Map(places.map(place => [place.id, place]))
-  const activityPages = await Promise.all(backendStops.map(stop => request<Page<BackendActivity>>({
+  const activityPages = await Promise.all(backendStops.map(stop => fetchAllPages(page => request<Page<BackendActivity>>({
     method: 'GET', url: '/stopovers/' + stop.id + '/activities',
-    params: { page: 1, limit: 100, sortBy: 'activityOrder', sortOrder: 'ASC' },
-  })))
-  const trips: Itinerary[] = page.data.map(itinerary => ({
+    params: { page, limit: 100, sortBy: 'activityOrder', sortOrder: 'ASC' },
+  }))))
+  const trips: Itinerary[] = itineraries.map(itinerary => ({
     id: itinerary.id,
     userId: itinerary.touristUserId || userId,
     name: itinerary.name,
@@ -445,7 +530,7 @@ async function loadMyItineraries(userId: string) {
       note: stop.description ?? '',
     }
   })
-  const activities: TravelActivity[] = activityPages.flatMap(response => response.data.map(activity => ({
+  const activities: TravelActivity[] = activityPages.flat().map(activity => ({
     id: activity.id,
     stopId: activity.stopoverId,
     name: activity.name,
@@ -454,11 +539,12 @@ async function loadMyItineraries(userId: string) {
     end: toDateTimeInput(activity.endTime),
     note: activity.description ?? '',
     cost: activity.estimatedCost ?? 0,
-  })))
+  }))
   return { trips, stops, activities }
 }
 
 export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+  registerHotelOwner: (name: string, username: string, email: string, password: string) => Promise<unknown>
   myProfile: () => Promise<User>
   myFavorites: () => Promise<ApiFavorite[]>
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
@@ -467,7 +553,9 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   searchRoomAvailability: (query: { hotelId?: string; checkInDate: string; checkOutDate: string }) => Promise<{ hotelId: string | null; checkInDate: string; checkOutDate: string; availableRoomIds: string[] }>
   touristBookings: () => Promise<{ bookings: Booking[]; payments: Payment[]; refunds: Refund[] }>
   touristBooking: (bookingId: string) => Promise<{ booking: Booking; payment: Payment; refund: Refund | null; reviewed: false }>
-  createSePayPayment: (bookingId: string) => Promise<{ bookingId: string; bookingCode: string; paymentMethod: string | null; paymentStatus: string; orderCode: string; vaNumber: string; qrCode: string | null; bankName: string | null; accountNumber: string | null; accountHolderName: string | null; expiresAt: string | null }>
+  refreshPayosPayment: (bookingId: string) => Promise<ManagedBooking>
+  refreshPayosRefund: (bookingId: string) => Promise<ManagedBooking>
+  createPayosPayment: (bookingId: string) => Promise<{ bookingId: string; paymentUrl: string; expiresAt: string }>
   notifications: (page?: number, limit?: number) => Promise<Page<Notification> & { meta: Page<Notification>['meta'] & { unreadCount: number } }>
   markNotificationRead: (notificationId: string) => Promise<Notification>
   markAllNotificationsRead: () => Promise<{ updated: number }>
@@ -480,8 +568,8 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   adminPlaces: query => request<Page<PlaceAdminListItem>>({ method: 'GET', url: '/places', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC', ...query } }),
   adminPlace: placeId => request<AdminPlace>({ method: 'GET', url: '/places/' + placeId }),
   placeCatalogOptions: () => request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options' }),
-  createPlace: input => request<AdminPlace>({ method: 'POST', url: '/places', data: input }),
-  updatePlace: (placeId, input) => request<AdminPlace>({ method: 'PATCH', url: '/places/' + placeId, data: input }),
+  createPlace: (input, image) => writePlace('POST', '/places', input, image),
+  updatePlace: (placeId, input, image) => writePlace('PATCH', '/places/' + placeId, input, image),
   deletePlace: placeId => request<void>({ method: 'DELETE', url: '/places/' + placeId }),
   adminUsers: (query: AdminUserQuery) => request<AdminUserPage>({ method: 'GET', url: '/users', params: query }),
   adminUser: (userId: string) => request<AdminUser>({ method: 'GET', url: '/users/' + userId }),
@@ -490,9 +578,19 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   resetAdminUserPassword: (userId: string, newPassword: string) => request<void>({ method: 'PUT', url: '/users/' + userId + '/password', data: { newPassword } }),
   deleteAdminUser: (userId: string) => request<void>({ method: 'DELETE', url: '/users/' + userId }),
   myHotels: (query: PartnerHotelQuery) => request<PartnerHotelPage>({ method: 'GET', url: '/hotels/mine', params: query }),
+  searchHotelLocations: (query, signal) => request<HotelLocationResult[]>({ method: 'GET', url: '/hotels/location-search', params: { q: query }, signal }),
   myHotel: (hotelId: string) => request<PartnerHotel>({ method: 'GET', url: '/hotels/mine/' + hotelId }),
   createHotel: (input: PartnerHotelInput) => request<PartnerHotel>({ method: 'POST', url: '/hotels', data: input }),
   updateHotel: (hotelId: string, input: Partial<PartnerHotelInput>) => request<PartnerHotel>({ method: 'PATCH', url: '/hotels/' + hotelId, data: input }),
+  uploadHotelDocument: (hotelId, input, files, documentId) => {
+    const data = new FormData()
+    data.append('documentType', input.documentType)
+    data.append('documentNumber', input.documentNumber)
+    if (input.issuedAt) data.append('issuedAt', input.issuedAt)
+    if (input.expiresAt) data.append('expiresAt', input.expiresAt)
+    files.forEach(file => data.append('files', file))
+    return request<PartnerHotel['documents'][number]>({ method: documentId ? 'PATCH' : 'POST', url: '/hotels/' + hotelId + '/documents/' + (documentId ? documentId + '/upload' : 'upload'), data, headers: { 'Content-Type': undefined }, timeout: 60000 })
+  },
   addHotelDocument: (hotelId: string, input: PartnerHotelDocumentInput) => request<PartnerHotel['documents'][number]>({ method: 'POST', url: '/hotels/' + hotelId + '/documents', data: input }),
   deleteHotelDocument: (hotelId: string, documentId: string) => request<void>({ method: 'DELETE', url: '/hotels/' + hotelId + '/documents/' + documentId }),
   uploadHotelImage: (hotelId, file) => {
@@ -501,14 +599,23 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
     return request<PartnerHotel['images'][number]>({ method: 'POST', url: '/hotels/' + hotelId + '/images', data, headers: { 'Content-Type': undefined }, timeout: 60000 })
   },
   deleteHotelImage: (hotelId, imageId) => request<void>({ method: 'DELETE', url: '/hotels/' + hotelId + '/images/' + imageId }),
+  primaryHotelImage: (hotelId, imageId) => request({ method: 'PATCH', url: '/hotels/' + hotelId + '/images/' + imageId + '/primary' }),
+  roomImages: (roomId, managed = false) => request({ method: 'GET', url: '/rooms/' + (managed ? 'mine/' : '') + roomId + '/images' }),
+  uploadRoomImage: (roomId, file) => {
+    const data = new FormData(); data.append('file', file)
+    return request({ method: 'POST', url: '/rooms/' + roomId + '/images', data, headers: { 'Content-Type': undefined }, timeout: 60000 })
+  },
+  deleteRoomImage: (roomId, imageId) => request({ method: 'DELETE', url: '/rooms/' + roomId + '/images/' + imageId }),
+  primaryRoomImage: (roomId, imageId) => request({ method: 'PATCH', url: '/rooms/' + roomId + '/images/' + imageId + '/primary' }),
   submitHotel: (hotelId: string) => request<PartnerHotel>({ method: 'PUT', url: '/hotels/' + hotelId + '/submit' }),
   adminHotels: (query: PartnerHotelQuery) => request<PartnerHotelPage>({ method: 'GET', url: '/admin/hotels', params: query }),
   adminHotel: (hotelId: string) => request<PartnerHotel>({ method: 'GET', url: '/admin/hotels/' + hotelId }),
   adminHotelReviewHistory: (hotelId: string) => request<AdminHotelReviewHistory[]>({ method: 'GET', url: '/admin/hotels/' + hotelId + '/review-history' }),
   reviewHotel: (hotelId: string, action: AdminHotelReviewCommand, reason?: string) => request<PartnerHotel>({ method: 'PATCH', url: '/admin/hotels/' + hotelId + '/status', data: { action, ...(reason ? { reason } : {}) } }),
-  amenities: () => request<Page<AmenityOption>>({ method: 'GET', url: '/amenities', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' } }),
+  amenities: (page?: number, limit = 100) => request<Page<AmenityOption>>({ method: 'GET', url: '/amenities', params: { page, limit, sortBy: 'name', sortOrder: 'ASC' } }),
   roomGuestPolicies: hotelId => request<RoomGuestPolicy[]>({ method: 'GET', url: '/rooms/guest-policies', params: Array.isArray(hotelId) ? { hotelIds: hotelId.join(',') } : { hotelId } }),
   saveRoomGuestPolicy: input => request<RoomGuestPolicy>({ method: 'PUT', url: '/rooms/guest-policies', data: input }),
+  managedRoomPage: query => request<ManagedRoomPage>({ method: 'GET', url: '/rooms/mine', params: { ...query, sortBy: 'roomNumber', sortOrder: 'ASC' } }),
   managedRooms: hotelId => request<ManagedRoomPage>({ method: 'GET', url: '/rooms', params: { page: 1, limit: 100, hotelId, sortBy: 'roomNumber', sortOrder: 'ASC' } }),
   managedRoom: roomId => request<ManagedRoom>({ method: 'GET', url: '/rooms/' + roomId }),
   createManagedRoom: input => request<ManagedRoom>({ method: 'POST', url: '/rooms', data: input }),
@@ -516,17 +623,18 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   deleteManagedRoom: roomId => request<void>({ method: 'DELETE', url: '/rooms/' + roomId }),
   hotelOwners: (page, limit, search) => request<HotelOwnerPage>({ method: 'GET', url: '/hotel-owners', params: { page, limit, ...(search ? { search } : {}), sortBy: 'userId', sortOrder: 'ASC' } }),
   hotelOwnerProfile: userId => request<HotelOwnerProfile>({ method: 'GET', url: '/hotel-owners/' + userId }),
+  hotelOwnerBanks: () => request<BankOption[]>({ method: 'GET', url: '/hotel-owners/banks' }),
   createHotelOwnerProfile: input => request<HotelOwnerProfile>({ method: 'POST', url: '/hotel-owners', data: input }),
   updateHotelOwnerProfile: (userId, input) => request<HotelOwnerProfile>({ method: 'PATCH', url: '/hotel-owners/' + userId, data: input }),
   deleteHotelOwnerProfile: userId => request<void>({ method: 'DELETE', url: '/hotel-owners/' + userId }),
   createAmenity: input => request<AmenityOption>({ method: 'POST', url: '/amenities', data: input }),
   updateAmenity: (id, input) => request<AmenityOption>({ method: 'PATCH', url: '/amenities/' + id, data: input }),
   deleteAmenity: id => request<void>({ method: 'DELETE', url: '/amenities/' + id }),
-  hotelAmenities: hotelId => request<Page<AmenityOption>>({ method: 'GET', url: '/hotels/' + hotelId + '/amenities', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' } }),
+  hotelAmenities: (hotelId, page = 1, limit = 100) => request<Page<AmenityOption>>({ method: 'GET', url: '/hotels/' + hotelId + '/amenities', params: { page, limit, sortBy: 'name', sortOrder: 'ASC' } }),
   createHotelAmenity: (hotelId, input) => request<AmenityOption>({ method: 'POST', url: '/hotels/' + hotelId + '/amenities', data: input }),
   updateHotelAmenity: (hotelId, id, input) => request<AmenityOption>({ method: 'PATCH', url: '/hotels/' + hotelId + '/amenities/' + id, data: input }),
   deleteHotelAmenity: (hotelId, id) => request<void>({ method: 'DELETE', url: '/hotels/' + hotelId + '/amenities/' + id }),
-  cancellationPolicies: hotelId => request<Page<CancellationPolicy>>({ method: 'GET', url: '/cancellation-policies', params: { page: 1, limit: 100, hotelId, sortBy: 'name', sortOrder: 'ASC' } }),
+  cancellationPolicies: (hotelId, page = 1) => request<Page<CancellationPolicy>>({ method: 'GET', url: '/cancellation-policies', params: { page, limit: 100, hotelId, sortBy: 'name', sortOrder: 'ASC' } }),
   cancellationPolicySchedule: hotelId => request<CancellationPolicySchedule>({ method: 'GET', url: '/cancellation-policies/schedule/' + hotelId }),
   createCancellationPolicy: input => request<CancellationPolicy>({ method: 'POST', url: '/cancellation-policies', data: input }),
   updateCancellationPolicy: (id, input) => request<CancellationPolicy>({ method: 'PATCH', url: '/cancellation-policies/' + id, data: input }),
@@ -535,7 +643,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   managedBooking: bookingId => request<ManagedBooking>({ method: 'GET', url: '/bookings/' + bookingId }),
   completeManagedBooking: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/complete' }),
   refundManagedBooking: (bookingId, refundAmount, refundReason) => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund', data: { refundAmount, refundReason } }),
-  syncManagedRefund: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/sync' }),
+  confirmManagedManualRefund: (bookingId, refundAmount, refundTransactionId) => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/manual-completion', data: { refundAmount, refundTransactionId } }),
   reviewPage: query => request<Page<Review>>({ method: 'GET', url: '/reviews', params: query }),
   managedReview: reviewId => request<Review>({ method: 'GET', url: '/reviews/' + reviewId }),
   publicReviewPage: query => request<Page<Review>>({ method: 'GET', url: '/reviews/public', params: query }),
@@ -551,7 +659,8 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   login: (username, password) => request<BackendUser>({ method: 'POST', url: '/auth/login', data: { username, password } }).then(mapBackendUser),
   logout: () => request<void>({ method: 'POST', url: '/auth/logout' }),
   register: (name, username, email, password) => request({ method: 'POST', url: '/auth/register', data: { displayName: name, username, email, password } }),
-  verifyOtp: (email, otp) => request({ method: 'POST', url: '/auth/verify-otp', data: { email, otp } }),
+  registerHotelOwner: (name, username, email, password) => request({ method: 'POST', url: '/auth/hotel-owners/register', data: { displayName: name, username, email, password } }),
+  verifyOtp: (email, otp) => request<BackendUser>({ method: 'POST', url: '/auth/verify-otp/session', data: { email, otp } }).then(mapBackendUser),
   requestOtp: email => request({ method: 'POST', url: '/auth/forgot-password', data: { email } }),
   resendOtp: email => request({ method: 'POST', url: '/auth/resend-otp', data: { email } }),
   resetPassword: (email, password, otp) => request({ method: 'POST', url: '/auth/reset-password', data: { email, password, otp } }),
@@ -631,11 +740,13 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   markNotificationRead: notificationId => request({ method: 'PATCH', url: '/notifications/' + notificationId + '/read' }),
   markAllNotificationsRead: () => request({ method: 'PATCH', url: '/notifications/read-all' }),
   touristBookings: async () => {
-    const page = await request<BackendBookingPage>({ method: 'GET', url: '/bookings', params: { page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' } })
+    const bookings = await fetchAllPages(page => request<BackendBookingPage>({
+      method: 'GET', url: '/bookings', params: { page, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' },
+    }))
     return {
-      bookings: page.data.map(mapBackendBooking),
-      payments: page.data.map(mapBackendPayment),
-      refunds: page.data.map(mapBackendRefund).filter((refund): refund is Refund => refund !== null),
+      bookings: bookings.map(mapBackendBooking),
+      payments: bookings.map(mapBackendPayment),
+      refunds: bookings.map(mapBackendRefund).filter((refund): refund is Refund => refund !== null),
     }
   },
   touristBooking: async bookingId => {
@@ -659,13 +770,20 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
     },
     headers: { 'Idempotency-Key': values.idempotencyKey ?? crypto.randomUUID() },
   }).then(mapBackendBooking),
-  createSePayPayment: bookingId => request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/sepay' }),
+  refreshPayosPayment: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos/refresh' }),
+  refreshPayosRefund: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/refresh' }),
+  createPayosPayment: bookingId => request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos' }),
   payBooking: async (_userId, bookingId) => {
-    await request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/sepay' })
+    await request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos' })
     return request<BackendBooking>({ method: 'GET', url: '/bookings/' + bookingId }).then(mapBackendBooking)
   },
   cancelBooking: async (_userId, bookingId) => request<BackendBooking>({ method: 'POST', url: '/bookings/' + bookingId + '/cancel' }).then(mapBackendBooking),
-  resolveRefund: () => { throw new DomainError('API_ONLY', 'Trạng thái hoàn tiền do backend/cổng thanh toán xác nhận.') },
+  bookingSettings: () => request<BookingSettings>({ method: 'GET', url: '/admin/settings/bookings' }),
+  platformSettings: () => request<PlatformSettingSection[]>({ method: 'GET', url: '/admin/settings/integrations' }),
+  savePlatformSettings: (section, revision, values) => request<PlatformSettingSection>({ method: 'PUT', url: '/admin/settings/integrations/' + encodeURIComponent(section), data: { revision, values } }),
+  publicMapSettings: () => request<{ mapboxToken: string | null }>({ method: 'GET', url: '/public-settings/map' }),
+  saveBookingSettings: commissionRate => request<BookingSettings>({ method: 'PUT', url: '/admin/settings/bookings', data: { commissionRate } }),
+  resolveRefund: () => { throw new DomainError('API_ONLY', 'Trạng thái hoàn tiền do máy chủ/cổng thanh toán xác nhận.') },
   addReview: (_userId, bookingId, stars, content) => request({ method: 'POST', url: '/bookings/' + bookingId + '/reviews', data: { stars, content } }),
   saveRoom: (userId, room) => request({ method: room.id ? 'PUT' : 'POST', url: '/partners/by-user/' + userId + '/rooms' + (room.id ? '/' + room.id : ''), data: room }),
   saveInventory: (userId, roomId, rows) => request({ method: 'PUT', url: '/partners/by-user/' + userId + '/rooms/' + roomId + '/inventory', data: rows }),
@@ -675,6 +793,7 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   moderateReview: (id, status, reason) => request({ method: 'POST', url: '/admin/reviews/' + id + '/moderation', data: { status, reason } }),
   settlementBatches: filters => request<SettlementBatch[]>({ method: 'GET', url: '/settlements', params: filters }),
   partnerSettlementBatches: () => request<SettlementBatch[]>({ method: 'GET', url: '/settlements/mine' }),
+  requestSettlementPayout: (id, revision) => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/payout', data: { revision } }),
   settlementBatch: id => request<SettlementBatch>({ method: 'GET', url: '/settlements/' + id }),
   createSettlementBatch: input => request<SettlementBatch>({ method: 'POST', url: '/settlements', data: input }),
   approveSettlementBatch: id => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/approve' }),
@@ -682,5 +801,5 @@ export const api: MockRepository & PartnerHotelsApi & AdminHotelsApi & PartnerRo
   confirmSettlementBatch: (id, transferReference) => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/confirm', data: { transferReference } }),
   failSettlementBatch: (id, reason) => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/fail', data: { reason } }),
   transitionSettlement: (_id: string, _next: 'APPROVED' | 'PROCESSING' | 'PAID' | 'FAILED', _revision: number) => { throw new DomainError('API_ONLY', 'Dùng quy trình kỳ đối soát tại trang quản trị.') },
-  reset: () => { throw new DomainError('API_ONLY', 'Chỉ có thể đặt lại dữ liệu ở chế độ demo.') },
+  reset: () => { throw new DomainError('API_ONLY', 'Không hỗ trợ đặt lại dữ liệu trong chế độ kết nối máy chủ.') },
 }

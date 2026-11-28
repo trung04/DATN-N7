@@ -38,10 +38,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    if (!this.emailSender?.isConfigured()) {
-      this.logger.warn('SMTP is not configured; booking emails are disabled.');
-      return;
-    }
+    if (!this.emailSender || !this.emailOutbox) return;
     this.emailPoller = setInterval(() => {
       void this.dispatchPendingEmails();
     }, 5000);

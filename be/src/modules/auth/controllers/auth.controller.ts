@@ -2,12 +2,14 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Post,
   Query,
   Req,
   Res,
+  UnsupportedMediaTypeException,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -21,6 +23,7 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { GoogleStartRequest } from '../dtos/requests/google-auth.request';
 import { LoginRequest } from '../dtos/requests/login.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
+import { RegisterHotelOwnerRequest } from '../dtos/requests/register-hotel-owner.request';
 import { EmailOtpRequest } from '../dtos/requests/email-otp.request';
 import { RequestPasswordResetRequest, ResetPasswordRequest } from '../dtos/requests/request-password-reset.request';
 import {
@@ -54,11 +57,34 @@ export class AuthController {
     return { accepted: true };
   }
 
+  @Post('hotel-owners/register')
+  @Public()
+  @HttpCode(HttpStatus.ACCEPTED)
+  async registerHotelOwner(@Body() input: RegisterHotelOwnerRequest): Promise<{ accepted: true }> {
+    await this.authService.registerHotelOwner(input);
+    return { accepted: true };
+  }
+
   @Post('verify-otp')
   @Public()
   @HttpCode(HttpStatus.NO_CONTENT)
   async verifyOtp(@Body() input: EmailOtpRequest): Promise<void> {
     await this.authService.verifyEmail(input);
+  }
+
+  @Post('verify-otp/session')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async verifyOtpAndLogin(
+    @Body() input: EmailOtpRequest,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<UserResponse> {
+    if (!request.is('application/json')) throw new UnsupportedMediaTypeException('Expected application/json');
+    const session = await this.authService.verifyEmailAndCreateSession(input);
+    this.setSessionCookies(response, session);
+    return UserMapper.toResponse(session.user);
   }
 
   @Post('resend-otp')

@@ -192,32 +192,22 @@ export class BookingPaymentAlreadyInitializedException extends DomainException {
   }
 }
 
-export class SePayCurrencyNotSupportedException extends DomainException {
+export class PayosCurrencyNotSupportedException extends DomainException {
   constructor() {
     super(
-      'SePay Sandbox payments require VND currency.',
-      'SEPAY_CURRENCY_NOT_SUPPORTED',
+      'payOS payments require VND currency.',
+      'PAYOS_CURRENCY_NOT_SUPPORTED',
       'validation',
     );
   }
 }
 
-export class SePayAmountNotSupportedException extends DomainException {
+export class PayosAmountNotSupportedException extends DomainException {
   constructor() {
     super(
-      'SePay Sandbox payments require a whole-number amount greater than zero VND.',
-      'SEPAY_AMOUNT_NOT_SUPPORTED',
+      'payOS requires a positive whole-number amount in VND.',
+      'PAYOS_AMOUNT_NOT_SUPPORTED',
       'validation',
-    );
-  }
-}
-
-export class SePayNotConfiguredException extends DomainException {
-  constructor() {
-    super(
-      'SePay Sandbox is not configured.',
-      'SEPAY_NOT_CONFIGURED',
-      'service_unavailable',
     );
   }
 }

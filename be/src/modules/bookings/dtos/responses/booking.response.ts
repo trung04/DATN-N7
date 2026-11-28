@@ -1,6 +1,7 @@
 import {
   BookingStatus,
   PaymentMethod,
+  PaymentProvider,
   PaymentStatus,
   RefundStatus,
   SettlementStatus,
@@ -75,6 +76,10 @@ export class BookingResponse {
   refundAmount: number | null;
   refundReason: string | null;
   refundStatus: RefundStatus;
+  manualRefund: boolean;
+  hasRefundDestination: boolean;
+  paymentProvider: PaymentProvider | null;
+  testPayment: boolean;
   refundRequestedAt: string | null;
   refundProcessingAt: string | null;
   refundAttempt: number;

@@ -5,7 +5,7 @@ import { App } from 'supertest/types';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
 import { configureHttpApplication } from '../src/common/http/configure-http-application';
 import { BookingsController } from '../src/modules/bookings/controllers/bookings.controller';
-import { VnpayCallbacksController } from '../src/modules/bookings/controllers/vnpay-callbacks.controller';
+import { PayosWebhookController } from '../src/modules/bookings/controllers/payos-webhook.controller';
 import {
   BookingEntity,
   BookingStatus,
@@ -86,9 +86,8 @@ describe('Bookings API (e2e)', () => {
     findPageForActor: jest.fn(),
     findByIdForActor: jest.fn(),
     updateForActor: jest.fn(),
-    createVnpayPaymentForActor: jest.fn(),
-    handleVnpayIpn: jest.fn(),
-    getVnpayReturn: jest.fn(),
+    createPayosPaymentForActor: jest.fn(),
+    handlePayosWebhook: jest.fn(),
     settle: jest.fn(),
     refund: jest.fn(),
   };
@@ -96,7 +95,7 @@ describe('Bookings API (e2e)', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [BookingsController, VnpayCallbacksController],
+      controllers: [BookingsController, PayosWebhookController],
       providers: [{ provide: BookingsService, useValue: service }],
     }).compile();
 
@@ -131,6 +130,7 @@ describe('Bookings API (e2e)', () => {
       .set('Idempotency-Key', idempotencyKey)
       .send({
         roomIds: [roomId],
+        cancellationPolicyVersion: 'a'.repeat(64),
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
         adultCount: 2,
@@ -174,6 +174,7 @@ describe('Bookings API (e2e)', () => {
       .set('Idempotency-Key', idempotencyKey)
       .send({
         roomIds: [roomId],
+        cancellationPolicyVersion: 'a'.repeat(64),
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
         adultCount: 2,
@@ -201,6 +202,7 @@ describe('Bookings API (e2e)', () => {
       .send({
         touristId: '99999999-9999-4999-8999-999999999999',
         roomIds: [roomId],
+        cancellationPolicyVersion: 'a'.repeat(64),
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
         adultCount: 2,
@@ -221,6 +223,7 @@ describe('Bookings API (e2e)', () => {
       .set('Idempotency-Key', idempotencyKey)
       .send({
         roomIds: [roomId],
+        cancellationPolicyVersion: 'a'.repeat(64),
         checkInDate: '2026-12-01',
         checkOutDate: '2026-12-03',
         adultCount: 2,
@@ -258,33 +261,30 @@ describe('Bookings API (e2e)', () => {
       });
   });
 
-  it('creates a VNPAY Sandbox payment URL without choosing a method', async () => {
+  it('creates a payOS payment URL without choosing a method', async () => {
     const pendingBooking = entity({
       paymentMethod: null,
       paymentStatus: PaymentStatus.PAYMENT_PENDING,
       paymentCreatedAt: new Date('2026-11-04T01:00:00.000Z'),
       paymentExpiresAt: new Date('2026-11-04T01:15:00.000Z'),
     });
-    service.createVnpayPaymentForActor.mockResolvedValue({
-      booking: pendingBooking,
-      paymentUrl: 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?signed=1',
+    service.createPayosPaymentForActor.mockResolvedValue({
+      bookingId,
+      expiresAt: pendingBooking.paymentExpiresAt?.toISOString(),
+      paymentUrl: 'https://pay.payos.vn/web/abcde123456789001',
     });
 
     await request(app.getHttpServer())
-      .put(`/api/v1/bookings/${bookingId}/payment/vnpay`)
+      .put(`/api/v1/bookings/${bookingId}/payment/payos`)
       .send({ locale: 'vn' })
       .expect(200)
       .expect(({ body }) => {
         expect(body.bookingId).toBe(bookingId);
-        expect(body.paymentMethod).toBeNull();
-        expect(body.paymentStatus).toBe(PaymentStatus.PAYMENT_PENDING);
-        expect(body.paymentUrl).toContain('sandbox.vnpayment.vn');
+        expect(body.paymentUrl).toContain('pay.payos.vn');
       });
 
-    expect(service.createVnpayPaymentForActor).toHaveBeenCalledWith(
+    expect(service.createPayosPaymentForActor).toHaveBeenCalledWith(
       bookingId,
-      expect.objectContaining({ locale: 'vn' }),
-      expect.any(String),
       expect.objectContaining({ id: touristId }),
     );
   });
@@ -296,19 +296,18 @@ describe('Bookings API (e2e)', () => {
       .expect(404);
   });
 
-  it('exposes the VNPAY IPN response contract', async () => {
-    service.handleVnpayIpn.mockResolvedValue({
-      RspCode: '00',
-      Message: 'Confirm Success',
-    });
-
+  it('acknowledges a payOS webhook through the POST route', async () => {
+    service.handlePayosWebhook.mockResolvedValue(undefined);
+    const payload = { code: '00', data: { orderCode: 123 }, signature: 'sample' };
     await request(app.getHttpServer())
-      .get('/api/v1/payments/vnpay/ipn?vnp_TxnRef=ABC')
+      .post('/api/v1/payments/payos/webhook')
+      .send(payload)
       .expect(200)
-      .expect({ RspCode: '00', Message: 'Confirm Success' });
+      .expect({ success: true });
+    expect(service.handlePayosWebhook).toHaveBeenCalledWith(payload);
   });
 
-  it('does not expose manual payment completion after VNPAY integration', async () => {
+  it('does not expose manual payment completion after payOS integration', async () => {
     await request(app.getHttpServer())
       .put(`/api/v1/bookings/${bookingId}/payment/complete`)
       .send({ paymentTransactionId: 'FORGED' })

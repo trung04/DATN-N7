@@ -3,9 +3,13 @@ export class HotelImageResponse {
   hotelId: string;
   url: string;
   previewUrl: string;
-  contentType: string;
-  byteSize: number;
-  width: number;
-  height: number;
+  contentType: string | null;
+  byteSize: number | null;
+  width: number | null;
+  height: number | null;
   createdAt: string;
+  imageOrder: number;
+  sourceUrl: string | null;
+  attributionText: string | null;
+  illustrative: boolean;
 }

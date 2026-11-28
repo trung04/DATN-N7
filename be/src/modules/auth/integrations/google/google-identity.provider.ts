@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CodeChallengeMethod,
@@ -14,16 +14,22 @@ import type {
   GoogleIdentity,
   GoogleIdentityProvider,
 } from '../../interfaces/google-identity-provider.interface';
+import { PlatformSettingsService } from '../../../platform-settings/platform-settings.service';
+import type { SettingsReader } from '../../../platform-settings/platform-settings.catalog';
 
 @Injectable()
 export class GoogleIdentityClient implements GoogleIdentityProvider {
-  constructor(private readonly config: ConfigService) {}
+  private readonly config: SettingsReader;
+
+  constructor(config: ConfigService, @Optional() settings?: PlatformSettingsService) {
+    this.config = settings ?? config;
+  }
 
   async createAuthorizationRequest(
     state: string,
     nonce: string,
   ): Promise<GoogleAuthorizationRequest> {
-    const client = this.client();
+    const { client } = this.client();
     const { codeVerifier, codeChallenge } =
       await client.generateCodeVerifierAsync();
     return {
@@ -45,13 +51,13 @@ export class GoogleIdentityClient implements GoogleIdentityProvider {
     codeVerifier: string,
     nonce: string,
   ): Promise<GoogleIdentity> {
-    const client = this.client();
+    const { client, clientId } = this.client();
     try {
       const { tokens } = await client.getToken({ code, codeVerifier });
       if (!tokens.id_token) throw new Error('Missing ID token');
       const ticket = await client.verifyIdToken({
         idToken: tokens.id_token,
-        audience: this.config.getOrThrow<string>('GOOGLE_CLIENT_ID'),
+        audience: clientId,
       });
       return this.toIdentity(ticket.getPayload(), nonce);
     } catch {
@@ -87,7 +93,7 @@ export class GoogleIdentityClient implements GoogleIdentityProvider {
     return normalized ? normalized.slice(0, max) : null;
   }
 
-  private client(): OAuth2Client {
+  private client() {
     const clientId = this.config.get<string>('GOOGLE_CLIENT_ID')?.trim();
     const clientSecret = this.config
       .get<string>('GOOGLE_CLIENT_SECRET')
@@ -96,6 +102,6 @@ export class GoogleIdentityClient implements GoogleIdentityProvider {
     if (!clientId || !clientSecret || !redirectUri) {
       throw new GoogleAuthenticationUnavailableException();
     }
-    return new OAuth2Client({ clientId, clientSecret, redirectUri });
+    return { client: new OAuth2Client({ clientId, clientSecret, redirectUri }), clientId };
   }
 }

@@ -7,6 +7,7 @@ import { PlaceImageEntity } from './entities/place-image.entity';
 import { PlaceTopicEntity } from './entities/place-topic.entity';
 import { PlaceEntity } from './entities/place.entity';
 import { ReferencePriceEntity } from './entities/reference-price.entity';
+import { PLACE_IMAGE_STORAGE, S3PlaceImageStorage } from './integrations/s3-place-image.storage';
 import { PLACE_REPOSITORY } from './interfaces/place.repository.interface';
 import { TypeOrmPlaceRepository } from './repositories/typeorm-place.repository';
 import { PlacesService } from './services/places.service';
@@ -25,6 +26,7 @@ import { PlacesService } from './services/places.service';
   controllers: [PlacesController],
   providers: [
     PlacesService,
+    { provide: PLACE_IMAGE_STORAGE, useClass: S3PlaceImageStorage },
     {
       provide: PLACE_REPOSITORY,
       useClass: TypeOrmPlaceRepository,

@@ -1,19 +1,32 @@
-import { useMemo } from 'react'
+import { DateField } from '@/components/ui/date-input'
+import { SearchButton } from '@/components/management-search'
+import { useSearchFilters } from '@/lib/use-search-filters'
+import { loadHotelOptions } from '@/services/api/management-options'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { pageItems } from '@/lib/pagination'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { Button } from '@/components/ui/button'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, EmptyState, ErrorState, FormField, LoadingState, PageHeader } from '@/components/common'
 import { api } from '@/services/api/client'
-import { errorMessage } from '@/lib/utils'
-import type { PartnerHotelQuery, ReportGroupBy, ReportQuery } from '@/types/domain'
+import { day, errorMessage } from '@/lib/utils'
+import type { ReportGroupBy, ReportQuery } from '@/types/domain'
 
-const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' }
 const groups: Array<[ReportGroupBy, string]> = [['day', 'Theo ngày'], ['week', 'Theo tuần'], ['month', 'Theo tháng']]
+const reportViews = [['summary', 'Tổng quan'], ['charts', 'Biểu đồ'], ['hotels', 'Theo khách sạn']] as const
 const bookingStatuses = ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'] as const
 const statusNames: Record<string, string> = { PENDING: 'Chờ xử lý', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất' }
 
 function localDate(date: Date): string {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
+}
+
+function periodLabel(period: unknown): string {
+  if (typeof period !== 'string') return '—'
+  return /^\d{4}-\d{2}$/.test(period) ? period.slice(5) + '/' + period.slice(0, 4) : day(period)
 }
 
 function money(value: number, currency: string): string {
@@ -23,43 +36,37 @@ function money(value: number, currency: string): string {
 
 export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams()
+  const [view, setView] = useState<typeof reportViews[number][0]>('summary')
   const hotels = useQuery({
     queryKey: [admin ? 'admin' : 'partner', 'report-hotels'],
-    queryFn: () => admin ? api.adminHotels(hotelsQuery) : api.myHotels(hotelsQuery),
+    queryFn: () => loadHotelOptions(admin),
   })
   const now = new Date()
   const from = params.get('from') ?? localDate(new Date(now.getFullYear(), now.getMonth(), 1))
   const to = params.get('to') ?? localDate(now)
-  const selectedHotelId = params.get('hotelId') ?? (admin ? '' : hotels.data?.data[0]?.id ?? '')
+  const selectedHotelId = params.get('hotelId') ?? (admin ? '' : hotels.data?.[0]?.id ?? '')
   const groupBy = (params.get('groupBy') as ReportGroupBy | null) ?? 'day'
   const validRange = from <= to
+  const { filters, changeFilters, applyFilters } = useSearchFilters(params, setParams, { from, to, hotelId: selectedHotelId, groupBy })
   const query = useMemo<ReportQuery>(() => ({
     from, to, groupBy,
     ...(selectedHotelId ? { hotelId: selectedHotelId } : {}),
   }), [from, to, groupBy, selectedHotelId])
   const enabled = validRange && (admin || Boolean(selectedHotelId))
-  const summary = useQuery({ queryKey: ['reports-summary', admin, query], queryFn: () => api.reportSummary(query), enabled })
-  const timeseries = useQuery({ queryKey: ['reports-timeseries', admin, query], queryFn: () => api.reportTimeseries(query), enabled })
+  const summary = useQuery({ queryKey: ['reports-summary', admin, query], queryFn: () => api.reportSummary(query), enabled, placeholderData: keepPreviousData })
+  const timeseries = useQuery({ queryKey: ['reports-timeseries', admin, query], queryFn: () => api.reportTimeseries(query), enabled, placeholderData: keepPreviousData })
 
-  const changeParams = (values: Record<string, string | undefined>) => {
-    const next = new URLSearchParams(params)
-    for (const [key, value] of Object.entries(values)) value ? next.set(key, value) : next.delete(key)
-    setParams(next, { replace: true })
-  }
+  const pagination = usePagination(summary.isPlaceholderData ? undefined : summary.data?.hotels.length)
 
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
-  if (!admin && hotels.data.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn để xem báo cáo đặt phòng và thanh toán." />
-  if (!validRange) return <div><PageHeader title={admin ? 'Báo cáo hệ thống' : 'Báo cáo khách sạn'} /><p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p></div>
-  if (summary.isPending || timeseries.isPending) return <LoadingState />
-  if (summary.isError) return <ErrorState message={errorMessage(summary.error)} retry={() => { void summary.refetch() }} />
-  if (timeseries.isError) return <ErrorState message={errorMessage(timeseries.error)} retry={() => { void timeseries.refetch() }} />
-
-  const hotelRows = summary.data.hotels
-  const currencyRows = summary.data.financialByCurrency
-  const trendCurrencies = [...new Set(timeseries.data.financialTrend.map(point => point.currency))]
+  if (!admin && hotels.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn để xem báo cáo đặt phòng và thanh toán." />
+  const hotelRows = pageItems(summary.data?.hotels ?? [], pagination.page, pagination.size)
+  const currencyRows = summary.data?.financialByCurrency ?? []
+  const financialTrend = timeseries.data?.financialTrend ?? []
+  const trendCurrencies = [...new Set(financialTrend.map(point => point.currency))]
   const financialByCurrency = (currency: string) => {
-    return timeseries.data.financialTrend.filter(point => point.currency === currency).map(point => ({
+    return financialTrend.filter(point => point.currency === currency).map(point => ({
       period: point.period,
       paidAmount: point.paidAmount,
       refundAmount: point.refundAmount,
@@ -67,41 +74,53 @@ export function ReportDashboardPage({ admin = false }: { admin?: boolean }) {
     }))
   }
 
-  return <div>
+  return <div className="management-list">
     <PageHeader title={admin ? 'Báo cáo hệ thống' : 'Báo cáo khách sạn'} description={admin ? 'Theo dõi đặt phòng, thanh toán, hoàn tiền và đối soát trên toàn hệ thống.' : 'Theo dõi đặt phòng, doanh thu và khoản đối soát của khách sạn bạn quản lý.'} />
-    <Card className="mb-5 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-      <FormField label="Từ ngày"><input type="date" value={from} onChange={event => changeParams({ from: event.target.value || undefined })} /></FormField>
-      <FormField label="Đến ngày"><input type="date" value={to} onChange={event => changeParams({ to: event.target.value || undefined })} /></FormField>
-      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => changeParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Toàn hệ thống' : 'Chọn khách sạn'}</option>{hotels.data.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
-      <FormField label="Nhóm biểu đồ"><select value={groupBy} onChange={event => changeParams({ groupBy: event.target.value })}>{groups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FormField>
-    </Card>
+    <form onSubmit={applyFilters} aria-label="Tìm kiếm báo cáo" className="management-filters grid items-end gap-2 rounded-xl border border-slate-200 bg-white sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+      <DateField label="Từ ngày" required value={filters.from} max={filters.to || undefined} onChange={value => changeFilters({ from: value })} />
+      <DateField label="Đến ngày" required value={filters.to} min={filters.from || undefined} onChange={value => changeFilters({ to: value })} />
+      <FormField label="Khách sạn"><select required={!admin} value={filters.hotelId} onChange={event => changeFilters({ hotelId: event.target.value })}><option value="">{admin ? 'Toàn hệ thống' : 'Chọn khách sạn'}</option>{hotels.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
+      <FormField label="Nhóm biểu đồ"><select value={filters.groupBy} onChange={event => changeFilters({ groupBy: event.target.value as ReportGroupBy })}>{groups.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FormField>
+      <SearchButton />
+    </form>
+    <div role="group" aria-label="Nội dung báo cáo" className="flex flex-wrap gap-1.5">
+      {reportViews.map(([key, label]) => <Button key={key} type="button" size="sm" variant={view === key ? 'default' : 'secondary'} aria-pressed={view === key} onClick={() => setView(key)}>{label}</Button>)}
+    </div>
+    {!validRange ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.</p>
+      : summary.isError ? <ErrorState message={errorMessage(summary.error)} retry={() => { void summary.refetch() }} />
+      : view === 'charts' && timeseries.isError ? <ErrorState message={errorMessage(timeseries.error)} retry={() => { void timeseries.refetch() }} />
+      : !summary.data || (view === 'charts' && !timeseries.data) ? <LoadingState /> : null}
 
-    <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      <Metric label="Booking được tạo" value={summary.data.bookingCount.toLocaleString('vi-VN')} />
+    {validRange && summary.data && view === 'summary' && <>
+    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <Metric label="Số đơn đặt phòng" value={summary.data.bookingCount.toLocaleString('vi-VN')} />
       {bookingStatuses.map(status => <Metric key={status} label={statusNames[status] ?? status} value={(summary.data.bookingStatusCounts[status] ?? 0).toLocaleString('vi-VN')} />)}
     </div>
 
-    <section className="mb-6">
+    <section className="management-results">
       <h2 className="mb-3 text-lg font-semibold">Tổng hợp tài chính theo tiền tệ</h2>
       {currencyRows.length ? <div className="grid gap-4 xl:grid-cols-2">{currencyRows.map(item => <Card key={item.currency} className="p-5">
         <h3 className="mb-4 font-semibold">{item.currency}</h3>
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
-          <Value label={`Đã thanh toán · ${item.paidBookingCount} booking`} value={money(item.paidAmount, item.currency)} />
-          <Value label={`Đã thu, chờ đối soát · ${item.pendingSettlementBookingCount} booking`} value={money(item.pendingSettlementAmount, item.currency)} />
-          <Value label={`Đã hoàn · ${item.refundedBookingCount} booking`} value={money(item.refundAmount, item.currency)} />
+          <Value label={`Đã thanh toán · ${item.paidBookingCount} đơn đặt phòng`} value={money(item.paidAmount, item.currency)} />
+          <Value label={`Đã thu, chờ đối soát · ${item.pendingSettlementBookingCount} đơn đặt phòng`} value={money(item.pendingSettlementAmount, item.currency)} />
+          <Value label={`Đã hoàn · ${item.refundedBookingCount} đơn đặt phòng`} value={money(item.refundAmount, item.currency)} />
           <Value label="Giá trị đã đối soát" value={money(item.settlementBaseAmount, item.currency)} />
           <Value label="Hoa hồng" value={money(item.commissionAmount, item.currency)} />
           <Value label="Đã trả chủ khách sạn" value={money(item.partnerReceivableAmount, item.currency)} />
         </dl>
       </Card>)}</div> : <Card className="p-5 text-sm text-slate-500">Chưa có thanh toán, hoàn tiền hoặc đối soát trong khoảng thời gian này.</Card>}
-    </section>
+    </section></>}
 
-    <div className="mb-6 grid gap-5 xl:grid-cols-2">
-      <Card className="p-5"><h2 className="mb-4 font-semibold">Số booking theo thời gian</h2>{timeseries.data.bookingTrend.length ? <div className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={timeseries.data.bookingTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="bookingCount" name="Booking" fill="#1E3A5F" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div> : <p className="py-12 text-center text-sm text-slate-500">Chưa có booking trong khoảng thời gian này.</p>}</Card>
-      <Card className="p-5"><h2 className="mb-4 font-semibold">Dòng tiền theo thời gian</h2>{trendCurrencies.length ? <div className="grid gap-5">{trendCurrencies.map(currency => <div key={currency}><h3 className="mb-2 text-sm font-medium">{currency}</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={financialByCurrency(currency)}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(value) => money(Number(value), currency)} /><Legend /><Bar dataKey="paidAmount" name="Đã thu" fill="#1E3A5F" /><Bar dataKey="refundAmount" name="Đã hoàn" fill="#DC6B55" /><Bar dataKey="partnerReceivableAmount" name="Đã trả chủ KS" fill="#3D9970" /></BarChart></ResponsiveContainer></div></div>)}</div> : <p className="py-12 text-center text-sm text-slate-500">Chưa có dữ liệu tài chính trong khoảng thời gian này.</p>}</Card>
-    </div>
+    {validRange && timeseries.data && view === 'charts' && <div className="management-results grid gap-3 lg:grid-cols-2">
+      <Card className="p-5"><h2 className="mb-4 font-semibold">Số đơn đặt phòng theo thời gian</h2>{timeseries.data.bookingTrend.length ? <div className="h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={timeseries.data.bookingTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" tickFormatter={periodLabel} tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} /><Tooltip labelFormatter={periodLabel} /><Bar dataKey="bookingCount" name="Đơn đặt phòng" fill="#1E3A5F" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div> : <p className="py-12 text-center text-sm text-slate-500">Chưa có đơn đặt phòng trong khoảng thời gian này.</p>}</Card>
+      <Card className="p-5"><h2 className="mb-4 font-semibold">Dòng tiền theo thời gian</h2>{trendCurrencies.length ? <div className="grid gap-5">{trendCurrencies.map(currency => <div key={currency}><h3 className="mb-2 text-sm font-medium">{currency}</h3><div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={financialByCurrency(currency)}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" tickFormatter={periodLabel} tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip labelFormatter={periodLabel} formatter={(value) => money(Number(value), currency)} /><Legend /><Bar dataKey="paidAmount" name="Đã thu" fill="#1E3A5F" /><Bar dataKey="refundAmount" name="Đã hoàn" fill="#DC6B55" /><Bar dataKey="partnerReceivableAmount" name="Đã trả chủ KS" fill="#3D9970" /></BarChart></ResponsiveContainer></div></div>)}</div> : <p className="py-12 text-center text-sm text-slate-500">Chưa có dữ liệu tài chính trong khoảng thời gian này.</p>}</Card>
+    </div>}
 
-    <Card className="table-scroll p-5"><h2 className="mb-4 font-semibold">Tổng hợp theo khách sạn và tiền tệ</h2>{hotelRows.length ? <table><thead><tr><th>Khách sạn</th><th>Tiền tệ</th><th>Booking tạo</th><th>Đã thanh toán</th><th>Chờ đối soát</th><th>Đã hoàn</th><th>Đã trả chủ KS</th></tr></thead><tbody>{hotelRows.map(row => <tr key={`${row.hotelId}-${row.currency}`}><td>{row.hotelName}</td><td>{row.currency}</td><td>{row.bookingCount}</td><td>{money(row.paidAmount, row.currency)}</td><td>{money(row.pendingSettlementAmount, row.currency)}</td><td>{money(row.refundAmount, row.currency)}</td><td>{money(row.partnerReceivableAmount, row.currency)}</td></tr>)}</tbody></table> : <EmptyState title="Chưa có dữ liệu" description="Không có booking thuộc bộ lọc đã chọn." />}</Card>
+    {validRange && summary.data && view === 'hotels' && <>
+    <Card className="table-scroll p-3"><h2 className="mb-4 font-semibold">Tổng hợp theo khách sạn và tiền tệ</h2>{hotelRows.length ? <table><thead><tr><th>Khách sạn</th><th>Tiền tệ</th><th>Đơn đã tạo</th><th>Đã thanh toán</th><th>Chờ đối soát</th><th>Đã hoàn</th><th>Đã trả chủ KS</th></tr></thead><tbody>{hotelRows.map(row => <tr key={`${row.hotelId}-${row.currency}`}><td>{row.hotelName}</td><td>{row.currency}</td><td>{row.bookingCount}</td><td>{money(row.paidAmount, row.currency)}</td><td>{money(row.pendingSettlementAmount, row.currency)}</td><td>{money(row.refundAmount, row.currency)}</td><td>{money(row.partnerReceivableAmount, row.currency)}</td></tr>)}</tbody></table> : <EmptyState title="Chưa có dữ liệu" description="Không có đơn đặt phòng thuộc bộ lọc đã chọn." />}</Card>
+    <Pagination page={pagination.page} total={summary.data.hotels.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />
+    </>}
   </div>
 }
 

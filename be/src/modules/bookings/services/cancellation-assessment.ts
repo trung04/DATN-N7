@@ -110,13 +110,17 @@ export function assessCancellation(
     };
   }
 
-  const matchedRule = snapshot.rules.find((item) => {
+  const matchedRule = snapshot.rules.find((item, index) => {
     const minHours = usesHoursAfterBooking
       ? item.minHoursAfterBooking
       : item.minHoursBeforeCheckIn;
     const maxHours = usesHoursAfterBooking
       ? item.maxHoursAfterBooking
       : item.maxHoursBeforeCheckIn;
+    if (usesHoursAfterBooking && snapshot.inclusiveHourLimits) {
+      return (index === 0 ? elapsedHours >= (minHours ?? 0) : elapsedHours > (minHours ?? 0)) &&
+        (maxHours === null || maxHours === undefined || elapsedHours <= maxHours);
+    }
     return elapsedHours >= (minHours ?? 0) &&
       (maxHours === null || maxHours === undefined || elapsedHours < maxHours);
   });

@@ -37,7 +37,7 @@ export class AdminHotelsController {
   async findPage(
     @Query() query: ListHotelsRequest,
   ): Promise<HotelListResponse> {
-    const page = await this.hotelsService.findPage(query);
+    const page = await this.hotelsService.findReviewPage(query);
     return HotelMapper.toListResponse(
       page.items,
       query.page,
@@ -61,7 +61,7 @@ export class AdminHotelsController {
   async findById(
     @Param('hotelId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<HotelResponse> {
-    return HotelMapper.toResponse(await this.hotelsService.findById(id));
+    return HotelMapper.toResponse(await this.hotelsService.findForReview(id));
   }
 
   @Patch(':hotelId/status')

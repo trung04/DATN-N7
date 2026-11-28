@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
-import { UserEntity, UserStatus } from '../entities/user.entity';
+import { IsNull, Not, QueryFailedError, Repository } from 'typeorm';
+import { UserEntity, UserRole, UserStatus } from '../entities/user.entity';
+import { HotelOwnerEntity } from '../entities/hotel-owner.entity';
 import {
   GoogleAccountConflictException,
   UserEmailConflictException,
@@ -104,6 +105,29 @@ export class TypeOrmUserRepository implements UserRepository {
     } catch (error) {
       this.rethrowIdentityConflict(error, user);
     }
+  }
+
+  activatePendingAccount(id: string, email: string, role: UserRole): Promise<UserEntity | null> {
+    return this.repository.manager.transaction(async manager => {
+      const users = manager.getRepository(UserEntity);
+      const pending = await users.findOne({
+        where: { id, email, role, status: UserStatus.INACTIVE, isEmailVerified: false },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!pending) return null;
+
+      if (pending.role === UserRole.HOTEL_OWNER) {
+        const profiles = manager.getRepository(HotelOwnerEntity);
+        await profiles.createQueryBuilder().insert()
+          .values({ userId: id }).orIgnore().execute();
+        await profiles.update({ userId: id, deletedAt: Not(IsNull()) }, {
+          deletedAt: null, bankName: null, bankBin: null, bankAccountNumber: null, bankAccountHolder: null,
+        });
+      }
+      pending.status = UserStatus.ACTIVE;
+      pending.isEmailVerified = true;
+      return users.save(pending);
+    });
   }
 
   async delete(user: UserEntity): Promise<void> {

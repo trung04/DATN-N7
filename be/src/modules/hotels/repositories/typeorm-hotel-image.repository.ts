@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { makeLodgingImagePrimary } from '../../media/reorder-lodging-images';
 import {
   ImageEntity,
   ImageStorageProvider,
 } from '../../media/entities/image.entity';
 import { HotelImageEntity } from '../entities/hotel-image.entity';
+import { HotelEntity, HotelStatus } from '../entities/hotel.entity';
 import type {
   CreateHotelImageData,
   HotelImageRepository,
@@ -57,14 +59,40 @@ export class TypeOrmHotelImageRepository implements HotelImageRepository {
   find(hotelId: string, id: string) {
     return this.repository.findOne({ where: { hotelId, id } });
   }
-  async delete(hotelId: string, id: string): Promise<void> {
-    await this.repository.manager.transaction(async (manager) => {
-      const link = await manager
+  async makePrimary(hotelId: string, id: string) {
+    return this.repository.manager.transaction(async (manager) => {
+      if (!(await makeLodgingImagePrimary(manager, 'hotel', hotelId, id)))
+        return null;
+      return manager
         .getRepository(HotelImageEntity)
         .findOne({ where: { hotelId, id } });
-      if (!link) return;
-      await manager.getRepository(HotelImageEntity).softDelete(link.id);
-      await manager.getRepository(ImageEntity).softDelete(link.imageId);
     });
+  }
+  async delete(
+    hotelId: string,
+    id: string,
+    beforeDelete: (image: HotelImageEntity, status: HotelStatus) => Promise<boolean>,
+  ): Promise<boolean> {
+    const runner = this.repository.manager.connection.createQueryRunner();
+    const key = [`hotel-images:${hotelId}`];
+    try {
+      // Keep uploads and submission serialized with deletion while storage I/O runs outside a transaction.
+      await runner.query('SELECT pg_advisory_lock(hashtext($1))', key);
+      try {
+        const hotel = await runner.manager.findOneBy(HotelEntity, { id: hotelId });
+        const link = await runner.manager.findOneBy(HotelImageEntity, { hotelId, id });
+        if (!hotel || !link) return false;
+        const deleteOwnedImage = await beforeDelete(link, hotel.status);
+        await runner.manager.transaction(async (manager) => {
+          await manager.softDelete(HotelImageEntity, link.id);
+          if (deleteOwnedImage) await manager.softDelete(ImageEntity, link.imageId);
+        });
+        return true;
+      } finally {
+        await runner.query('SELECT pg_advisory_unlock(hashtext($1))', key);
+      }
+    } finally {
+      await runner.release();
+    }
   }
 }

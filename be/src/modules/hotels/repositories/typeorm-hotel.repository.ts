@@ -6,6 +6,7 @@ import { HotelReviewHistoryEntity } from '../entities/hotel-review-history.entit
 import { HotelEntity } from '../entities/hotel.entity';
 import {
   HotelReferenceException,
+  HotelNotFoundException,
   HotelTaxCodeConflictException,
 } from '../exceptions/hotel.exceptions';
 import type {
@@ -28,13 +29,27 @@ export class TypeOrmHotelRepository implements HotelRepository {
     private readonly reviewRepository: Repository<HotelReviewHistoryEntity>,
   ) {}
 
+  async findIdsByOwner(ownerUserId: string): Promise<string[]> {
+    const hotels = await this.repository.find({
+      select: { id: true }, where: { ownerUserId }, order: { id: 'ASC' },
+    });
+    return hotels.map((hotel) => hotel.id);
+  }
+
   findById(id: string): Promise<HotelEntity | null> {
-    return this.repository.findOne({
+    return this.findDetailed(this.repository, id);
+  }
+
+  private findDetailed(
+    repository: Repository<HotelEntity>,
+    id: string,
+  ): Promise<HotelEntity | null> {
+    return repository.findOne({
       where: { id },
       relations: { documents: true, images: { image: true } },
       order: {
         documents: { createdAt: 'ASC' },
-        images: { createdAt: 'ASC', id: 'ASC' },
+        images: { imageOrder: 'ASC', id: 'ASC' },
       },
     });
   }
@@ -66,6 +81,11 @@ export class TypeOrmHotelRepository implements HotelRepository {
     if (options.status) {
       query.andWhere('hotel.status = :status', { status: options.status });
     }
+    if (options.excludedStatus) {
+      query.andWhere('hotel.status <> :excludedStatus', {
+        excludedStatus: options.excludedStatus,
+      });
+    }
 
     const sortColumns: Record<FindHotelsOptions['sortBy'], string> = {
       createdAt: 'hotel.createdAt',
@@ -87,7 +107,7 @@ export class TypeOrmHotelRepository implements HotelRepository {
       relationLoadStrategy: 'query',
       order: {
         documents: { createdAt: 'ASC' },
-        images: { createdAt: 'ASC', id: 'ASC' },
+        images: { imageOrder: 'ASC', id: 'ASC' },
       },
     });
     const byId = new Map(detailed.map((hotel) => [hotel.id, hotel]));
@@ -116,21 +136,37 @@ export class TypeOrmHotelRepository implements HotelRepository {
   async saveWithReview(
     hotel: HotelEntity,
     review: CreateHotelReviewData,
+    validate?: (current: HotelEntity) => void,
   ): Promise<HotelEntity> {
     try {
       return await this.repository.manager.transaction(async (manager) => {
-        await manager.getRepository(HotelEntity).save(hotel);
+        const hotels = manager.getRepository(HotelEntity);
+        if (validate) {
+          await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+            `hotel-images:${hotel.id}`,
+          ]);
+          const locked = await hotels.findOne({
+            where: { id: hotel.id },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!locked) throw new HotelNotFoundException(hotel.id);
+          const current = await this.findDetailed(hotels, hotel.id);
+          if (!current) throw new HotelNotFoundException(hotel.id);
+          validate(current);
+          await hotels.update(hotel.id, {
+            status: hotel.status,
+            submittedAt: hotel.submittedAt,
+            reviewedAt: hotel.reviewedAt,
+            reviewedBy: hotel.reviewedBy,
+            rejectionReason: hotel.rejectionReason,
+          });
+        } else {
+          await hotels.save(hotel);
+        }
         await manager
           .getRepository(HotelReviewHistoryEntity)
           .save(manager.getRepository(HotelReviewHistoryEntity).create(review));
-        return (await manager.getRepository(HotelEntity).findOne({
-          where: { id: hotel.id },
-          relations: { documents: true, images: { image: true } },
-          order: {
-            documents: { createdAt: 'ASC' },
-            images: { createdAt: 'ASC', id: 'ASC' },
-          },
-        }))!;
+        return (await this.findDetailed(hotels, hotel.id))!;
       });
     } catch (error) {
       this.rethrowPersistenceError(error);

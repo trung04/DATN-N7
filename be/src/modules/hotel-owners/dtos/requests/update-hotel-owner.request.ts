@@ -1,10 +1,15 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 export class UpdateHotelOwnerRequest {
+  @ValidateIf((input: UpdateHotelOwnerRequest) => input.bankBin !== undefined)
+  @IsString()
+  @Matches(/^\d{6}$/)
+  bankBin?: string;
+
   @IsOptional()
   @Transform(trim)
   @IsString()

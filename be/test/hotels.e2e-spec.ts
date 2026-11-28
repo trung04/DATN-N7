@@ -12,7 +12,9 @@ import {
   HotelEntity,
   HotelStatus,
 } from '../src/modules/hotels/entities/hotel.entity';
+import { HotelNotFoundException } from '../src/modules/hotels/exceptions/hotel.exceptions';
 import { HotelsService } from '../src/modules/hotels/services/hotels.service';
+import { HotelDocumentsService } from '../src/modules/hotels/services/hotel-documents.service';
 import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
 import { UserRole } from '../src/modules/users/entities/user.entity';
 import type { NextFunction, Response } from 'express';
@@ -51,8 +53,8 @@ describe('Hotels API (e2e)', () => {
   let app: INestApplication<App>;
   const service = {
     create: jest.fn(),
-    findPage: jest.fn(),
-    findById: jest.fn(),
+    findReviewPage: jest.fn(),
+    findForReview: jest.fn(),
     update: jest.fn(),
     addDocument: jest.fn(),
     deleteDocument: jest.fn(),
@@ -66,7 +68,7 @@ describe('Hotels API (e2e)', () => {
     jest.clearAllMocks();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [HotelsController, AdminHotelsController],
-      providers: [{ provide: HotelsService, useValue: service }],
+      providers: [{ provide: HotelsService, useValue: service }, { provide: HotelDocumentsService, useValue: { remove: (...args: unknown[]) => service.deleteDocument(...args) } }],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -94,7 +96,7 @@ describe('Hotels API (e2e)', () => {
   });
 
   it('creates a draft hotel and returns its location', async () => {
-    service.create.mockResolvedValue(entity());
+    service.create.mockResolvedValue(entity({ latitude: 16.0614, longitude: 108.2468 }));
 
     await request(app.getHttpServer())
       .post('/api/v1/hotels')
@@ -103,6 +105,8 @@ describe('Hotels API (e2e)', () => {
         legalName: 'Sun Hotel Company',
         taxCode: 'TAX001',
         address: '1 Beach Road',
+        latitude: 16.0614,
+        longitude: 108.2468,
         phoneNumber: '0912345678',
         email: 'hotel@example.com',
         starRating: 4,
@@ -116,8 +120,18 @@ describe('Hotels API (e2e)', () => {
           id: hotelId,
           ownerUserId,
           status: HotelStatus.DRAFT,
+          latitude: 16.0614,
+          longitude: 108.2468,
         });
       });
+  });
+
+  it.each([{ latitude: 91, longitude: 108 }, { latitude: 16, longitude: 181 }, { latitude: '', longitude: 108 }])('rejects invalid hotel coordinates at the HTTP boundary: %j', async (point) => {
+    await request(app.getHttpServer()).post('/api/v1/hotels').send({
+      name: 'Hotel', legalName: 'Hotel', taxCode: 'TAX', address: 'Address',
+      phoneNumber: '0912345678', email: 'hotel@example.com', checkInTime: '14:00', checkOutTime: '12:00', ...point,
+    }).expect(400);
+    expect(service.create.mock.calls).toHaveLength(0);
   });
 
   it('does not allow callers to set the initial hotel status', async () => {
@@ -197,6 +211,34 @@ describe('Hotels API (e2e)', () => {
       .expect(({ body }) => {
         expect(body.status).toBe(HotelStatus.PENDING_APPROVAL);
       });
+  });
+
+  it('uses the review list for admin searches and pagination', async () => {
+    service.findReviewPage.mockResolvedValue({ items: [], total: 0 });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/hotels')
+      .query({ status: HotelStatus.DRAFT, search: 'Sun', page: 2, limit: 6 })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual([]);
+        expect(body.meta.total).toBe(0);
+      });
+
+    expect(service.findReviewPage).toHaveBeenCalledWith(
+      expect.objectContaining({ status: HotelStatus.DRAFT, search: 'Sun', page: 2, limit: 6 }),
+    );
+  });
+
+  it('returns 404 when the admin review detail is unavailable', async () => {
+    service.findForReview.mockRejectedValue(new HotelNotFoundException(hotelId));
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/admin/hotels/${hotelId}`)
+      .expect(404)
+      .expect(({ body }) => expect(body.code).toBe('HOTEL_NOT_FOUND'));
+
+    expect(service.findForReview).toHaveBeenCalledWith(hotelId);
   });
 
   it('uses one admin endpoint for hotel review actions', async () => {

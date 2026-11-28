@@ -34,6 +34,12 @@ export enum PaymentMethod {
   CASH = 'CASH',
 }
 
+export enum PaymentProvider {
+  PAYOS = 'PAYOS',
+  LEGACY_LIVE = 'LEGACY_LIVE',
+  LEGACY_TEST = 'LEGACY_TEST',
+}
+
 export enum PaymentStatus {
   PENDING = 'PENDING',
   PAYMENT_PENDING = 'PAYMENT_PENDING',
@@ -79,6 +85,7 @@ export interface BookingCancellationPolicySnapshot {
   cancellationAllowed?: boolean;
   policyName?: string;
   policyDescription?: string | null;
+  inclusiveHourLimits?: true;
   timezone: 'Asia/Ho_Chi_Minh';
   checkInTime: string;
   rules: BookingCancellationRuleSnapshot[];
@@ -200,29 +207,17 @@ export class BookingEntity {
   })
   paymentTransactionId: string | null;
 
-  @Column({ name: 'sepay_order_xid', type: 'varchar', length: 100, nullable: true })
-  sepayOrderXid: string | null;
+  @Column({ name: 'payment_provider', type: 'varchar', length: 30, nullable: true })
+  paymentProvider: PaymentProvider | null;
 
-  @Column({ name: 'sepay_order_code', type: 'varchar', length: 50, nullable: true })
-  sepayOrderCode: string | null;
+  @Column({ name: 'payment_reference', type: 'varchar', length: 32, nullable: true })
+  paymentReference: string | null;
 
-  @Column({ name: 'sepay_va_number', type: 'varchar', length: 100, nullable: true })
-  sepayVaNumber: string | null;
+  @Column({ name: 'payment_link_id', type: 'varchar', length: 64, nullable: true })
+  paymentLinkId: string | null;
 
-  @Column({ name: 'sepay_qr_code', type: 'text', nullable: true })
-  sepayQrCode: string | null;
-
-  @Column({ name: 'sepay_bank_name', type: 'varchar', length: 100, nullable: true })
-  sepayBankName: string | null;
-
-  @Column({ name: 'sepay_account_number', type: 'varchar', length: 100, nullable: true })
-  sepayAccountNumber: string | null;
-
-  @Column({ name: 'sepay_account_holder_name', type: 'varchar', length: 255, nullable: true })
-  sepayAccountHolderName: string | null;
-
-  @Column({ name: 'sepay_order_status', type: 'varchar', length: 30, nullable: true })
-  sepayOrderStatus: string | null;
+  @Column({ name: 'payment_checkout_url', type: 'text', nullable: true })
+  paymentCheckoutUrl: string | null;
 
   @Column({
     name: 'settlement_base_amount',
@@ -377,15 +372,13 @@ export class BookingEntity {
   })
   refundTransactionId: string | null;
 
-  @Column({ name: 'sepay_refund_id', type: 'varchar', length: 100, nullable: true })
-  sepayRefundId: string | null;
+  @Column({ name: 'refund_request_id', type: 'varchar', length: 32, nullable: true })
+  refundRequestId: string | null;
 
-  @Column({ name: 'sepay_refund_idempotency_key', type: 'varchar', length: 100, nullable: true })
-  sepayRefundIdempotencyKey: string | null;
-
-  @Column({ name: 'sepay_refund_provider_status', type: 'varchar', length: 30, nullable: true })
-  sepayRefundProviderStatus: string | null;
+  @Column({ name: 'refund_destination', type: 'jsonb', nullable: true })
+  refundDestination: { bank: string; account: string } | null;
 
   @OneToMany(() => BookingRoomEntity, (item) => item.booking)
   roomItems: BookingRoomEntity[];
+
 }

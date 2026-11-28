@@ -1,32 +1,44 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { DateField } from '@/components/ui/date-input'
+import { loadHotelOptions } from '@/services/api/management-options'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { readPage, readPageSize } from '@/lib/pagination'
+import { useId, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Eye, Search } from 'lucide-react'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Eye, SlidersHorizontal } from 'lucide-react'
+import { ManagementSearch, SearchButton } from '@/components/management-search'
+import { HotelManagementLocked } from '@/components/hotel-management-locked'
+import { useSearchFilters } from '@/lib/use-search-filters'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader, StatusBadge } from '@/components/common'
 import { api } from '@/services/api/client'
 import { currency, day, errorMessage } from '@/lib/utils'
-import type { BookingListQuery, ManagedBooking, ManagedBookingStatus, ManagedPaymentStatus, ManagedRefundStatus, ManagedSettlementStatus, PartnerHotelQuery } from '@/types/domain'
+import type { BookingListQuery, ManagedBooking, ManagedBookingStatus, ManagedPaymentStatus, ManagedRefundStatus, ManagedSettlementStatus } from '@/types/domain'
+import { BookingDetails } from './booking-details'
 
-const hotelsQuery: PartnerHotelQuery = { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC' }
 const statuses: Array<['bookingStatus' | 'paymentStatus' | 'refundStatus' | 'settlementStatus', string, string[]]> = [
-  ['bookingStatus', 'Booking', ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED']],
+  ['bookingStatus', 'Đơn đặt phòng', ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED']],
   ['paymentStatus', 'Thanh toán', ['PENDING', 'PAYMENT_PENDING', 'PAID', 'FAILED', 'EXPIRED']],
   ['refundStatus', 'Hoàn tiền', ['NONE', 'PENDING', 'PROCESSING', 'REFUNDED', 'FAILED']],
   ['settlementStatus', 'Đối soát', ['PENDING', 'PROCESSING', 'SETTLED', 'FAILED']],
 ]
 const labels: Record<string, string> = { PENDING: 'Chờ xử lý', CONFIRMED: 'Đã xác nhận', CANCELLED: 'Đã hủy', COMPLETED: 'Hoàn tất', PAYMENT_PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', FAILED: 'Thất bại', EXPIRED: 'Hết hạn', NONE: 'Chưa yêu cầu', REFUNDED: 'Đã hoàn', PROCESSING: 'Đang xử lý', SETTLED: 'Đã quyết toán' }
 const parseStatus = <T extends string>(value: string | null): T | undefined => value ? value as T : undefined
+const extraFilters = ['paymentStatus', 'refundStatus', 'settlementStatus', 'createdFrom', 'createdTo']
 
 export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'booking-hotels'], queryFn: () => admin ? api.adminHotels(hotelsQuery) : api.myHotels(hotelsQuery) })
-  const selectedHotelId = params.get('hotelId') || (admin ? '' : hotels.data?.data[0]?.id || '')
-  const page = Number(params.get('page') || 1)
+  const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'booking-hotels'], queryFn: () => loadHotelOptions(admin) })
+  const selectedHotelId = params.get('hotelId') || (admin ? '' : (hotels.data?.find(hotel => hotel.status === 'ACTIVE') ?? hotels.data?.[0])?.id || '')
+  const selectedHotel = hotels.data?.find(hotel => hotel.id === selectedHotelId)
+  const canCompleteAt = (hotelId: string) => !admin && hotels.data?.some(hotel => hotel.id === hotelId && hotel.status === 'ACTIVE')
+  const page = readPage(params)
+  const size = readPageSize(params)
   const query = useMemo<BookingListQuery>(() => ({
-    page, limit: 20,
+    page, limit: size,
     sortBy: (params.get('sortBy') as BookingListQuery['sortBy'] | null) ?? 'createdAt',
     sortOrder: (params.get('sortOrder') as BookingListQuery['sortOrder'] | null) ?? 'DESC',
     ...(params.get('search') ? { search: params.get('search')! } : {}),
@@ -37,87 +49,147 @@ export function BookingManagementPage({ admin = false }: { admin?: boolean }) {
     ...(parseStatus<ManagedSettlementStatus>(params.get('settlementStatus')) ? { settlementStatus: parseStatus<ManagedSettlementStatus>(params.get('settlementStatus')) } : {}),
     ...(params.get('createdFrom') ? { createdFrom: params.get('createdFrom')! } : {}),
     ...(params.get('createdTo') ? { createdTo: params.get('createdTo')! } : {}),
-  }), [page, params, selectedHotelId])
-  const bookings = useQuery({ queryKey: ['managed-bookings', admin, query], queryFn: () => api.managedBookings(query), enabled: admin || Boolean(selectedHotelId) })
+  }), [page, size, params, selectedHotelId])
+  const { filters, changeFilters, applyFilters } = useSearchFilters(params, setParams, {
+    search: params.get('search') ?? '', hotelId: selectedHotelId,
+    bookingStatus: params.get('bookingStatus') ?? '', paymentStatus: params.get('paymentStatus') ?? '',
+    refundStatus: params.get('refundStatus') ?? '', settlementStatus: params.get('settlementStatus') ?? '',
+    createdFrom: params.get('createdFrom') ?? '', createdTo: params.get('createdTo') ?? '',
+    sortBy: query.sortBy, sortOrder: query.sortOrder,
+  })
+  const bookings = useQuery({ queryKey: ['managed-bookings', admin, query], queryFn: () => api.managedBookings(query), enabled: admin || Boolean(selectedHotelId), placeholderData: keepPreviousData })
+  const pagination = usePagination(bookings.isPlaceholderData ? undefined : bookings.data?.meta.total)
+  const extraFilterCount = extraFilters.filter(key => params.get(key)).length
+  const [filtersOpen, setFiltersOpen] = useState(() => extraFilterCount > 0)
   const [selectedId, setSelectedId] = useState('')
   const detail = useQuery({ queryKey: ['managed-booking', selectedId], queryFn: () => api.managedBooking(selectedId), enabled: Boolean(selectedId) })
-  const [action, setAction] = useState<'refund' | null>(null)
+  const [action, setAction] = useState<'refund' | 'confirm-manual-refund' | null>(null)
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
+  const [refundReference, setRefundReference] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const refundFormId = useId()
 
-  const updateParams = (values: Record<string, string | undefined>) => {
-    const next = new URLSearchParams(params)
-    for (const [key, value] of Object.entries(values)) {
-      if (value) next.set(key, value)
-      else next.delete(key)
-    }
-    next.set('page', '1')
-    setParams(next, { replace: true })
-  }
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['managed-bookings'] })
     if (selectedId) await queryClient.invalidateQueries({ queryKey: ['managed-booking', selectedId] })
   }
-  const beginAction = (next: 'refund', booking: ManagedBooking) => {
+  const beginAction = (next: 'refund' | 'confirm-manual-refund', booking: ManagedBooking) => {
     setAction(next); setError('')
-    setAmount(String(booking.refundAmount ?? booking.amount)); setReason(booking.refundReason ?? `Hoàn tiền booking ${booking.bookingCode}`)
+    setRefundReference('')
+    setAmount(String(booking.refundAmount ?? booking.amount)); setReason(booking.refundReason ?? `Hoàn tiền đơn đặt phòng ${booking.bookingCode}`)
   }
   const submitAction = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (!detail.data) return
     setBusy(true); setError('')
     try {
-      await api.refundManagedBooking(detail.data.id, Number(amount), reason.trim())
-      await refresh(); setAction(null); setNotice('Đã gửi yêu cầu hoàn tiền tới SePay; trạng thái sẽ được cập nhật từ phía ngân hàng.')
+      if (action === 'confirm-manual-refund') {
+        await api.confirmManagedManualRefund(detail.data.id, Number(amount), refundReference.trim())
+        setNotice('Đã ghi nhận khoản hoàn tiền.')
+      } else {
+        await api.refundManagedBooking(detail.data.id, Number(amount), reason.trim())
+        setNotice('Đã ghi nhận yêu cầu chi hoàn qua payOS. Xem trạng thái ở phần kết quả hoàn tiền.')
+      }
+      await refresh()
+      setAction(null)
     } catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
   }
   const completeBooking = async () => {
-    if (!detail.data) return
+    if (!detail.data || !canCompleteAt(detail.data.hotelId)) return
     setBusy(true); setError('')
-    try { await api.completeManagedBooking(detail.data.id); await refresh(); setNotice('Đã đánh dấu booking hoàn tất.') }
+    try { await api.completeManagedBooking(detail.data.id); await refresh(); setNotice('Đã đánh dấu đơn đặt phòng hoàn tất.') }
     catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
   }
-  const syncRefund = async () => {
-    if (!detail.data) return
-    setBusy(true); setError('')
-    try { await api.syncManagedRefund(detail.data.id); await refresh(); setNotice('Đã đồng bộ trạng thái hoàn tiền từ SePay.') }
+  const refreshRefund = async (id: string) => {
+    setBusy(true); setError(''); setNotice('')
+    try { await api.refreshPayosRefund(id); await refresh() }
     catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
+  }
+  const verifyRefundAccount = async (id: string) => {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const updated = await api.refreshPayosPayment(id)
+      await refresh()
+      if (updated.hasRefundDestination) setNotice('Đã xác minh tài khoản nhận tiền hoàn từ giao dịch gốc.')
+      else setError('payOS chưa trả về thông tin tài khoản có thể dùng để hoàn tiền.')
+    } catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
   }
   if (hotels.isPending) return <LoadingState />
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
-  if (!admin && hotels.data.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi quản lý đặt phòng." />
-  if (bookings.isPending) return <LoadingState />
-  if (bookings.isError) return <ErrorState message={errorMessage(bookings.error)} retry={() => { void bookings.refetch() }} />
-
-  const hotelName = (id: string) => hotels.data.data.find(hotel => hotel.id === id)?.name ?? id
-  return <div>
-    <PageHeader title={admin ? 'Quản lý đặt phòng' : 'Đặt phòng khách sạn'} description={admin ? 'Tra cứu booking toàn hệ thống, theo dõi thanh toán, hoàn tiền và quyết toán.' : 'Theo dõi booking, thanh toán và hủy tại khách sạn của bạn.'} />
-    <Card className="mb-5 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-      <FormField label="Tìm booking hoặc khách"><div className="relative"><Search className="absolute left-3 top-3 text-slate-400" size={16} /><input className="pl-9" value={params.get('search') ?? ''} onChange={event => updateParams({ search: event.target.value || undefined })} placeholder="Mã booking, tên hoặc email" /></div></FormField>
-      <FormField label="Khách sạn"><select value={selectedHotelId} onChange={event => updateParams({ hotelId: event.target.value || undefined })}><option value="">{admin ? 'Tất cả khách sạn' : 'Chọn khách sạn'}</option>{hotels.data.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
-      {statuses.map(([key, title, values]) => <FormField key={key} label={`Trạng thái ${title.toLocaleLowerCase('vi-VN')}`}><select value={params.get(key) ?? ''} onChange={event => updateParams({ [key]: event.target.value || undefined })}><option value="">Tất cả</option>{values.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}</select></FormField>)}
-      <FormField label="Tạo từ"><input type="date" value={params.get('createdFrom') ?? ''} onChange={event => updateParams({ createdFrom: event.target.value || undefined })} /></FormField>
-      <FormField label="Tạo đến"><input type="date" value={params.get('createdTo') ?? ''} onChange={event => updateParams({ createdTo: event.target.value || undefined })} /></FormField>
-      <FormField label="Sắp xếp"><select value={`${query.sortBy}:${query.sortOrder}`} onChange={event => { const [sortBy, sortOrder] = event.target.value.split(':'); updateParams({ sortBy, sortOrder }) }}><option value="createdAt:DESC">Mới nhất</option><option value="createdAt:ASC">Cũ nhất</option><option value="bookingCode:ASC">Mã booking A–Z</option><option value="amount:DESC">Giá trị cao nhất</option><option value="amount:ASC">Giá trị thấp nhất</option></select></FormField>
-    </Card>
+  if (!admin && hotels.data.length === 0) return <EmptyState title="Bạn chưa có khách sạn" description="Tạo hồ sơ khách sạn trước khi quản lý đặt phòng." />
+  const hotelName = (id: string) => hotels.data.find(hotel => hotel.id === id)?.name ?? id
+  const statusFilter = ([key, title, values]: typeof statuses[number]) => <FormField key={key} label={`Trạng thái ${title.toLocaleLowerCase('vi-VN')}`}><select value={filters[key]} onChange={event => changeFilters({ [key]: event.target.value })}><option value="">Tất cả</option>{values.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}</select></FormField>
+  const booking = detail.data
+  const canComplete = booking?.bookingStatus === 'CONFIRMED' && booking.paymentStatus === 'PAID' && canCompleteAt(booking.hotelId)
+  const canConfirmManualRefund = admin && booking?.manualRefund && booking.paymentStatus === 'PAID' &&
+    booking.refundStatus === 'PENDING' && booking.settlementStatus === 'PENDING' && (booking.refundAmount ?? 0) > 0
+  const canRequestPayosRefund = admin && booking?.paymentProvider === 'PAYOS' && booking.bookingStatus === 'CANCELLED' &&
+    booking.paymentStatus === 'PAID' && booking.settlementStatus === 'PENDING' && ['PENDING', 'FAILED'].includes(booking.refundStatus)
+  const canRefreshRefund = admin && booking?.paymentProvider === 'PAYOS' && booking.refundStatus === 'PROCESSING'
+  const refundFooter = booking && (action ? <>
+    <Button variant="secondary" disabled={busy} onClick={() => { setAction(null); setError('') }}>Quay lại</Button>
+    <Button type="submit" form={refundFormId} disabled={busy || (action === 'confirm-manual-refund' && !refundReference.trim())}>
+      {busy ? 'Đang xử lý...' : action === 'confirm-manual-refund' ? 'Ghi nhận hoàn tiền' : 'Xác nhận'}
+    </Button>
+  </> : (canComplete || canConfirmManualRefund || canRequestPayosRefund || canRefreshRefund) ? <>
+    {canComplete && <Button disabled={busy} onClick={() => void completeBooking()}>Đánh dấu hoàn tất</Button>}
+    {canConfirmManualRefund && <Button disabled={busy} onClick={() => beginAction('confirm-manual-refund', booking)}>Xác nhận đã hoàn tiền</Button>}
+    {canRequestPayosRefund && (booking.hasRefundDestination
+      ? <Button variant="secondary" disabled={busy} onClick={() => beginAction('refund', booking)}>{booking.refundStatus === 'FAILED' ? 'Tạo lại yêu cầu hoàn tiền' : 'Hoàn tiền qua payOS'}</Button>
+      : <>
+        <p className="mr-auto text-sm text-amber-800">Hệ thống chưa xác minh được tài khoản người chuyển.</p>
+        {booking.refundStatus === 'PENDING' && <Button variant="secondary" disabled={busy} onClick={() => void verifyRefundAccount(booking.id)}>Kiểm tra lại tài khoản hoàn tiền</Button>}
+      </>)}
+    {canRefreshRefund && <Button variant="secondary" disabled={busy} onClick={() => void refreshRefund(booking.id)}>Tra cứu hoàn tiền</Button>}
+  </> : null)
+  return <div className="management-list">
+    <PageHeader title={admin ? 'Quản lý đặt phòng' : 'Đặt phòng khách sạn'} description={admin ? 'Tra cứu đơn đặt phòng toàn hệ thống, theo dõi thanh toán, hoàn tiền và quyết toán.' : 'Theo dõi đơn đặt phòng, thanh toán và hủy tại khách sạn của bạn.'} />
+    <form aria-label="Tìm kiếm đặt phòng" onSubmit={applyFilters} className="management-filters rounded-xl border border-slate-200 bg-white">
+      <div className="management-filter-row">
+        <FormField label="Tìm đơn đặt phòng hoặc khách"><ManagementSearch value={filters.search} onChange={event => changeFilters({ search: event.target.value })} placeholder="Mã đặt phòng, tên hoặc thư điện tử" /></FormField>
+        <FormField label="Khách sạn"><select required={!admin} value={filters.hotelId} onChange={event => changeFilters({ hotelId: event.target.value })}><option value="">{admin ? 'Tất cả khách sạn' : 'Chọn khách sạn'}</option>{hotels.data.map(hotel => <option key={hotel.id} value={hotel.id}>{hotel.name}</option>)}</select></FormField>
+        {statuses.slice(0, 1).map(statusFilter)}
+        <FormField label="Sắp xếp"><select value={`${filters.sortBy}:${filters.sortOrder}`} onChange={event => { const [sortBy, sortOrder] = event.target.value.split(':'); changeFilters({ sortBy: sortBy as typeof filters.sortBy, sortOrder: sortOrder as typeof filters.sortOrder }) }}><option value="createdAt:DESC">Mới nhất</option><option value="createdAt:ASC">Cũ nhất</option><option value="bookingCode:ASC">Mã đặt phòng A–Z</option><option value="amount:DESC">Giá trị cao nhất</option><option value="amount:ASC">Giá trị thấp nhất</option></select></FormField>
+        <Button type="button" variant="secondary" className="h-9 justify-self-start" aria-expanded={filtersOpen} aria-controls="booking-extra-filters" onClick={() => setFiltersOpen(open => !open)}><SlidersHorizontal size={16} aria-hidden="true" />Bộ lọc{extraFilterCount > 0 && <span className="rounded-full bg-slate-200 px-1.5 text-xs tabular-nums">{extraFilterCount}</span>}</Button>
+        <SearchButton />
+      </div>
+      {filtersOpen && <div id="booking-extra-filters" className="management-filter-more">
+        {statuses.slice(1).map(statusFilter)}
+        <DateField label="Tạo từ" value={filters.createdFrom} onChange={value => changeFilters({ createdFrom: value })} />
+        <DateField label="Tạo đến" value={filters.createdTo} onChange={value => changeFilters({ createdTo: value })} />
+      </div>}
+    </form>
+    {!admin && selectedHotel && selectedHotel.status !== 'ACTIVE' && <HotelManagementLocked hotel={selectedHotel} />}
     <Feedback message={notice} />
-    {bookings.data.data.length ? <>
-      <Card className="table-scroll mt-4"><table><thead><tr><th>Mã booking</th>{admin && <th>Khách sạn</th>}<th>Khách đặt</th><th>Ngày lưu trú</th><th>Ngày đặt</th><th>Tổng tiền</th><th>Booking</th><th>Thanh toán</th><th>Hoàn tiền</th><th>Chi tiết</th></tr></thead><tbody>{bookings.data.data.map(booking => <tr key={booking.id}><td className="font-mono text-sm">{booking.bookingCode}</td>{admin && <td>{hotelName(booking.hotelId)}</td>}<td><strong>{booking.guestName}</strong><span className="block text-xs text-slate-500">{booking.guestEmail}</span></td><td>{day(booking.checkInDate)} – {day(booking.checkOutDate)}</td><td>{day(booking.createdAt)}</td><td>{currency(booking.amount)}</td><td><StatusBadge status={booking.bookingStatus} /></td><td><StatusBadge status={booking.paymentStatus} /></td><td><StatusBadge status={booking.refundStatus} /></td><td><Button variant="secondary" size="sm" onClick={() => { setSelectedId(booking.id); setAction(null); setError(''); setNotice('') }}><Eye size={15} />Mở</Button></td></tr>)}</tbody></table></Card>
-      <div className="mt-4 flex items-center justify-between text-sm"><span>{bookings.data.meta.total} booking · trang {page}</span><div className="flex gap-2"><Button variant="secondary" disabled={page <= 1} onClick={() => updateParams({ page: String(page - 1) })}>Trước</Button><Button variant="secondary" disabled={page * 20 >= bookings.data.meta.total} onClick={() => updateParams({ page: String(page + 1) })}>Tiếp</Button></div></div>
-    </> : <EmptyState title="Không có booking phù hợp" description="Thử đổi khách sạn, khoảng ngày hoặc bộ lọc trạng thái." />}
+    {bookings.isPending ? <LoadingState /> : bookings.isError ? <ErrorState message={errorMessage(bookings.error)} retry={() => { void bookings.refetch() }} /> : bookings.data.data.length ? <>
+      <Card className="table-scroll"><table className="management-booking-table"><thead><tr><th>Mã đặt phòng</th>{admin && <th className="management-booking-secondary">Khách sạn</th>}<th>Khách đặt</th><th className="management-booking-secondary">Ngày lưu trú</th><th className="management-booking-secondary">Tổng tiền</th><th>Đơn đặt phòng</th><th className="management-booking-secondary">Thanh toán</th><th className="management-actions">Chi tiết</th></tr></thead><tbody>{bookings.data.data.map(booking => <tr key={booking.id}><td className="font-mono text-sm"><span className="management-booking-text" title={booking.bookingCode}>{booking.bookingCode}</span><span className="management-booking-secondary block font-sans text-xs text-slate-500">Đặt {day(booking.createdAt)}</span></td>{admin && <td className="management-booking-secondary"><span className="management-booking-text" title={hotelName(booking.hotelId)}>{hotelName(booking.hotelId)}</span></td>}<td><strong className="management-booking-text" title={booking.guestName}>{booking.guestName}</strong><span className="management-booking-text text-xs text-slate-500" title={booking.guestEmail}>{booking.guestEmail}</span></td><td className="management-booking-secondary"><span className="block">{day(booking.checkInDate)}</span><span className="block text-xs text-slate-500">đến {day(booking.checkOutDate)}</span></td><td className="management-booking-secondary">{currency(booking.amount)}</td><td><StatusBadge status={booking.bookingStatus} /><span className="management-booking-mobile"><StatusBadge status={booking.paymentStatus} /></span></td><td className="management-booking-secondary"><StatusBadge status={booking.paymentStatus} />{booking.refundStatus !== 'NONE' && <small className="mt-1 block text-xs text-slate-500">Hoàn tiền · {labels[booking.refundStatus]}</small>}</td><td><Button variant="secondary" size="sm" aria-label={'Mở đơn đặt phòng ' + booking.bookingCode} onClick={() => { setSelectedId(booking.id); setAction(null); setError(''); setNotice('') }}><Eye size={15} aria-hidden="true" /><span className="hidden md:inline">Mở</span></Button></td></tr>)}</tbody></table></Card>
 
-    <Dialog open={Boolean(selectedId)} onOpenChange={open => { if (!open) { setSelectedId(''); setAction(null); setError('') } }}><DialogContent title={detail.data ? `Booking ${detail.data.bookingCode}` : 'Chi tiết booking'}>
-      {detail.isPending ? <LoadingState /> : detail.isError ? <ErrorState message={errorMessage(detail.error)} retry={() => { void detail.refetch() }} /> : detail.data ? <div className="grid max-h-[75vh] gap-4 overflow-y-auto pr-1">
-        <div className="flex flex-wrap gap-2"><StatusBadge status={detail.data.bookingStatus} /><StatusBadge status={detail.data.paymentStatus} /><StatusBadge status={detail.data.refundStatus} /><StatusBadge status={detail.data.settlementStatus} /></div>
-        <Card className="grid gap-2 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Khách sạn</span><br /><strong>{hotelName(detail.data.hotelId)}</strong></p><p><span className="text-slate-500">Khách đặt</span><br /><strong>{detail.data.guestName}</strong></p><p>{detail.data.guestEmail}</p><p>{detail.data.guestPhone}</p><p><span className="text-slate-500">Nhận phòng</span><br />{day(detail.data.checkInDate)}</p><p><span className="text-slate-500">Trả phòng</span><br />{day(detail.data.checkOutDate)}</p><p><span className="text-slate-500">Số khách</span><br />{detail.data.adultCount} người lớn · {detail.data.childCount} trẻ em</p><p><span className="text-slate-500">Phương thức</span><br />{detail.data.paymentMethod ?? '—'}</p></Card>
-        <Card className="p-4"><h3 className="font-semibold">Phòng và chi phí</h3><div className="mt-3 grid gap-2 text-sm">{detail.data.roomItems.map(item => <div className="flex justify-between gap-3" key={item.id}><span>{item.roomNumberSnapshot} · {item.roomTypeSnapshot} · {item.numberOfNights} đêm</span><strong>{currency(item.subtotal)}</strong></div>)}</div><div className="mt-3 flex justify-between border-t pt-3 font-semibold"><span>Tổng booking</span><span>{currency(detail.data.amount)}</span></div></Card>
-        <Card className="grid gap-2 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Đã thanh toán</span><br />{detail.data.paidAt ? day(detail.data.paidAt) : 'Chưa thanh toán'}</p><p><span className="text-slate-500">Phí hủy</span><br />{detail.data.cancellationFeeAmount === null ? '—' : currency(detail.data.cancellationFeeAmount)}{detail.data.cancellationFeeRateSnapshot !== null ? ` (${detail.data.cancellationFeeRateSnapshot}%)` : ''}</p><p><span className="text-slate-500">Chính sách đã áp dụng</span><br />{detail.data.cancellationDescriptionSnapshot ?? 'Chưa hủy'}</p><p><span className="text-slate-500">Số tiền hoàn</span><br />{detail.data.refundAmount === null ? '—' : currency(detail.data.refundAmount)}</p><p><span className="text-slate-500">Lý do hoàn</span><br />{detail.data.refundReason ?? '—'}</p><p><span className="text-slate-500">Ngày yêu cầu hoàn</span><br />{detail.data.refundRequestedAt ? day(detail.data.refundRequestedAt) : '—'}</p><p><span className="text-slate-500">Bắt đầu xử lý</span><br />{detail.data.refundProcessingAt ? day(detail.data.refundProcessingAt) : 'Chưa bắt đầu'}</p><p><span className="text-slate-500">Lần yêu cầu</span><br />{detail.data.refundAttempt}</p><p><span className="text-slate-500">Mã giao dịch hoàn</span><br />{detail.data.refundTransactionId ?? 'Chưa có'}</p>{detail.data.refundFailureReason && <p className="sm:col-span-2"><span className="text-slate-500">Lý do thất bại gần nhất{detail.data.refundFailedAt ? ` · ${day(detail.data.refundFailedAt)}` : ''}</span><br />{detail.data.refundFailureReason}</p>}<p><span className="text-slate-500">Thời điểm hoàn</span><br />{detail.data.refundedAt ? day(detail.data.refundedAt) : 'Chưa hoàn'}</p><p><span className="text-slate-500">Cơ sở quyết toán</span><br />{detail.data.settlementBaseAmount === null ? '—' : currency(detail.data.settlementBaseAmount)}</p><p><span className="text-slate-500">Đã quyết toán</span><br />{detail.data.settledAt ? day(detail.data.settledAt) : 'Chưa quyết toán'}</p><p className="sm:col-span-2"><span className="text-slate-500">Yêu cầu đặc biệt</span><br />{detail.data.specialRequests || 'Không có'}</p></Card>
-        <Feedback message={error} kind="error" /><Feedback message={notice} />
-        {!action && <div className="flex flex-wrap justify-end gap-2">{!admin && detail.data.bookingStatus === 'CONFIRMED' && detail.data.paymentStatus === 'PAID' && <Button disabled={busy} onClick={() => { void completeBooking() }}>Đánh dấu hoàn tất</Button>}{admin && detail.data.paymentStatus === 'PAID' && (detail.data.refundStatus === 'NONE' || detail.data.refundStatus === 'FAILED') && <Button variant="secondary" onClick={() => beginAction('refund', detail.data!)}>{detail.data.refundStatus === 'FAILED' ? 'Tạo lại yêu cầu hoàn tiền' : 'Tạo yêu cầu hoàn tiền'}</Button>}{admin && ['PENDING', 'PROCESSING'].includes(detail.data.refundStatus) && <Button disabled={busy} onClick={() => { void syncRefund() }}>Đồng bộ trạng thái hoàn tiền</Button>}</div>}
-        {action && <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={submitAction}><h3 className="font-semibold">Gửi yêu cầu hoàn tiền qua SePay</h3><p className="text-sm text-amber-800">Backend sẽ gửi lệnh hoàn tiền tự động qua SePay API v2 và cập nhật trạng thái từ SePay.</p><FormField label="Số tiền hoàn"><input required type="number" min="1" step="1" max={detail.data.amount} value={amount} readOnly={detail.data.refundStatus === 'FAILED'} onChange={event => setAmount(event.target.value)} /></FormField><FormField label="Lý do hoàn tiền"><textarea required maxLength={5000} value={reason} onChange={event => setReason(event.target.value)} /></FormField><Feedback message={error} kind="error" /><div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => { setAction(null); setError('') }}>Quay lại</Button><Button disabled={busy}>{busy ? 'Đang xử lý...' : 'Xác nhận'}</Button></div></form>}
-      </div> : null}
-    </DialogContent></Dialog>
+    </> : <EmptyState title="Không có đơn đặt phòng phù hợp" description="Thử đổi khách sạn, khoảng ngày hoặc bộ lọc trạng thái." />}
+
+    {bookings.data && <Pagination page={page} total={bookings.data.meta.total} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />}
+    <Dialog open={Boolean(selectedId)} onOpenChange={open => { if (!open) { setSelectedId(''); setAction(null); setError('') } }}>
+      <DialogContent title={booking ? `Đơn đặt phòng ${booking.bookingCode}` : 'Chi tiết đơn đặt phòng'} layout="workspace" footer={refundFooter}>
+        {detail.isPending ? <LoadingState /> : detail.isError ? <ErrorState message={errorMessage(detail.error)} retry={() => { void detail.refetch() }} /> : booking && <div className="grid gap-3">
+          {action ? <form id={refundFormId} className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:p-4" onSubmit={submitAction}>
+            {action === 'confirm-manual-refund' ? <>
+              <h3 className="font-semibold">Ghi nhận hoàn tiền giao dịch cũ</h3>
+              <p className="text-sm text-slate-600">Sau khi đã chuyển {currency(Number(amount))} cho khách, nhập mã giao dịch từ ứng dụng ngân hàng.</p>
+              <FormField label="Mã giao dịch hoàn"><input required maxLength={255} value={refundReference} onChange={event => setRefundReference(event.target.value)} /></FormField>
+            </> : <>
+              <h3 className="font-semibold">Xác nhận hoàn tiền qua payOS</h3>
+              <p className="text-sm text-slate-600">Khoản hoàn sẽ được chuyển về tài khoản người thanh toán đã xác minh.</p>
+              <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                <FormField label="Số tiền hoàn"><input required type="number" min="1" step="1" max={booking.amount} value={amount} readOnly={booking.refundAmount !== null} onChange={event => setAmount(event.target.value)} /></FormField>
+                <FormField label="Lý do hoàn tiền"><textarea required maxLength={5000} value={reason} onChange={event => setReason(event.target.value)} /></FormField>
+              </div>
+            </>}
+          </form> : <BookingDetails booking={booking} hotelName={hotelName(booking.hotelId)} />}
+          <Feedback message={error} kind="error" />
+          <Feedback message={notice} />
+        </div>}
+      </DialogContent>
+    </Dialog>
   </div>
 }

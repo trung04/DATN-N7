@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
-import { BookingEntity } from '../entities/booking.entity';
+import { BookingEntity, BookingStatus, PaymentProvider, PaymentStatus, RefundStatus, SettlementStatus } from '../entities/booking.entity';
 import { BookingIdempotencyKeyEntity } from '../entities/booking-idempotency-key.entity';
 import { BookingRoomEntity } from '../entities/booking-room.entity';
 import { BookingRoomChildEntity } from '../entities/booking-room-child.entity';
@@ -31,6 +31,28 @@ export class TypeOrmBookingRepository implements BookingRepository {
     @InjectRepository(BookingIdempotencyKeyEntity)
     private readonly idempotencyRepository: Repository<BookingIdempotencyKeyEntity>,
   ) {}
+
+  async findDueAutomaticRefundIds(checkBefore: Date, limit: number, includePending: boolean): Promise<string[]> {
+    const rows = await this.repository.createQueryBuilder('booking')
+      .select('booking.id', 'id')
+      .where('booking.bookingStatus = :cancelled', { cancelled: BookingStatus.CANCELLED })
+      .andWhere('booking.paymentProvider = :provider', { provider: PaymentProvider.PAYOS })
+      .andWhere('booking.paymentStatus = :paid', { paid: PaymentStatus.PAID })
+      .andWhere('booking.settlementStatus = :unsettled', { unsettled: SettlementStatus.PENDING })
+      .andWhere('booking.refundRequestId IS NOT NULL AND booking.refundHandledBy IS NULL')
+      .andWhere('booking.refundDestination IS NOT NULL AND booking.refundAmount > 0')
+      .andWhere('((:includePending AND booking.refundStatus = :pending) OR (booking.refundStatus = :processing AND booking.updatedAt <= :checkBefore))', {
+        includePending,
+        pending: RefundStatus.PENDING,
+        processing: RefundStatus.PROCESSING,
+        checkBefore,
+      })
+      .orderBy('booking.updatedAt', 'ASC')
+      .addOrderBy('booking.id', 'ASC')
+      .limit(limit)
+      .getRawMany<{ id: string }>();
+    return rows.map(row => row.id);
+  }
 
   async findUnavailableRoomIds(
     hotelId: string | undefined,
@@ -71,8 +93,8 @@ export class TypeOrmBookingRepository implements BookingRepository {
     return this.repository.findOneBy({ bookingCode });
   }
 
-  findBySePayOrderCode(orderCode: string): Promise<BookingEntity | null> {
-    return this.repository.findOneBy({ sepayOrderCode: orderCode });
+  findByPaymentReference(orderCode: string): Promise<BookingEntity | null> {
+    return this.repository.findOneBy({ paymentReference: orderCode });
   }
 
   async findByIdempotencyKey(

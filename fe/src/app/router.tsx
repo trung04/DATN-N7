@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router'
 import { LoadingState } from '@/components/common'
 import { AuthLayout, DashboardLayout, NotFound, TouristLayout } from './layouts'
 import { useSession } from '@/stores/session'
+import { isMock } from '@/services'
 import type { Role } from '@/types/domain'
 
 const Home = lazy(() => import('@/features/public/home').then(m => ({ default: m.HomePage })))
@@ -48,6 +49,7 @@ const AdminUsers = lazy(() => import('@/features/admin/users').then(m => ({ defa
 const AdminPartners = lazy(() => import('@/features/admin/hotel-owners').then(m => ({ default: m.AdminHotelOwnersPage })))
 const AdminAmenities = lazy(() => import('@/features/admin/amenities').then(m => ({ default: m.AdminAmenitiesPage })))
 const AdminPlaces = lazy(() => import('@/features/admin/places').then(m => ({ default: m.AdminPlacesPage })))
+const AdminSettings = lazy(() => import('@/features/admin/settings').then(m => ({ default: m.AdminSettingsPage })))
 const AdminCancellationPolicies = lazy(() => import('@/features/partner/cancellation-policies').then(m => ({ default: () => <m.CancellationPoliciesPage admin /> })))
 const AdminSettlements = lazy(() => import('@/features/admin/settlements').then(m => ({ default: m.AdminSettlementsPage })))
 const AdminSettlementDetail = lazy(() => import('@/features/admin/settlements').then(m => ({ default: m.AdminSettlementDetailPage })))
@@ -83,11 +85,17 @@ export function AppRouter() {
     <Route element={<AuthLayout />}>
       <Route path="/dang-nhap" element={<Login expectedRole="tourist" />} />
       <Route path="/chu-khach-san/dang-nhap" element={<Login expectedRole="partner" />} />
+      {!isMock && <>
+        <Route path="/chu-khach-san/dang-ky" element={<Register partner />} />
+        <Route path="/chu-khach-san/xac-minh-email" element={<VerifyOtp partner />} />
+      </>}
       <Route path="/admin/dang-nhap" element={<Login expectedRole="admin" />} />
       <Route path="/auth/login" element={<Login />} />
       <Route path="/auth/register" element={<Register />} /><Route path="/auth/verify-otp" element={<VerifyOtp />} /><Route path="/auth/forgot-password" element={<ForgotPassword />} /><Route path="/auth/reset-password" element={<ResetPassword />} />
     </Route>
     <Route element={<Guard role="partner" />}><Route path="/partner" element={<DashboardLayout kind="partner" />}><Route index element={<PartnerHome />} /><Route path="hotels" element={<PartnerHotels />} /><Route path="hotels/new" element={<PartnerHotelForm />} /><Route path="hotels/:id/edit" element={<PartnerHotelForm />} /><Route path="rooms" element={<PartnerRooms />} /><Route path="rooms/new" element={<PartnerRoomForm />} /><Route path="rooms/:id/edit" element={<PartnerRoomForm />} /><Route path="amenities" element={<PartnerAmenities />} /><Route path="cancellation-policies" element={<PartnerCancellationPolicies />} /><Route path="bookings" element={<PartnerBookings />} /><Route path="reviews" element={<PartnerReviews />} /><Route path="reports" element={<PartnerReports />} /><Route path="settlements" element={<PartnerSettlements />} /><Route path="profile" element={<PartnerProfile />} /></Route></Route>
-    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="users" element={<AdminUsers />} /><Route path="partners" element={<AdminPartners />} /><Route path="hotels" element={<AdminHotels />} /><Route path="hotels/:id" element={<AdminHotelDetail />} /><Route path="amenities" element={<AdminAmenities />} /><Route path="places" element={<AdminPlaces />} /><Route path="cancellation-policies" element={<AdminCancellationPolicies />} /><Route path="bookings" element={<AdminBookings />} /><Route path="settlements" element={<AdminSettlements />} /><Route path="settlements/:id" element={<AdminSettlementDetail />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reports" element={<AdminReports />} /></Route></Route>
+    <Route element={<Guard role="admin" />}><Route path="/admin" element={<DashboardLayout kind="admin" />}><Route index element={<AdminHome />} /><Route path="users" element={<AdminUsers />} /><Route path="partners" element={<AdminPartners />} /><Route path="hotels" element={<AdminHotels />} /><Route path="hotels/:id" element={<AdminHotelDetail />} /><Route path="amenities" element={<AdminAmenities />} /><Route path="places" element={<AdminPlaces />} /><Route path="cancellation-policies" element={<AdminCancellationPolicies />} /><Route path="bookings" element={<AdminBookings />} /><Route path="settlements" element={<AdminSettlements />} /><Route path="settlements/:id" element={<AdminSettlementDetail />} /><Route path="reviews" element={<AdminReviews />} /><Route path="reports" element={<AdminReports />} />
+      {!isMock && <Route path="settings" element={<AdminSettings />} />}
+    </Route></Route>
   </Routes></Suspense>
 }

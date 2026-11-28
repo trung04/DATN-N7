@@ -101,7 +101,8 @@ export function useBooking(bookingId: string | undefined) {
     enabled: user?.role === 'tourist' && Boolean(bookingId),
     refetchInterval: query => {
       const result = query.state.data
-      return result?.booking.status === 'PENDING_PAYMENT' && result.payment?.status !== 'FAILED' && result.payment?.status !== 'EXPIRED' ? 5000 : false
+      if (result?.booking.status === 'PENDING_PAYMENT') return 5000
+      return !isMock && (result?.refund?.status === 'PENDING' || result?.refund?.status === 'PROCESSING') ? 10000 : false
     },
   })
 }

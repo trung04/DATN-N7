@@ -18,7 +18,7 @@ export function AdminOverviewPage() {
   if (hotels.isError) return <ErrorState message={errorMessage(hotels.error)} retry={() => { void hotels.refetch() }} />
   const pending = hotels.data.data.filter(hotel => hotel.status === 'PENDING_APPROVAL')
   return <div>
-    <PageHeader title="Tổng quan quản trị" description="Số liệu được lấy từ danh sách người dùng và khách sạn trên backend." />
+    <PageHeader title="Tổng quan quản trị" description="Số liệu được lấy từ danh sách người dùng và khách sạn trên máy chủ." />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <Metric label="Người dùng" value={users.data.meta.total} icon={<UsersRound size={20} />} href="/admin/users" />
       <Metric label="Chủ khách sạn" value={owners.data.meta.total} icon={<Hotel size={20} />} href="/admin/partners" />

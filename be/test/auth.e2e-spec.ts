@@ -7,7 +7,7 @@ import { App } from 'supertest/types';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
 import { configureHttpApplication } from '../src/common/http/configure-http-application';
 import { AuthController } from '../src/modules/auth/controllers/auth.controller';
-import { GoogleAccountLinkRequiredException } from '../src/modules/auth/exceptions/auth.exceptions';
+import { AuthChallengeInvalidException, GoogleAccountLinkRequiredException } from '../src/modules/auth/exceptions/auth.exceptions';
 import { AccessSessionGuard } from '../src/modules/auth/guards/access-session.guard';
 import { TrustedOriginGuard } from '../src/modules/auth/guards/trusted-origin.guard';
 import { AuthService } from '../src/modules/auth/services/auth.service';
@@ -48,6 +48,9 @@ describe('Authentication API (e2e)', () => {
   let app: INestApplication<App>;
   const service = {
     register: jest.fn(),
+    registerHotelOwner: jest.fn(),
+    verifyEmail: jest.fn(),
+    verifyEmailAndCreateSession: jest.fn(),
     login: jest.fn(),
     beginGoogleLogin: jest.fn(),
     completeGoogleLogin: jest.fn(),
@@ -81,6 +84,58 @@ describe('Authentication API (e2e)', () => {
   });
 
   afterEach(async () => app.close());
+
+  it('accepts a public hotel-owner registration with the shared identity validation', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/hotel-owners/register')
+      .send({ username: ' Owner.Demo ', email: ' Owner@Example.com ', displayName: ' Hotel Owner ', password: 'Password123' })
+      .expect(202, { accepted: true });
+    expect(service.registerHotelOwner).toHaveBeenCalledWith(expect.objectContaining({
+      username: 'owner.demo', email: 'owner@example.com', displayName: 'Hotel Owner', password: 'Password123',
+    }));
+    expect(service.register).not.toHaveBeenCalled();
+  });
+
+  it('requires a name and disallows role and status from the registration body', async () => {
+    const form = { username: 'owner.demo', email: 'owner@example.com', password: 'Password123' };
+    await request(app.getHttpServer()).post('/api/v1/auth/hotel-owners/register').send(form).expect(400);
+    await request(app.getHttpServer()).post('/api/v1/auth/hotel-owners/register')
+      .send({ ...form, displayName: 'Hotel Owner', role: 'ADMIN', status: 'ACTIVE' }).expect(400);
+    expect(service.registerHotelOwner).not.toHaveBeenCalled();
+  });
+
+  it.each([UserRole.TOURIST, UserRole.HOTEL_OWNER])('sets the standard session cookies on OTP verification for %s', async role => {
+    service.verifyEmailAndCreateSession.mockResolvedValue({ user: Object.assign(new UserEntity(), entity, { role }), ...tokens });
+
+    const response = await request(app.getHttpServer()).post('/api/v1/auth/verify-otp/session')
+      .send({ email: entity.email, otp: '123456' }).expect(200).expect('Cache-Control', 'no-store');
+
+    expect(response.body).toMatchObject({ role, email: entity.email, isEmailVerified: true });
+    expect(response.body).not.toHaveProperty('accessToken');
+    expect(response.body).not.toHaveProperty('refreshToken');
+    expect(response.headers['set-cookie']).toEqual(expect.arrayContaining([
+      expect.stringMatching(/login_access=access-token;.*HttpOnly/),
+      expect.stringMatching(/login_refresh=refresh-token;.*HttpOnly/),
+    ]));
+  });
+
+  it('returns no session cookies for an invalid OTP or form submission', async () => {
+    const input = { email: entity.email, otp: '123456' };
+    const form = await request(app.getHttpServer()).post('/api/v1/auth/verify-otp/session').type('form').send(input).expect(415);
+    expect(form.headers['set-cookie']).toBeUndefined();
+    expect(service.verifyEmailAndCreateSession).not.toHaveBeenCalled();
+
+    service.verifyEmailAndCreateSession.mockRejectedValue(new AuthChallengeInvalidException());
+    const invalid = await request(app.getHttpServer()).post('/api/v1/auth/verify-otp/session').send(input).expect(400);
+    expect(invalid.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('preserves the original verification-only endpoint', async () => {
+    const response = await request(app.getHttpServer()).post('/api/v1/auth/verify-otp')
+      .send({ email: entity.email, otp: '123456' }).expect(204);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(service.verifyEmail).toHaveBeenCalledTimes(1);
+    expect(service.verifyEmailAndCreateSession).not.toHaveBeenCalled();
+  });
 
   it('starts Google login with a local return path', async () => {
     service.beginGoogleLogin.mockResolvedValue(

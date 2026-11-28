@@ -24,6 +24,7 @@ import { MediaModule } from './modules/media/media.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -35,6 +36,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       validate: validateEnvironment,
     }),
     DatabaseModule,
+    PlatformSettingsModule,
     RedisCacheModule,
     StarterModule,
     AmenitiesModule,

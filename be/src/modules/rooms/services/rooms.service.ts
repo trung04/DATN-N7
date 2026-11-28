@@ -4,6 +4,8 @@ import { In, Repository } from 'typeorm';
 import { AmenitiesService } from '../../amenities/services/amenities.service';
 import { HotelsService } from '../../hotels/services/hotels.service';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
+import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+import { UserRole } from '../../users/entities/user.entity';
 import { CreateRoomRequest } from '../dtos/requests/create-room.request';
 import { ListRoomsRequest } from '../dtos/requests/list-rooms.request';
 import { UpdateRoomRequest } from '../dtos/requests/update-room.request';
@@ -151,12 +153,24 @@ export class RoomsService {
     return roomType.trim().replace(/\s+/g, ' ');
   }
 
-  async findPage(input: ListRoomsRequest): Promise<RoomResultPage> {
+  async findManagedPage(input: ListRoomsRequest, actor: AuthorizationActor): Promise<RoomResultPage> {
+    if (actor.role !== UserRole.HOTEL_OWNER && actor.role !== UserRole.ADMIN) {
+      throw new AuthorizationDeniedException();
+    }
+    if (input.hotelId) await this.hotelsService.assertManagedBy(input.hotelId, actor);
+    const hotelIds = actor.role === UserRole.HOTEL_OWNER
+      ? await this.hotelsService.findOwnedIds(actor.id)
+      : undefined;
+    return this.findPage(input, hotelIds);
+  }
+
+  async findPage(input: ListRoomsRequest, hotelIds?: string[]): Promise<RoomResultPage> {
     const page = await this.repository.findPage({
       page: input.page,
       limit: input.limit,
       search: input.search,
       hotelId: input.hotelId,
+      hotelIds,
       roomType: input.roomType,
       operationalStatus: input.operationalStatus,
       sortBy: input.sortBy,
@@ -174,6 +188,7 @@ export class RoomsService {
       items: page.items.map((item) => ({
         room: item.room,
         amenities: item.amenityIds.map((id) => amenitiesById.get(id)!),
+        roomImageId: item.roomImageId ?? null,
       })),
       total: page.total,
     };
@@ -185,7 +200,11 @@ export class RoomsService {
     const amenities = await this.amenitiesService.findExistingByIds(
       result.amenityIds,
     );
-    return { room: result.room, amenities };
+    return {
+      room: result.room,
+      amenities,
+      roomImageId: result.roomImageId ?? null,
+    };
   }
 
   async findEntitiesByIds(ids: string[]): Promise<RoomEntity[]> {
@@ -212,7 +231,9 @@ export class RoomsService {
     const current = await this.repository.findById(id);
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
-    await this.hotelsService.assertManagedBy(room.hotelId, actor);
+    await this.hotelsService.assertManagedBy(room.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     const hotelId = input.hotelId ?? room.hotelId;
     if (hotelId !== room.hotelId) {
       await this.hotelsService.assertManagedBy(hotelId, actor);
@@ -247,7 +268,9 @@ export class RoomsService {
   async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
-    await this.hotelsService.assertManagedBy(result.room.hotelId, actor);
+    await this.hotelsService.assertManagedBy(result.room.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     await this.repository.delete(result.room);
   }
 

@@ -1,3 +1,5 @@
+import type { CancellationPolicyTier } from '../../entities/cancellation-policy.entity';
+
 export class CancellationPolicyResponse {
   id: string;
   hotelId: string;
@@ -5,6 +7,7 @@ export class CancellationPolicyResponse {
   cancelHours: number;
   penaltyPercent: number;
   cancellationAllowed: boolean;
+  tiers?: CancellationPolicyTier[];
   description: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -25,6 +28,7 @@ export class CancellationPolicyScheduleRuleResponse {
   cancelHours: number;
   penaltyPercent: number;
   cancellationAllowed: boolean;
+  tiers?: CancellationPolicyTier[];
   description: string | null;
 }
 

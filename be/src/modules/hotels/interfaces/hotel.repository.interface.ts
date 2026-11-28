@@ -19,6 +19,7 @@ export interface FindHotelsOptions {
   ownerUserId?: string;
   placeId?: string;
   status?: HotelStatus;
+  excludedStatus?: HotelStatus;
   sortBy: HotelSortField;
   sortOrder: 'ASC' | 'DESC';
 }
@@ -36,6 +37,8 @@ export interface CreateHotelData {
   taxCode: string;
   description: string | null;
   address: string;
+  latitude: number | null;
+  longitude: number | null;
   phoneNumber: string;
   email: string;
   starRating: number | null;
@@ -61,6 +64,7 @@ export interface CreateHotelReviewData {
 }
 
 export interface HotelRepository {
+  findIdsByOwner(ownerUserId: string): Promise<string[]>;
   findById(id: string): Promise<HotelEntity | null>;
   findByTaxCode(taxCode: string): Promise<HotelEntity | null>;
   findPage(options: FindHotelsOptions): Promise<HotelPage>;
@@ -69,6 +73,7 @@ export interface HotelRepository {
   saveWithReview(
     hotel: HotelEntity,
     review: CreateHotelReviewData,
+    validate?: (current: HotelEntity) => void,
   ): Promise<HotelEntity>;
   createDocument(data: CreateHotelDocumentData): Promise<HotelDocumentEntity>;
   findDocumentById(id: string): Promise<HotelDocumentEntity | null>;

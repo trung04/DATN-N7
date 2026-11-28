@@ -167,6 +167,26 @@ export class ReviewsService {
     return { items, total };
   }
 
+  async publicSummaries(
+    hotelIds: string[],
+  ): Promise<Array<{ hotelId: string; averageRating: number; visibleCount: number }>> {
+    if (!hotelIds.length) return [];
+    const rows = await this.reviews.createQueryBuilder('review')
+      .select('review.hotelId', 'hotelId')
+      .addSelect('AVG(review.stars)', 'averageRating')
+      .addSelect('COUNT(review.id)', 'visibleCount')
+      .where('review.hotelId IN (:...hotelIds)', { hotelIds })
+      .andWhere('review.status = :status', { status: ReviewStatus.VISIBLE })
+      .groupBy('review.hotelId')
+      .getRawMany<{ hotelId: string; averageRating: string; visibleCount: string }>();
+    const byHotel = new Map(rows.map((row) => [row.hotelId, row]));
+    return hotelIds.map((hotelId) => ({
+      hotelId,
+      averageRating: Number(byHotel.get(hotelId)?.averageRating ?? 0),
+      visibleCount: Number(byHotel.get(hotelId)?.visibleCount ?? 0),
+    }));
+  }
+
   async summary(
     hotelId: string,
     actor?: AuthorizationActor,

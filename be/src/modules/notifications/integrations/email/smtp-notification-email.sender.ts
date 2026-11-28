@@ -1,14 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
 import type {
   NotificationEmailMessage,
   NotificationEmailSender,
 } from '../../interfaces/notification-email-sender.interface';
+import { PlatformSettingsService } from '../../../platform-settings/platform-settings.service';
+import type { SettingsReader } from '../../../platform-settings/platform-settings.catalog';
 
 @Injectable()
 export class SmtpNotificationEmailSender implements NotificationEmailSender {
-  constructor(private readonly config: ConfigService) {}
+  private readonly config: SettingsReader;
+
+  constructor(config: ConfigService, @Optional() settings?: PlatformSettingsService) {
+    this.config = settings ?? config;
+  }
 
   isConfigured(): boolean {
     return Boolean(

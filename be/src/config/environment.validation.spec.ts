@@ -8,6 +8,13 @@ const database = {
 };
 
 describe('environment validation', () => {
+  it('validates hotel geocoding provider configuration without exposing values', () => {
+    expect(validateEnvironment(database).HOTEL_GEOCODER_ORIGIN).toBe('https://nominatim.openstreetmap.org');
+    for (const origin of ['http://example.org', 'https://user:secret@example.org', 'https://example.org/path', 'https://example.org?q=secret']) {
+      expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_ORIGIN: origin })).toThrow('HOTEL_GEOCODER_ORIGIN');
+    }
+    expect(() => validateEnvironment({ ...database, HOTEL_GEOCODER_USER_AGENT: 'bad\r\nheader' })).toThrow('HOTEL_GEOCODER_USER_AGENT');
+  });
   it('validates storage origins, bucket names and credential pairs', () => {
     const configured = {
       ...database,
@@ -47,9 +54,6 @@ describe('environment validation', () => {
     expect(result.BOOKING_HOLD_MINUTES).toBe(15);
     expect(result.IDEMPOTENCY_KEY_TTL_HOURS).toBe(24);
     expect(result.DATABASE_PASSWORD).toBe(database.DATABASE_PASSWORD);
-    expect(result.SEPAY_V2_BASE_URL).toBe(
-      'https://userapi-sandbox.sepay.vn/v2',
-    );
   });
 
   it('accepts POSTGRES aliases used by the deployment configuration', () => {
@@ -71,6 +75,12 @@ describe('environment validation', () => {
     expect(result.DATABASE_SSL).toBe(false);
     expect(result.DATABASE_POOL_SIZE).toBe(12);
     expect(result.DATABASE_CONNECT_TIMEOUT_MS).toBe(10000);
+  });
+
+  it('normalizes the automatic payOS refund switch', () => {
+    expect(validateEnvironment(database).PAYOS_AUTO_REFUNDS_ENABLED).toBe(true);
+    expect(validateEnvironment({ ...database, PAYOS_AUTO_REFUNDS_ENABLED: 'false' }).PAYOS_AUTO_REFUNDS_ENABLED).toBe(false);
+    expect(() => validateEnvironment({ ...database, PAYOS_AUTO_REFUNDS_ENABLED: 'yes' })).toThrow('PAYOS_AUTO_REFUNDS_ENABLED');
   });
 
   it.each([
@@ -138,30 +148,15 @@ describe('environment validation', () => {
     ).toThrow('FRONTEND_ORIGIN');
   });
 
-  it('accepts a complete SePay API v2 Sandbox configuration', () => {
-    const result = validateEnvironment({
+  it.each(['PAYOS', 'PAYOS_PAYOUT'])('requires a complete credential set for %s', prefix => {
+    const values = {
       ...database,
-      SEPAY_V2_API_TOKEN: 'test-only-sepay-token',
-      SEPAY_V2_BANK_ACCOUNT_XID: 'f9e8d7c6-b5a4-4210-8edc-ba0987654321',
-      SEPAY_WEBHOOK_SECRET: 'test-only-webhook-secret',
-    });
-    expect(result.SEPAY_V2_BASE_URL).toBe('https://userapi-sandbox.sepay.vn/v2');
-    expect(result.SEPAY_WEBHOOK_AUTH_TYPE).toBe('HMAC_SHA256');
-  });
-
-  it('rejects incomplete SePay API v2 account configuration', () => {
-    expect(() =>
-      validateEnvironment({ ...database, SEPAY_V2_API_TOKEN: 'test-only-token' }),
-    ).toThrow('SEPAY_V2_API_TOKEN and SEPAY_V2_BANK_ACCOUNT_XID');
-  });
-
-  it('rejects a production SePay API URL in the Sandbox configuration', () => {
-    expect(() =>
-      validateEnvironment({
-        ...database,
-        SEPAY_V2_BASE_URL: 'https://userapi.sepay.vn/v2',
-      }),
-    ).toThrow('SEPAY_V2_BASE_URL');
+      [prefix + '_CLIENT_ID']: 'test-client',
+      [prefix + '_API_KEY']: 'test-key',
+      [prefix + '_CHECKSUM_KEY']: 'test-checksum',
+    };
+    expect(validateEnvironment(values)[prefix + '_CLIENT_ID']).toBe('test-client');
+    expect(() => validateEnvironment({ ...values, [prefix + '_CHECKSUM_KEY']: '' })).toThrow('configured together');
   });
 
   it('rejects a partial Google configuration', () => {

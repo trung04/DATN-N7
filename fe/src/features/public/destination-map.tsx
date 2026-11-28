@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl, { type Map as MapboxMap, type Marker } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
+import { hasValidCoordinates } from '@/lib/coordinates'
 
-const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim()
+import { useMapboxToken } from '@/lib/use-mapbox-token'
+import { mapboxLocaleVi } from '@/lib/mapbox-locale'
 
 export interface MapLocation {
   id: string
@@ -13,13 +15,14 @@ export interface MapLocation {
   lng?: number
 }
 
-export function DestinationMap({ place }: { place: MapLocation }) {
+export function DestinationMap({ place, emptyMessage = 'Địa điểm này chưa có tọa độ bản đồ.' }: { place: MapLocation; emptyMessage?: string }) {
+  const token = useMapboxToken()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap | null>(null)
   const markerRef = useRef<Marker | null>(null)
   const [error, setError] = useState('')
   const [mapLoaded, setMapLoaded] = useState(false)
-  const hasCoordinates = Number.isFinite(place.lat) && Number.isFinite(place.lng)
+  const hasCoordinates = hasValidCoordinates(place.lat, place.lng)
   const staticMapUrl = hasCoordinates && token
     ? `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+1E3A5F(${place.lng},${place.lat})/${place.lng},${place.lat},14,0/1200x560@2x?access_token=${encodeURIComponent(token)}`
     : null
@@ -34,11 +37,12 @@ export function DestinationMap({ place }: { place: MapLocation }) {
       return
     }
 
-    mapboxgl.accessToken = token
     let map: MapboxMap
     try {
       map = new mapboxgl.Map({
+        locale: mapboxLocaleVi,
         container: containerRef.current,
+        accessToken: token,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [place.lng!, place.lat!],
         zoom: 14,
@@ -84,11 +88,11 @@ export function DestinationMap({ place }: { place: MapLocation }) {
       markerRef.current = null
       mapRef.current = null
     }
-  }, [hasCoordinates, place.id, place.lat, place.lng, place.name])
+  }, [hasCoordinates, place.id, place.lat, place.lng, place.name, token])
 
   return <section className="mt-10">
     <h2 className="mb-4 text-2xl font-semibold text-[#1E3A5F]">Vị trí</h2>
-    {!hasCoordinates ? <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600">Địa điểm này chưa có tọa độ bản đồ.</div>
+    {!hasCoordinates ? <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600">{emptyMessage}</div>
       : !token ? <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600">Bản đồ chưa được cấu hình.</div>
         : <div className="relative h-[420px] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
           {staticMapUrl && <img src={staticMapUrl} alt={`Bản đồ vị trí ${place.name}`} className="absolute inset-0 h-full w-full object-cover" onError={() => setError('Không tải được ảnh bản đồ dự phòng. Hãy kiểm tra kết nối tới Mapbox.')} />}

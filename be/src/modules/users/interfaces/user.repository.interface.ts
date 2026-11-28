@@ -52,5 +52,6 @@ export interface UserRepository {
   findPage(options: FindUsersOptions): Promise<UserPage>;
   create(data: CreateUserData): Promise<UserEntity>;
   save(user: UserEntity): Promise<UserEntity>;
+  activatePendingAccount(id: string, email: string, role: UserRole): Promise<UserEntity | null>;
   delete(user: UserEntity): Promise<void>;
 }

@@ -55,6 +55,7 @@ describe('AmenitiesService', () => {
     expect(createAmenity).toHaveBeenCalledWith({
       code: 'FREE_WIFI',
       name: 'Free Wi-Fi',
+      hotelId: null,
     });
   });
 

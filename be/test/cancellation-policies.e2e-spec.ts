@@ -101,6 +101,30 @@ describe('Cancellation Policies API (e2e)', () => {
       });
   });
 
+  it('accepts a multi-tier policy with no cancellation after the last limit', async () => {
+    const tiers = [
+      { upToHours: 32, feePercent: 0 },
+      { upToHours: 45, feePercent: 16 },
+      { upToHours: 72, feePercent: 20 },
+      { upToHours: null, feePercent: null },
+    ];
+    service.create.mockResolvedValue({ ...entity, tiers });
+    await request(app.getHttpServer())
+      .post('/api/v1/cancellation-policies')
+      .send({ hotelId, name: 'Nhiều mốc', tiers })
+      .expect(201)
+      .expect(({ body }) => expect(body.tiers).toEqual(tiers));
+    expect(service.create).toHaveBeenCalledWith(expect.objectContaining({ tiers }), undefined);
+  });
+
+  it('rejects a malformed tier before reaching the service', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/cancellation-policies')
+      .send({ hotelId, name: 'Invalid', tiers: [{ upToHours: null }] })
+      .expect(400);
+    expect(service.create).not.toHaveBeenCalled();
+  });
+
   it('maps a missing policy to problem details', async () => {
     service.findById.mockRejectedValue(
       new CancellationPolicyNotFoundException(policyId),

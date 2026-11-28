@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl, { type Map as MapboxMap, type Marker } from 'mapbox-gl'
-import { Search, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { ManagementSearch, SearchButton } from '@/components/management-search'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import type { Feature, LineString } from 'geojson'
 import type { Destination, Stopover } from '@/types/domain'
 import { MapboxGeocodingError, searchMapboxAddresses, searchPermanentMapboxAddress, type MapboxGeocodingResult } from '@/lib/mapbox-geocoding'
 
-const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim()
+import { useMapboxToken } from '@/lib/use-mapbox-token'
+import { mapboxLocaleVi } from '@/lib/mapbox-locale'
 
 type Coordinates = [number, number]
 
@@ -31,6 +33,7 @@ export function ItineraryMap({
   onChoosePlace: (place: Destination) => void
   onSelectStop: (stopId: string) => void
 }) {
+  const token = useMapboxToken()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap | null>(null)
   const markersRef = useRef<Marker[]>([])
@@ -45,6 +48,8 @@ export function ItineraryMap({
   const [mapReady, setMapReady] = useState(false)
   const [mapError, setMapError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState<{ query: string; proximity: Coordinates } | null>(null)
+  const appliedQuery = submittedSearch?.query ?? ''
   const [searchOpen, setSearchOpen] = useState(false)
   const [mapboxResults, setMapboxResults] = useState<MapboxGeocodingResult[]>([])
   const [mapboxSearching, setMapboxSearching] = useState(false)
@@ -56,7 +61,7 @@ export function ItineraryMap({
   const [resolvingPermanentSearch, setResolvingPermanentSearch] = useState(false)
 
   const searchResults = useMemo(() => {
-    const query = searchQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
+    const query = appliedQuery.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
     if (!query) return []
     return places.filter(place => {
       if (!coordinates(place)) return false
@@ -64,7 +69,7 @@ export function ItineraryMap({
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase()
       return searchable.includes(query)
     }).slice(0, 7)
-  }, [places, searchQuery])
+  }, [places, appliedQuery])
 
   const chooseSearchResult = (place: Destination) => {
     const point = coordinates(place)
@@ -83,7 +88,7 @@ export function ItineraryMap({
   const chooseMapboxResult = (result: MapboxGeocodingResult) => {
     const map = mapRef.current
     if (!map) return
-    setSelectedMapboxSearchText(searchQuery.trim() || result.name)
+    setSelectedMapboxSearchText(appliedQuery || result.name)
     setSearchQuery(result.name)
     setSearchOpen(false)
     setMapboxResults([])
@@ -125,7 +130,7 @@ export function ItineraryMap({
     } catch (error) {
       const status = error instanceof MapboxGeocodingError ? error.status : null
       setPermanentSearchError(status === 401 || status === 403
-        ? 'Mapbox từ chối yêu cầu lưu vĩnh viễn. Kiểm tra quyền Geocoding và billing; bạn vẫn có thể ghim rồi nhập tên, địa chỉ thủ công.'
+        ? 'Mapbox từ chối yêu cầu lưu vĩnh viễn. Kiểm tra quyền tra cứu địa chỉ và cấu hình thanh toán; bạn vẫn có thể ghim rồi nhập tên, địa chỉ thủ công.'
         : status === 429
           ? 'Mapbox đang giới hạn yêu cầu lưu vĩnh viễn (HTTP 429). Bạn vẫn có thể ghim rồi nhập tên, địa chỉ thủ công.'
           : 'Chưa xác nhận được tên và địa chỉ để lưu. Bạn vẫn có thể ghim rồi nhập thông tin thủ công.')
@@ -152,61 +157,41 @@ export function ItineraryMap({
   }, [city, places])
 
   useEffect(() => {
-    const query = searchQuery.trim()
-    if (!token || !searchOpen || query.length < 3) {
-      setMapboxResults([])
-      setMapboxSearchError('')
-      setMapboxSearching(false)
-      return
-    }
-
+    if (!token || !submittedSearch || submittedSearch.query.length < 3) return
     const controller = new AbortController()
-    const timer = window.setTimeout(() => {
-      const center = mapRef.current?.getCenter()
-      const proximity: [number, number] = center
-        ? [center.lng, center.lat]
-        : initialCenter
-      setMapboxSearching(true)
-      setMapboxSearchError('')
-      void searchMapboxAddresses(query, token, proximity, controller.signal)
-        .then(setMapboxResults)
-        .catch(error => {
-          if (controller.signal.aborted) return
-          setMapboxResults([])
-          setMapboxSearchError(error instanceof Error ? error.message : 'Không thể tìm địa chỉ trên Mapbox.')
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setMapboxSearching(false)
-        })
-    }, 450)
-
-    return () => {
-      window.clearTimeout(timer)
-      controller.abort()
-    }
-  }, [searchQuery, searchOpen, initialCenter])
+    void searchMapboxAddresses(submittedSearch.query, token, submittedSearch.proximity, controller.signal)
+      .then(results => { if (!controller.signal.aborted) setMapboxResults(results) })
+      .catch(error => {
+        if (!controller.signal.aborted) setMapboxSearchError(error instanceof MapboxGeocodingError && error.status === 429
+          ? 'Dịch vụ tìm địa chỉ đang bận. Vui lòng chờ rồi thử lại.'
+          : 'Không thể tìm địa chỉ trên Mapbox. Vui lòng thử lại.')
+      })
+      .finally(() => { if (!controller.signal.aborted) setMapboxSearching(false) })
+    return () => controller.abort()
+  }, [submittedSearch, token])
 
   useEffect(() => {
     if (!token || !containerRef.current) return
     setMapReady(false)
     setMapError('')
-    mapboxgl.accessToken = token
     let map: MapboxMap
     try {
       map = new mapboxgl.Map({
+        locale: mapboxLocaleVi,
         container: containerRef.current,
+        accessToken: token,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: initialCenter,
         zoom: 10,
         cooperativeGestures: true,
       })
     } catch {
-      setMapError('Không thể khởi tạo bản đồ. Kiểm tra Mapbox access token.')
+      setMapError('Không thể khởi tạo bản đồ. Kiểm tra mã truy cập Mapbox.')
       return
     }
     mapRef.current = map
     const loadTimer = window.setTimeout(() => {
-      if (!map.loaded()) setMapError('Bản đồ tải quá lâu. Kiểm tra kết nối mạng, quyền token Mapbox và WebGL của trình duyệt.')
+      if (!map.loaded()) setMapError('Bản đồ tải quá lâu. Kiểm tra kết nối mạng, quyền của mã truy cập Mapbox và WebGL của trình duyệt.')
     }, 12000)
     const resizeObserver = new ResizeObserver(() => map.resize())
     resizeObserver.observe(containerRef.current)
@@ -218,7 +203,7 @@ export function ItineraryMap({
     })
     map.on('error', event => {
       console.error('Mapbox map error:', event.error)
-      setMapError('Mapbox không tải được bản đồ. Kiểm tra quyền truy cập token, kết nối mạng và WebGL.')
+      setMapError('Mapbox không tải được bản đồ. Kiểm tra quyền của mã truy cập, kết nối mạng và WebGL.')
     })
     map.on('click', event => {
       const customStopName = pendingCustomStopNameRef.current
@@ -243,7 +228,7 @@ export function ItineraryMap({
       mapRef.current = null
       setMapReady(false)
     }
-  }, [initialCenter])
+  }, [initialCenter, token])
 
   useEffect(() => {
     const map = mapRef.current
@@ -327,27 +312,36 @@ export function ItineraryMap({
 
   if (!token) return <div className="flex h-full min-h-[380px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
     <h2 className="text-lg font-semibold text-[#1E3A5F]">Cần cấu hình Mapbox</h2>
-    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">Thêm <code className="rounded bg-white px-1.5 py-1">VITE_MAPBOX_ACCESS_TOKEN</code> vào <code className="rounded bg-white px-1.5 py-1">fe/.env</code>, sau đó khởi động lại frontend.</p>
+    <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600">Bản đồ sẽ hiển thị sau khi quản trị viên thiết lập Mapbox.</p>
   </div>
 
   return <div className="relative h-[72vh] min-h-[420px] max-h-[760px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
     <div ref={containerRef} className="h-full w-full" aria-label={`Bản đồ lịch trình tại ${city}`} />
     <div className="absolute left-3 right-14 top-3 z-20 max-w-lg" onBlur={event => { const target = event.relatedTarget; if (!(target instanceof Node) || !event.currentTarget.contains(target)) setSearchOpen(false) }}>
-      <div className="relative">
-        <Search size={18} className="pointer-events-none absolute left-3 top-3.5 text-slate-500" />
-        <input
-          value={searchQuery}
-          onChange={event => { setSearchQuery(event.target.value); setSearchOpen(true); setSelectedMapboxResult(null); searchMarkerRef.current?.remove(); searchMarkerRef.current = null }}
-          onFocus={() => setSearchOpen(true)}
-          onKeyDown={event => { if (event.key === 'Escape') setSearchOpen(false); if (event.key === 'Enter' && searchResults[0]) { event.preventDefault(); chooseSearchResult(searchResults[0]) } }}
-          placeholder="Tìm điểm đến hoặc địa chỉ trên bản đồ"
-          aria-label="Tìm địa điểm trên bản đồ"
-          aria-expanded={searchOpen && Boolean(searchQuery.trim())}
-          className="!mt-0 !h-11 !w-full !rounded-xl !border-slate-200 !bg-white/95 !pl-10 !pr-10 shadow-lg"
-        />
-        {searchQuery && <button type="button" aria-label="Xóa nội dung tìm kiếm" className="absolute right-3 top-3 rounded p-0.5 text-slate-500 hover:bg-slate-100" onClick={() => { setSearchQuery(''); setSearchOpen(true); setSelectedMapboxResult(null); searchMarkerRef.current?.remove(); searchMarkerRef.current = null }}><X size={17} /></button>}
-      </div>
-      {searchOpen && searchQuery.trim() && <div role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+      <form className="flex items-center gap-2" aria-label="Tìm kiếm trên bản đồ" onSubmit={event => {
+        event.preventDefault()
+        const query = searchQuery.trim()
+        const center = mapRef.current?.getCenter()
+        setSelectedMapboxResult(null)
+        searchMarkerRef.current?.remove()
+        searchMarkerRef.current = null
+        setMapboxResults([])
+        setMapboxSearchError('')
+        setMapboxSearching(Boolean(token && query.length >= 3))
+        setSubmittedSearch(query ? { query, proximity: center ? [center.lng, center.lat] : initialCenter } : null)
+        setSearchOpen(Boolean(query))
+      }}>
+        <div className="relative min-w-0 flex-1">
+          <ManagementSearch value={searchQuery} onChange={event => setSearchQuery(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Escape') setSearchOpen(false) }}
+            placeholder="Tìm điểm đến hoặc địa chỉ trên bản đồ" aria-label="Tìm địa điểm trên bản đồ"
+            aria-expanded={searchOpen && Boolean(appliedQuery)}
+            className="!mt-0 !h-11 !rounded-xl !border-slate-200 !bg-white/95 !pr-10 shadow-lg" />
+          {searchQuery && <button type="button" aria-label="Xóa nội dung tìm kiếm" className="absolute right-3 top-3 rounded p-0.5 text-slate-500 hover:bg-slate-100" onClick={() => setSearchQuery('')}><X size={17} /></button>}
+        </div>
+        <SearchButton className="h-11 shrink-0 whitespace-nowrap" />
+      </form>
+      {searchOpen && appliedQuery && <div role="listbox" className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
         {searchResults.length > 0 && <>
           <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Địa điểm trong danh mục</p>
           {searchResults.map(place => <button key={place.id} type="button" role="option" aria-selected="false" className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50" onMouseDown={event => event.preventDefault()} onClick={() => chooseSearchResult(place)}>
@@ -357,14 +351,14 @@ export function ItineraryMap({
         </>}
         <>
           <p className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Địa chỉ và khu vực · Mapbox</p>
-          {searchQuery.trim().length < 3 && <p className="px-4 py-3 text-sm text-slate-500">Nhập thêm {3 - searchQuery.trim().length} ký tự để tìm địa chỉ và khu vực trên Mapbox.</p>}
-          {searchQuery.trim().length >= 3 && mapboxSearching && <p className="px-4 py-3 text-sm text-slate-500">Đang tìm địa chỉ...</p>}
-          {searchQuery.trim().length >= 3 && !mapboxSearching && mapboxSearchError && <p className="px-4 py-3 text-sm text-amber-700">{mapboxSearchError}</p>}
-          {searchQuery.trim().length >= 3 && !mapboxSearching && !mapboxSearchError && mapboxResults.map(result => <button key={result.id} type="button" role="option" aria-selected="false" className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50" onMouseDown={event => event.preventDefault()} onClick={() => chooseMapboxResult(result)}>
+          {appliedQuery.length < 3 && <p className="px-4 py-3 text-sm text-slate-500">Nhập thêm {3 - appliedQuery.length} ký tự để tìm địa chỉ và khu vực trên Mapbox.</p>}
+          {appliedQuery.length >= 3 && mapboxSearching && <p className="px-4 py-3 text-sm text-slate-500">Đang tìm địa chỉ...</p>}
+          {appliedQuery.length >= 3 && !mapboxSearching && mapboxSearchError && <p className="px-4 py-3 text-sm text-amber-700">{mapboxSearchError}</p>}
+          {appliedQuery.length >= 3 && !mapboxSearching && !mapboxSearchError && mapboxResults.map(result => <button key={result.id} type="button" role="option" aria-selected="false" className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50" onMouseDown={event => event.preventDefault()} onClick={() => chooseMapboxResult(result)}>
             <span className="block truncate text-sm font-semibold text-slate-800">{result.name}</span>
             <span className="mt-0.5 block truncate text-xs text-slate-500">{result.address}</span>
           </button>)}
-          {searchQuery.trim().length >= 3 && !mapboxSearching && !mapboxSearchError && mapboxResults.length === 0 && <p className="px-4 py-3 text-sm text-slate-500">Mapbox chưa tìm thấy địa chỉ hoặc khu vực phù hợp.</p>}
+          {appliedQuery.length >= 3 && !mapboxSearching && !mapboxSearchError && mapboxResults.length === 0 && <p className="px-4 py-3 text-sm text-slate-500">Mapbox chưa tìm thấy địa chỉ hoặc khu vực phù hợp.</p>}
         </>
         <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Kết quả Mapbox chỉ dùng để xem vị trí trên bản đồ; không tự thêm vào danh mục.</p>
       </div>}

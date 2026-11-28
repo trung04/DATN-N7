@@ -20,6 +20,15 @@ import { HOTEL_IMAGE_STORAGE } from './interfaces/hotel-image-storage.interface'
 import { TypeOrmHotelImageRepository } from './repositories/typeorm-hotel-image.repository';
 import { S3HotelImageStorage } from './integrations/s3-hotel-image.storage';
 import { ImageEntity } from '../media/entities/image.entity';
+import { HotelLocationController } from './controllers/hotel-location.controller';
+import { HotelLocationService } from './services/hotel-location.service';
+import { HOTEL_GEOCODER } from './interfaces/hotel-geocoder.interface';
+import { NominatimHotelGeocoder } from './integrations/nominatim-hotel-geocoder';
+import { HotelDocumentsController } from './controllers/hotel-documents.controller';
+import { HotelDocumentsService } from './services/hotel-documents.service';
+import { HotelDocumentManagementGuard } from './guards/hotel-document-management.guard';
+import { HOTEL_DOCUMENT_REPOSITORY } from './interfaces/hotel-document.repository.interface';
+import { TypeOrmHotelDocumentRepository } from './repositories/typeorm-hotel-document.repository';
 
 @Module({
   imports: [
@@ -34,9 +43,14 @@ import { ImageEntity } from '../media/entities/image.entity';
     PlacesModule,
     UsersModule,
   ],
-  controllers: [HotelsController, AdminHotelsController, HotelImagesController],
+  controllers: [HotelLocationController, HotelsController, AdminHotelsController, HotelImagesController, HotelDocumentsController],
   providers: [
     HotelsService,
+    HotelDocumentsService,
+    HotelDocumentManagementGuard,
+    { provide: HOTEL_DOCUMENT_REPOSITORY, useClass: TypeOrmHotelDocumentRepository },
+    HotelLocationService,
+    { provide: HOTEL_GEOCODER, useClass: NominatimHotelGeocoder },
     HotelImagesService,
     HotelImageManagementGuard,
     { provide: HOTEL_IMAGE_REPOSITORY, useClass: TypeOrmHotelImageRepository },
@@ -46,6 +60,6 @@ import { ImageEntity } from '../media/entities/image.entity';
       useClass: TypeOrmHotelRepository,
     },
   ],
-  exports: [HotelsService],
+  exports: [HotelsService, HOTEL_IMAGE_STORAGE],
 })
 export class HotelsModule {}

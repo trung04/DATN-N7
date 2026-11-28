@@ -1,8 +1,18 @@
 import { useMemo, useState } from 'react'
+import { ManagementSearch, SearchButton } from '@/components/management-search'
+import { useSearchDraft, useSearchFilters } from '@/lib/use-search-filters'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CalendarDays, Heart, MapPin, Search, SlidersHorizontal, Sparkles, Star, Users } from 'lucide-react'
+import { Building2, ChevronLeft, ChevronRight, Heart, MapPin, Sparkles, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Pagination } from '@/components/pagination'
+import { usePagination } from '@/lib/use-pagination'
+import { pageItems, PAGE_SIZE } from '@/lib/pagination'
+import { DialogList } from '@/components/ui/dialog-sections'
+import { HotelReviews } from './HotelReviews'
+import { CancellationPolicyTerms } from '@/components/cancellation-policy-terms'
+import { HotelDestinationSearch } from '@/components/hotel-destination-search'
+import { HotelSearchForm } from '@/components/hotel-search-form'
 import { Card, DetailLink, EmptyState, ErrorState, Feedback, LoadingState, PageHeader, Picture } from '@/components/common'
 import { repo, isMock } from '@/services'
 import { api } from '@/services/api/client'
@@ -12,6 +22,7 @@ import { useCatalog } from '@/hooks/data'
 import { travelImage } from '@/lib/travel-images'
 import { seededHotelPhoto } from '@/lib/hotel-media'
 import { lowestBookableRoomPrice, readChildAges } from '@/lib/room-occupancy'
+import { hotelSearchParams, matchesHotelSelection, NEARBY_HOTEL_RADIUS_KM, readHotelSearchSelection, type HotelSearchSelection } from '@/lib/hotel-search'
 import type { Destination, Hotel, Stopover } from '@/types/domain'
 import { RoomTypePicker } from './RoomTypePicker'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
@@ -19,6 +30,18 @@ import { useFavorites, useMyItineraries } from '@/hooks/data'
 import { DestinationMap } from './destination-map'
 
 const cardTitle = 'text-lg font-semibold text-slate-900'
+const HOTELS_PER_PAGE = 12
+
+type HotelPageToken = number | 'ellipsis-left' | 'ellipsis-right'
+
+function hotelPageTokens(currentPage: number, totalPages: number): HotelPageToken[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1)
+  if (currentPage <= 4) return [1, 2, 3, 4, 5, 'ellipsis-right', totalPages]
+  if (currentPage >= totalPages - 3) {
+    return [1, 'ellipsis-left', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+  }
+  return [1, 'ellipsis-left', currentPage - 1, currentPage, currentPage + 1, 'ellipsis-right', totalPages]
+}
 
 function HotelImage({ hotel, className }: { hotel: Hotel; className?: string }) {
   const seededPhoto = seededHotelPhoto(hotel)
@@ -26,7 +49,6 @@ function HotelImage({ hotel, className }: { hotel: Hotel; className?: string }) 
   const image = hotel.image ?? seededPhoto ?? fallback
   if (image) return <div className="group relative overflow-hidden">
     <Picture label={hotel.image || seededPhoto ? hotelDisplayName(hotel) : 'khu vực ' + hotel.city} src={image} className={className} />
-    {fallback && <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">Ảnh minh họa khu vực</span>}
   </div>
   return hotel.image
     ? <Picture label={hotel.name} src={hotel.image} className={className} />
@@ -113,11 +135,9 @@ function AddDestinationToTrip({ place }: { place: Destination }) {
     <Button type="button" onClick={openDialog}>Thêm vào chuyến đi</Button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent title="Thêm địa điểm vào chuyến đi" description={place.name + ' · ' + place.city}>
-        {isLoading ? <LoadingState label="Đang tải chuyến đi..." /> : error ? <ErrorState message={errorMessage(error)} /> : trips.length ? <div className="grid gap-2">
-          {trips.map(trip => <Button key={trip.id} type="button" variant="secondary" className="justify-between" disabled={Boolean(busyTripId)} onClick={() => void addToTrip(trip.id)}>
+        {isLoading ? <LoadingState label="Đang tải chuyến đi..." /> : error ? <ErrorState message={errorMessage(error)} /> : trips.length ? <DialogList label="Phân trang chuyến đi" pageSize={4} items={trips.map(trip => <li key={trip.id} className="py-1"><Button type="button" variant="secondary" className="w-full justify-between" disabled={Boolean(busyTripId)} onClick={() => void addToTrip(trip.id)}>
             <span className="truncate">{trip.name}</span><span className="ml-3 shrink-0 text-xs">{day(trip.startDate)} – {day(trip.endDate)}</span>
-          </Button>)}
-        </div> : <EmptyState title="Chưa có chuyến đi ở khu vực này" description="Tạo chuyến đi mới để lưu địa điểm này vào lịch trình." />}
+          </Button></li>)} /> : <EmptyState title="Chưa có chuyến đi ở khu vực này" description="Tạo chuyến đi mới để lưu địa điểm này vào lịch trình." />}
         {message && <p role="alert" className="mt-3 text-sm text-red-700">{message}</p>}
         <div className="mt-5 flex flex-wrap justify-between gap-2">
           <Button asChild variant="secondary"><Link to={createTripUrl}>Tạo chuyến đi mới</Link></Button>
@@ -161,13 +181,27 @@ export function ExplorePage() {
   const city = params.get('city') ?? ''
   const category = params.get('category') ?? ''
   const sort = params.get('sort') ?? 'name'
-  const [keyword, setKeyword] = useState(params.get('q') ?? '')
+  const { filters, changeFilters, applyFilters, resetFilters } = useSearchFilters(params, setParams, { q: params.get('q') ?? '', city, category, sort })
   const items = useMemo(() => {
     const filtered = (data?.destinations ?? []).filter(x => (!q || (x.name + ' ' + x.city + ' ' + x.tags.join(' ')).toLowerCase().includes(q)) && (!city || x.city === city) && (!category || x.category === category))
     return filtered.sort((a, b) => sort === 'rating' ? (b.rating ?? 0) - (a.rating ?? 0) : a.name.localeCompare(b.name, 'vi'))
   }, [data, q, city, category, sort])
-  const update = (key: string, value: string) => { const next = new URLSearchParams(params); if (value) next.set(key, value); else next.delete(key); setParams(next) }
-  return <div className="container-app section-pad"><PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." /><div className="mb-7 grid gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 md:grid-cols-[2fr_1fr_1fr_1fr]"><form onSubmit={e => { e.preventDefault(); update('q', keyword) }}><label className="text-sm font-medium">Từ khóa<input placeholder="Tên hoặc sở thích" value={keyword} onChange={e => setKeyword(e.target.value)} /></label></form><label className="text-sm font-medium">Thành phố<select value={city} onChange={e => update('city', e.target.value)}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(x => x.city) ?? [])].map(x => <option key={x}>{x}</option>)}</select></label><label className="text-sm font-medium">Loại hình<select value={category} onChange={e => update('category', e.target.value)}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(x => x.category) ?? [])].map(x => <option key={x}>{x}</option>)}</select></label><label className="text-sm font-medium">Sắp xếp<select value={sort} onChange={e => update('sort', e.target.value)}><option value="name">Tên A–Z</option><option value="rating">Đánh giá cao</option></select></label></div>{isLoading ? <LoadingState /> : error ? <ErrorState message={errorMessage(error)} /> : items.length ? <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(item => <DestinationCard key={item.id} item={item} />)}</div> : <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={() => setParams({})}>Xóa bộ lọc</Button>} />}</div>
+  const pagination = usePagination(data ? items.length : undefined)
+  return <div className="container-app section-pad">
+    <PageHeader title="Khám phá điểm đến" description="Tìm địa điểm theo khu vực và loại trải nghiệm." />
+    <form aria-label="Tìm kiếm điểm đến" onSubmit={applyFilters} className="mb-7 grid items-end gap-3 rounded-xl border border-slate-200 bg-[#F8FAFC] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+      <label className="text-sm font-medium">Từ khóa<ManagementSearch placeholder="Tên hoặc sở thích" value={filters.q} onChange={event => changeFilters({ q: event.target.value })} /></label>
+      <label className="text-sm font-medium">Thành phố<select value={filters.city} onChange={event => changeFilters({ city: event.target.value })}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(item => item.city) ?? [])].map(city => <option key={city}>{city}</option>)}</select></label>
+      <label className="text-sm font-medium">Loại hình<select value={filters.category} onChange={event => changeFilters({ category: event.target.value })}><option value="">Tất cả</option>{[...new Set(data?.destinations.map(item => item.category) ?? [])].map(category => <option key={category}>{category}</option>)}</select></label>
+      <label className="text-sm font-medium">Sắp xếp<select value={filters.sort} onChange={event => changeFilters({ sort: event.target.value })}><option value="name">Tên A–Z</option><option value="rating">Đánh giá cao</option></select></label>
+      <SearchButton className="h-[42px]" />
+    </form>
+    {isLoading ? <LoadingState /> : error ? <ErrorState message={errorMessage(error)} /> : items.length ? <>
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{pageItems(items, pagination.page, pagination.size).map(item => <DestinationCard key={item.id} item={item} />)}</div>
+      {items.length > PAGE_SIZE && <Pagination label="Phân trang điểm đến" page={pagination.page} size={pagination.size} total={items.length}
+        onPageChange={pagination.setPage} onSizeChange={pagination.setSize} />}
+    </> : <EmptyState title="Không tìm thấy điểm đến" description="Thử đổi từ khóa hoặc bỏ bớt bộ lọc." action={<Button variant="secondary" onClick={() => { resetFilters(); setParams({}) }}>Xóa bộ lọc</Button>} />}
+  </div>
 }
 export function DestinationDetailPage() {
   const { id } = useParams()
@@ -175,9 +209,9 @@ export function DestinationDetailPage() {
   if (isLoading) return <LoadingState />
   if (error) return <div className="container-app section-pad"><ErrorState message={errorMessage(error)} /></div>
   const item = data?.destinations.find(x => x.id === id)
-  if (!item) return <div className="container-app section-pad"><EmptyState title="Kh?ng t?m th?y ??a ?i?m" action={<Button asChild><Link to="/explore">V? Kh?m ph?</Link></Button>} /></div>
+  if (!item) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy địa điểm" action={<Button asChild><Link to="/explore">Về Khám phá</Link></Button>} /></div>
   return <div className="container-app section-pad">
-    <Link className="text-sm text-[#1E3A5F] hover:underline" to="/explore">? Kh?m ph?</Link>
+    <Link className="text-sm text-[#1E3A5F] hover:underline" to="/explore">← Khám phá</Link>
     <div className="mt-5 grid gap-8 lg:grid-cols-[1.2fr_.8fr]">
       <Picture label={item.name} src={item.image ?? travelImage(item.city)} className="rounded-xl" />
       <div>
@@ -186,8 +220,8 @@ export function DestinationDetailPage() {
         <p className="mt-2 text-slate-500">{item.region}, {item.city}</p>
         <p className="mt-6 leading-7 text-slate-700">{item.description}</p>
         <dl className="mt-6 grid gap-3 text-sm">
-          <div><dt className="font-semibold">Gi? ho?t ??ng</dt><dd className="text-slate-600">{item.openingHours ?? 'Ch?a c? th?ng tin'}</dd></div>
-          <div><dt className="font-semibold">Gi? tham kh?o</dt><dd className="text-slate-600">{item.price ? currency(item.price) : 'Mi?n ph?'}</dd></div>
+          <div><dt className="font-semibold">Giờ hoạt động</dt><dd className="text-slate-600">{item.openingHours ?? 'Chưa có thông tin'}</dd></div>
+          <div><dt className="font-semibold">Giá tham khảo</dt><dd className="text-slate-600">{item.price ? currency(item.price) : 'Miễn phí'}</dd></div>
         </dl>
         <div className="mt-7 flex flex-wrap items-center gap-3"><AddDestinationToTrip place={item} /><FavoriteButton id={item.id} targetType="PLACE" /></div>
       </div>
@@ -199,9 +233,19 @@ export function DestinationDetailPage() {
 const MAX_SEARCH_CHILDREN = 10
 
 export function HotelsPage() {
-  const { data, isLoading, error } = useCatalog()
+  const { data, isLoading, error, refetch } = useCatalog()
   const [params, setParams] = useSearchParams()
-  const [keyword, setKeyword] = useState(params.get('city') ?? '')
+  const appliedDestination = useMemo(() => readHotelSearchSelection(params, data?.hotels ?? [], data?.destinations ?? []), [params, data])
+  const filterParams = new URLSearchParams(params)
+  filterParams.delete('page')
+  const search = useSearchDraft({
+    fields: Object.fromEntries(filterParams),
+    keyword: appliedDestination?.label ?? '',
+    destination: appliedDestination,
+  }, filterParams.toString())
+  const { keyword } = search.values
+  const searchLabel = appliedDestination?.label ?? 'Mọi điểm đến'
+  const setKeyword = (value: string) => search.change({ keyword: value, destination: null })
   const city = params.get('city') ?? ''
   const checkIn = params.get('checkIn') ?? todayPlus(7)
   const checkOut = params.get('checkOut') ?? todayPlus(9)
@@ -227,24 +271,17 @@ export function HotelsPage() {
     enabled: !isMock && hotelIds.length > 0,
     staleTime: 5 * 60 * 1000,
   })
-  const updateMany = (values: Record<string, string>) => {
+  const applySearch = (values: Record<string, string>) => {
     const next = new URLSearchParams(params)
     Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key))
-    setParams(next)
+    next.delete('page')
+    search.reset()
+    if (next.toString() !== params.toString()) setParams(next)
   }
-  const update = (key: string, value: string) => updateMany({ [key]: value })
-  const updateChildCount = (count: number) => {
-    const ages = childAges.slice(0, count)
-    while (ages.length < count) ages.push(5)
-    updateMany({ children: String(count), childAges: ages.join(',') })
+  const updateMany = (values: Record<string, string>) => search.change({ fields: { ...search.values.fields, ...values } })
+  const selectDestination = (selection: HotelSearchSelection) => {
+    search.change({ keyword: selection.label, destination: selection })
   }
-  const toggleAmenity = (amenity: string) => {
-    const nextAmenities = selectedAmenities.includes(amenity)
-      ? selectedAmenities.filter(item => item !== amenity)
-      : [...selectedAmenities, amenity]
-    update('amenities', nextAmenities.join('|'))
-  }
-
   const items = useMemo(() => {
     if (!data) return []
     const stayLength = nights(checkIn, checkOut)
@@ -265,9 +302,8 @@ export function HotelsPage() {
         })
       const hotelPolicies = policies.filter(policy => policy.hotelId === hotel.id)
       const price = lowestBookableRoomPrice(roomOptions, rooms, adults, childAges, hotelPolicies)
-      const searchText = [hotel.name, hotel.city, hotel.area, hotel.address].join(' ').toLocaleLowerCase('vi-VN')
       const matchesAmenities = selectedAmenities.every(amenity => hotel.amenities.includes(amenity))
-      return { hotel, price, matchesAmenities, matchesSearch: !city || searchText.includes(city.toLocaleLowerCase('vi-VN')) }
+      return { hotel, price, matchesAmenities, matchesSearch: matchesHotelSelection(hotel, appliedDestination, data.destinations) }
     }).filter(item => item.price !== null
       && item.matchesSearch
       && item.hotel.stars >= stars
@@ -279,10 +315,25 @@ export function HotelsPage() {
           : sort === 'rating' ? (b.hotel.rating ?? 0) - (a.hotel.rating ?? 0)
             : sort === 'stars' ? b.hotel.stars - a.hotel.stars
               : (b.hotel.rating ?? 0) - (a.hotel.rating ?? 0) || b.hotel.stars - a.hotel.stars)
-  }, [data, city, checkIn, checkOut, adults, rooms, childAges.join(','), stars, minRating, maxPrice, sort, selectedAmenities.join('|'), isMock, availabilityQuery.data, guestPoliciesQuery.data])
+  }, [data, appliedDestination, checkIn, checkOut, adults, rooms, childAges.join(','), stars, minRating, maxPrice, sort, selectedAmenities.join('|'), isMock, availabilityQuery.data, guestPoliciesQuery.data])
+
+  const totalPages = Math.max(1, Math.ceil(items.length / HOTELS_PER_PAGE))
+  const requestedPage = Math.floor(Number(params.get('page')) || 1)
+  const currentPage = Math.max(1, Math.min(totalPages, requestedPage))
+  const visibleItems = items.slice((currentPage - 1) * HOTELS_PER_PAGE, currentPage * HOTELS_PER_PAGE)
+  const firstVisibleItem = items.length ? (currentPage - 1) * HOTELS_PER_PAGE + 1 : 0
+  const lastVisibleItem = Math.min(currentPage * HOTELS_PER_PAGE, items.length)
+  const pageTokens = hotelPageTokens(currentPage, totalPages)
+  const goToPage = (page: number) => {
+    if (page < 1 || page > totalPages || page === currentPage) return
+    const next = new URLSearchParams(params)
+    if (page === 1) next.delete('page')
+    else next.set('page', String(page))
+    setParams(next)
+    document.getElementById('hotel-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   const availableAmenities = [...new Set(data?.hotels.flatMap(hotel => hotel.amenities) ?? [])].sort((a, b) => a.localeCompare(b, 'vi'))
-  const activeFilterCount = Number(stars > 0) + Number(minRating > 0) + Number(maxPrice > 0) + selectedAmenities.length
   const isSearching = isLoading || (!isMock && (availabilityQuery.isPending || guestPoliciesQuery.isPending))
 
   return <div className="container-app section-pad !pt-8">
@@ -296,53 +347,39 @@ export function HotelsPage() {
       </div>
     </section>
 
-    <form className="hotel-search-card relative mx-1 -mt-7 mb-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_55px_-32px_rgba(17,49,64,.42)] sm:mx-4 sm:p-6" onSubmit={event => { event.preventDefault(); update('city', keyword) }}>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-12">
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-2"><span className="inline-flex items-center gap-2"><MapPin size={16} className="text-[#176b70]" />Điểm đến</span><input value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="Đà Nẵng, Đà Lạt..." autoComplete="off" /></label>
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-2"><span className="inline-flex items-center gap-2"><CalendarDays size={16} className="text-[#176b70]" />Nhận phòng</span><input type="date" min={todayPlus(0)} value={checkIn} onChange={event => { const value = event.target.value; if (value >= checkOut) { const nextDate = new Date(value + 'T12:00:00'); nextDate.setDate(nextDate.getDate() + 1); updateMany({ checkIn: value, checkOut: nextDate.toISOString().slice(0, 10) }) } else update('checkIn', value) }} /></label>
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-2"><span className="inline-flex items-center gap-2"><CalendarDays size={16} className="text-[#176b70]" />Trả phòng</span><input type="date" min={checkIn} value={checkOut} onChange={event => update('checkOut', event.target.value)} /></label>
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-2"><span className="inline-flex items-center gap-2"><Users size={16} className="text-[#176b70]" />Người lớn</span><select value={adults} onChange={event => update('adults', event.target.value)}>{Array.from({ length: 12 }, (_, index) => index + 1).map(value => <option value={value} key={value}>{value}</option>)}</select></label>
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-1">Số phòng<select value={rooms} onChange={event => update('rooms', event.target.value)}>{Array.from({ length: 5 }, (_, index) => index + 1).map(value => <option value={value} key={value}>{value}</option>)}</select></label>
-        <label className="block text-sm font-semibold text-slate-700 xl:col-span-1">Trẻ em<select value={children} onChange={event => updateChildCount(Number(event.target.value))}>{Array.from({ length: MAX_SEARCH_CHILDREN + 1 }, (_, value) => <option value={value} key={value}>{value}</option>)}</select></label>
-        <div className="flex items-end xl:col-span-2"><Button className="h-[43px] w-full rounded-lg" type="submit"><Search size={17} />Tìm phòng</Button></div>
-      </div>
+    <HotelSearchForm className="mx-1 -mt-7 mb-7 sm:mx-4" values={new URLSearchParams(search.values.fields)} onChange={updateMany} availableAmenities={availableAmenities} showSort onSubmit={event => {
+      event.preventDefault()
+      applySearch({ ...search.values.fields, ...hotelSearchParams(search.values.destination, keyword) })
+    }} destination={<HotelDestinationSearch value={keyword} onChange={setKeyword} onSelect={selectDestination} hotels={data?.hotels ?? []} destinations={data?.destinations ?? []} isLoading={isLoading} hasError={Boolean(error)} onRetry={() => void refetch()} />} />
 
-      {children > 0 && <div className="mt-5 border-t border-slate-100 pt-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-semibold text-slate-800">Độ tuổi trẻ em</h2><p className="mt-1 text-xs text-slate-500">Nhập đúng tuổi để kiểm tra giới hạn và phụ thu của từng loại phòng.</p></div><span className="rounded-full bg-[#edf6f3] px-3 py-1 text-xs font-medium text-[#176b70]">{children} trẻ em</span></div>
-        <div className="flex flex-wrap gap-3">{childAges.map((age, index) => <label className="w-[calc(50%-6px)] max-w-40 text-xs font-medium text-slate-600 sm:w-32" key={index}>Trẻ em {index + 1}<select className="mt-1.5" aria-label={`Tuổi trẻ em ${index + 1}`} value={age} onChange={event => { const ages = [...childAges]; ages[index] = Number(event.target.value); update('childAges', ages.join(',')) }}>{Array.from({ length: 18 }, (_, value) => <option key={value} value={value}>{value} tuổi</option>)}</select></label>)}</div>
-        <p className="mt-3 text-xs text-slate-500">Khách từ 12 tuổi trở lên có thể được tính là người lớn tùy chính sách khách sạn.</p>
-      </div>}
-
-      <details className="mt-5 border-t border-slate-100 pt-4">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700"><span className="inline-flex items-center gap-2"><SlidersHorizontal size={17} className="text-[#176b70]" />Bộ lọc khách sạn</span><span className="flex items-center gap-2 text-xs font-medium text-slate-500">{activeFilterCount ? `${activeFilterCount} bộ lọc đang bật` : 'Hạng sao, đánh giá, giá và tiện nghi'}<span aria-hidden="true">⌄</span></span></summary>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="text-sm font-medium text-slate-700">Hạng sao<select value={stars} onChange={event => update('stars', event.target.value)}><option value="0">Tất cả</option><option value="3">Từ 3 sao</option><option value="4">Từ 4 sao</option><option value="5">5 sao</option></select></label>
-          <label className="text-sm font-medium text-slate-700">Đánh giá tối thiểu<select value={minRating} onChange={event => update('minRating', event.target.value)}><option value="0">Tất cả đánh giá</option><option value="3">Từ 3.0 / 5</option><option value="4">Từ 4.0 / 5</option><option value="4.5">Từ 4.5 / 5</option></select></label>
-          <label className="text-sm font-medium text-slate-700">Giá tối đa / phòng / đêm<select value={maxPrice} onChange={event => update('maxPrice', event.target.value)}><option value="0">Không giới hạn</option><option value="1000000">1.000.000 ₫</option><option value="1500000">1.500.000 ₫</option><option value="2500000">2.500.000 ₫</option><option value="4000000">4.000.000 ₫</option></select></label>
-          {availableAmenities.length > 0 && <fieldset className="sm:col-span-2 lg:col-span-3"><legend className="mb-2 text-sm font-medium text-slate-700">Tiện nghi khách sạn</legend><div className="flex flex-wrap gap-2">{availableAmenities.map(amenity => <label className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${selectedAmenities.includes(amenity) ? 'border-[#176b70] bg-[#edf6f3] text-[#10545b]' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`} key={amenity}><input type="checkbox" checked={selectedAmenities.includes(amenity)} onChange={() => toggleAmenity(amenity)} />{amenity}</label>)}</div></fieldset>}
-        </div>
-        {activeFilterCount > 0 && <button className="mt-4 text-sm font-semibold text-[#176b70] hover:underline" type="button" onClick={() => updateMany({ stars: '', minRating: '', maxPrice: '', amenities: '' })}>Xóa bộ lọc nâng cao</button>}
-      </details>
-    </form>
-
-    <div className="mb-5 flex flex-wrap items-center gap-2 text-sm"><span className="mr-1 text-slate-500">Điểm đến nổi bật</span>{['Đà Nẵng', 'Đà Lạt', 'Huế'].map(place => <button key={place} type="button" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 transition hover:border-[#176b70] hover:text-[#10545b]" onClick={() => { setKeyword(place); update('city', place) }}>{place}</button>)}</div>
+    <div className="mb-5 flex flex-wrap items-center gap-2 text-sm"><span className="mr-1 text-slate-500">Điểm đến nổi bật</span>{['Đà Nẵng', 'Đà Lạt', 'Huế'].map(place => <button key={place} type="button" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 transition hover:border-[#176b70] hover:text-[#10545b]" onClick={() => selectDestination({ kind: 'city', label: place, city: place })}>{place}</button>)}</div>
+    {appliedDestination?.kind === 'nearby' && <p className="mb-4 flex items-center gap-2 text-sm text-slate-600"><MapPin size={16} className="shrink-0 text-[#176b70]" />Khách sạn có thông tin vị trí trong phạm vi {NEARBY_HOTEL_RADIUS_KM} km quanh bạn.</p>}
 
     {!validDates ? <Feedback kind="error" message="Ngày trả phòng phải sau ngày nhận phòng và ngày nhận phòng không được ở quá khứ." />
       : isSearching ? <LoadingState />
         : error ? <ErrorState message={errorMessage(error)} />
           : !isMock && (availabilityQuery.isError || guestPoliciesQuery.isError) ? <ErrorState message={errorMessage(availabilityQuery.error ?? guestPoliciesQuery.error)} retry={() => { void availabilityQuery.refetch(); void guestPoliciesQuery.refetch() }} />
             : items.length ? <>
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-4"><div><p className="text-xl font-semibold tracking-tight text-slate-800">{items.length} khách sạn phù hợp</p><p className="mt-1 text-sm text-slate-500">{city || 'Mọi điểm đến'} · {day(checkIn)} – {day(checkOut)} · {adults} người lớn, {children} trẻ em · {rooms} phòng</p></div><label className="w-full max-w-52 text-xs font-medium text-slate-500">Sắp xếp<select className="mt-1" value={sort} onChange={event => update('sort', event.target.value)}><option value="recommended">Đề xuất phù hợp</option><option value="price-asc">Giá thấp trước</option><option value="price-desc">Giá cao trước</option><option value="rating">Đánh giá cao</option><option value="stars">Hạng sao cao</option></select></label></div>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{items.map(({ hotel, price }) => <HotelCard key={hotel.id} item={hotel} price={price!} search={params.toString() ? '?' + params.toString() : ''} />)}</div>
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-4"><div><p className="text-xl font-semibold tracking-tight text-slate-800">{items.length} khách sạn phù hợp</p><p className="mt-1 text-sm text-slate-500">{searchLabel} · {day(checkIn)} – {day(checkOut)} · {adults} người lớn, {children} trẻ em · {rooms} phòng</p></div></div>
+              <div id="hotel-results" className="grid scroll-mt-6 gap-5 sm:grid-cols-2 lg:grid-cols-3">{visibleItems.map(({ hotel, price }) => <HotelCard key={hotel.id} item={hotel} price={price!} search={params.toString() ? '?' + params.toString() : ''} />)}</div>
+              <div className="mt-7 flex flex-col items-center justify-between gap-4 border-t border-slate-100 pt-5 sm:flex-row">
+                <p className="text-sm text-slate-500" aria-live="polite">{`\u0110ang hi\u1ec3n th\u1ecb`} {firstVisibleItem}-{lastVisibleItem} {`tr\u00ean`} {items.length} {`kh\u00e1ch s\u1ea3n`}</p>
+                {totalPages > 1 && <nav aria-label={`Ph\u00e2n trang kh\u00e1ch s\u1ea3n`} className="flex flex-wrap items-center justify-center gap-1">
+                  <Button type="button" variant="secondary" size="sm" aria-label={`Trang tr\u01b0\u1edbc`} disabled={currentPage === 1} onClick={() => goToPage(currentPage - 1)}><ChevronLeft size={16} />{`Tr\u01b0\u1edbc`}</Button>
+                  {pageTokens.map(token => typeof token === 'number'
+                    ? <Button key={token} type="button" variant={token === currentPage ? 'default' : 'ghost'} size="sm" aria-label={`Trang ${token}`} aria-current={token === currentPage ? 'page' : undefined} onClick={() => goToPage(token)}>{token}</Button>
+                    : <span key={token} aria-hidden="true" className="px-1 text-slate-400">...</span>)}
+                  <Button type="button" variant="secondary" size="sm" aria-label="Trang sau" disabled={currentPage === totalPages} onClick={() => goToPage(currentPage + 1)}>Sau<ChevronRight size={16} /></Button>
+                </nav>}
+              </div>
             </>
-              : <EmptyState title="Không có khách sạn phù hợp" description="Thử nới bộ lọc, thay đổi ngày lưu trú hoặc điều chỉnh độ tuổi trẻ em." action={<Button variant="secondary" onClick={() => setParams({})}>Đặt lại tìm kiếm</Button>} />}
+              : <EmptyState title={appliedDestination?.kind === 'nearby' ? 'Không tìm thấy khách sạn gần bạn' : 'Không có khách sạn phù hợp'} description={appliedDestination?.kind === 'nearby' ? 'Chỉ khách sạn đã cập nhật vị trí và nằm trong phạm vi 50 km mới xuất hiện. Bạn có thể tìm theo thành phố hoặc điều chỉnh ngày và bộ lọc.' : 'Thử nới bộ lọc, thay đổi ngày lưu trú hoặc điều chỉnh độ tuổi trẻ em.'} action={<Button variant="secondary" onClick={() => { search.reset(); setParams({}) }}>Đặt lại tìm kiếm</Button>} />}
   </div>
 }
 export function HotelDetailPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const { data, isLoading, error } = useCatalog()
-  const publicReviews = useQuery({ queryKey: ['public-reviews', id], queryFn: () => api.publicReviewPage({ hotelId: id!, page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' }), enabled: Boolean(id) && !isMock })
   const reviewSummary = useQuery({ queryKey: ['public-review-summary', id], queryFn: () => api.publicReviewSummary(id!), enabled: Boolean(id) && !isMock })
   const checkIn = params.get('checkIn') ?? todayPlus(7)
   const checkOut = params.get('checkOut') ?? todayPlus(9)
@@ -374,6 +411,6 @@ export function HotelDetailPage() {
   if (!isMock && guestPoliciesQuery.isError) return <div className="container-app section-pad"><ErrorState message={errorMessage(guestPoliciesQuery.error)} retry={() => { void guestPoliciesQuery.refetch() }} /></div>
   const hotel = data?.hotels.find(x => x.id === id)
   if (!hotel || !data) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy khách sạn" action={<Button asChild><Link to="/hotels">Về danh sách</Link></Button>} /></div>
-  const reviews = isMock ? data.reviews.filter(r => r.hotelId === id && r.status === 'VISIBLE') : (publicReviews.data?.data ?? [])
-  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><HotelImage hotel={hotel} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {reviewSummary.data ? reviewSummary.data.averageRating.toFixed(1) + ' (' + reviewSummary.data.visibleCount + ' đánh giá)' : hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}{isSampleHotel(hotel) && <span className="ml-2 rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">Dữ liệu mẫu</span>}</div><h1 className="mt-2 text-3xl font-semibold">{hotelDisplayName(hotel)}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div>{isMock ? <p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p> : cancellationScheduleQuery.data?.complete ? <section className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><h2 className="font-semibold">Chính sách hủy</h2><ul className="mt-2 grid gap-2 text-sm text-slate-600">{cancellationScheduleQuery.data.rules.map(rule => <li key={rule.id}>{rule.cancellationAllowed ? `Miễn phí hủy trong ${rule.cancelHours} giờ đầu sau khi đặt; sau đó phí hủy ${rule.penaltyPercent}%.` : `Không hỗ trợ hủy. ${rule.description ?? ''}`}</li>)}</ul></section> : <Feedback kind="error" message={cancellationScheduleQuery.data?.issue ?? "Chính sách hủy chưa được cấu hình đầy đủ."} />}<div className="mt-5"><FavoriteButton id={hotel.id} targetType="HOTEL" /></div></div></div><DestinationMap place={{ id: hotel.id, name: hotelDisplayName(hotel), city: hotel.city, region: hotel.address, lat: hotel.lat, lng: hotel.lng }} /><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em' + (childAges.length ? ` (${childAges.join(', ')} tuổi)` : '')} /><RoomTypePicker hotel={hotel} rooms={data.rooms.filter(room => room.hotelId === hotel.id)} data={data} availableRoomIds={availabilityQuery.data?.availableRoomIds} checkIn={checkIn} checkOut={checkOut} adults={adults} children={children} childAges={childAges} guestPolicies={guestPoliciesQuery.data ?? []} isMock={isMock} /></div><div className="mt-12"><h2 className="mb-4 text-2xl font-semibold">Đánh giá khách hàng</h2>{reviews.length ? <div className="grid gap-3">{reviews.map(r => <Card key={r.id} className="p-5"><p className="font-semibold">{r.stars}/5 sao</p><p className="mt-2 text-sm text-slate-600">{r.content}</p></Card>)}</div> : <p className="text-sm text-slate-500">Chưa có đánh giá được công bố.</p>}</div></div>
+  const mockReviews = isMock ? data.reviews.filter(review => review.hotelId === id && review.status === 'VISIBLE') : []
+  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><HotelImage hotel={hotel} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {reviewSummary.data ? reviewSummary.data.averageRating.toFixed(1) + ' (' + reviewSummary.data.visibleCount + ' đánh giá)' : hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}{isSampleHotel(hotel) && <span className="ml-2 rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">Dữ liệu mẫu</span>}</div><h1 className="mt-2 text-3xl font-semibold">{hotelDisplayName(hotel)}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div>{isMock ? <p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p> : cancellationScheduleQuery.data?.complete ? <section className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><h2 className="font-semibold">Chính sách hủy</h2><div className="mt-2 grid gap-2">{cancellationScheduleQuery.data.rules.map(rule => <CancellationPolicyTerms key={rule.id} {...rule} />)}</div></section> : <Feedback kind="error" message={cancellationScheduleQuery.data?.issue ?? "Chính sách hủy chưa được cấu hình đầy đủ."} />}<div className="mt-5"><FavoriteButton id={hotel.id} targetType="HOTEL" /></div></div></div><DestinationMap emptyMessage="Khách sạn chưa xác nhận vị trí trên bản đồ." place={{ id: hotel.id, name: hotelDisplayName(hotel), city: hotel.city, region: hotel.address, lat: hotel.lat, lng: hotel.lng }} /><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em' + (childAges.length ? ` (${childAges.join(', ')} tuổi)` : '')} /><RoomTypePicker hotel={hotel} rooms={data.rooms.filter(room => room.hotelId === hotel.id)} data={data} availableRoomIds={availabilityQuery.data?.availableRoomIds} checkIn={checkIn} checkOut={checkOut} adults={adults} children={children} childAges={childAges} guestPolicies={guestPoliciesQuery.data ?? []} isMock={isMock} /></div><HotelReviews key={hotel.id} hotelId={hotel.id} mockReviews={mockReviews} /></div>
 }

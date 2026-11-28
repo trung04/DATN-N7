@@ -97,7 +97,7 @@ export const mock = {
     const now = new Date().toISOString()
     const normalizedEmail = input.email.trim().toLowerCase()
     const username = input.username.trim().toLowerCase()
-    assert(!readData().users.some(user => user.email.toLowerCase() === normalizedEmail || (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === username), 'IDENTITY_CONFLICT', 'Username hoặc email đã được sử dụng.', 409)
+    assert(!readData().users.some(user => user.email.toLowerCase() === normalizedEmail || (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === username), 'IDENTITY_CONFLICT', 'Tên đăng nhập hoặc thư điện tử đã được sử dụng.', 409)
     assert(input.password.length >= 8 && /[A-Za-z]/.test(input.password) && /[0-9]/.test(input.password), 'PASSWORD', 'Mật khẩu cần ít nhất 8 ký tự, gồm chữ và số.')
     assert(!input.dateOfBirth || input.dateOfBirth <= now.slice(0, 10), 'DATE_OF_BIRTH', 'Ngày sinh không được ở tương lai.')
     const passwordHash = await hash(input.password)
@@ -113,8 +113,8 @@ export const mock = {
     const existing = await mock.adminUser(userId)
     const nextEmail = input.email?.trim().toLowerCase()
     const nextUsername = input.username?.trim().toLowerCase()
-    if (nextEmail) assert(!readData().users.some(user => user.id !== userId && user.email.toLowerCase() === nextEmail), 'EMAIL_CONFLICT', 'Email đã được sử dụng.', 409)
-    if (nextUsername) assert(!readData().users.some(user => user.id !== userId && (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === nextUsername), 'USERNAME_CONFLICT', 'Username đã được sử dụng.', 409)
+    if (nextEmail) assert(!readData().users.some(user => user.id !== userId && user.email.toLowerCase() === nextEmail), 'EMAIL_CONFLICT', 'Địa chỉ thư điện tử đã được sử dụng.', 409)
+    if (nextUsername) assert(!readData().users.some(user => user.id !== userId && (user.adminMetadata?.username ?? user.email.split('@')[0] ?? '').toLowerCase() === nextUsername), 'USERNAME_CONFLICT', 'Tên đăng nhập đã được sử dụng.', 409)
     const updated = commit(data => {
       const user = data.users.find(item => item.id === userId)
       assert(user, 'USER_NOT_FOUND', 'Không tìm thấy tài khoản.', 404)
@@ -157,21 +157,21 @@ export const mock = {
     const username = maybePassword === undefined
       ? (email.split('@')[0] ?? 'traveler').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 50).replace(/^[._-]+|[._-]+$/g, '') || 'traveler'
       : usernameOrEmail
-    assert(!readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
+    assert(!readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'DUPLICATE', 'Địa chỉ thư điện tử đã được sử dụng.', 409)
     sessionStorage.setItem('smarttravel.pending', JSON.stringify({ name, username, email, passwordHash: await hash(password), expiresAt: Date.now() + 5 * 60000 }))
     return { demoOtp: '123456' }
   },
   verifyOtp: async (emailOrOtp: string, maybeOtp?: string): Promise<User> => {
     const raw = sessionStorage.getItem('smarttravel.pending')
-    assert(raw, 'OTP', 'Không có yêu cầu xác thực. Vui lòng đăng ký lại.')
+    assert(raw, 'Mã xác thực', 'Không có yêu cầu xác thực. Vui lòng đăng ký lại.')
     const pending = JSON.parse(raw) as { name: string; username: string; email: string; passwordHash: string; expiresAt: number }
     const email = maybeOtp === undefined ? pending.email : emailOrOtp
     const otp = maybeOtp ?? emailOrOtp
-    assert(pending.email.toLowerCase() === email.toLowerCase(), 'OTP', 'Email khÃ´ng khá»›p yÃªu cáº§u xÃ¡c minh.')
-    assert(pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã demo đã hết hạn. Vui lòng đăng ký lại.')
-    assert(otp === '123456', 'OTP', 'Mã OTP demo không đúng.')
+    assert(pending.email.toLowerCase() === email.toLowerCase(), 'Mã xác thực', 'Địa chỉ thư điện tử không khớp yêu cầu xác minh.')
+    assert(pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã xác thực đã hết hạn. Vui lòng đăng ký lại.')
+    assert(otp === '123456', 'Mã xác thực', 'Mã xác thực không đúng.')
     const user = commit(data => {
-      assert(!data.users.some(u => u.email.toLowerCase() === pending.email.toLowerCase()), 'DUPLICATE', 'Email đã được sử dụng.', 409)
+      assert(!data.users.some(u => u.email.toLowerCase() === pending.email.toLowerCase()), 'DUPLICATE', 'Địa chỉ thư điện tử đã được sử dụng.', 409)
       const now = new Date().toISOString()
       const record: User = { id: uid('tourist'), name: pending.name, email: pending.email, role: 'tourist', verified: true, passwordHash: pending.passwordHash, adminMetadata: { username: pending.username, googleAccountLinked: false, firstName: null, lastName: null, displayName: pending.name, phoneNumber: null, dateOfBirth: null, gender: null, role: 'TOURIST', status: 'ACTIVE', isEmailVerified: true, createdAt: now, updatedAt: now } }
       data.users.push(record)
@@ -181,25 +181,25 @@ export const mock = {
     return user
   },
   requestOtp: async (email: string) => {
-    assert(readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'USER', 'Không tìm thấy tài khoản với email này.', 404)
+    assert(readData().users.some(u => u.email.toLowerCase() === email.toLowerCase()), 'AUTH_ACCOUNT_NOT_FOUND', 'Không tìm thấy tài khoản với thư điện tử này.', 404)
     sessionStorage.setItem('smarttravel.reset', JSON.stringify({ email, expiresAt: Date.now() + 5 * 60000 }))
     return { demoOtp: '123456' }
   },
   resendOtp: async (email?: string) => {
     const raw = sessionStorage.getItem('smarttravel.pending')
-    assert(raw, 'OTP', 'Không có yêu cầu xác thực.')
+    assert(raw, 'Mã xác thực', 'Không có yêu cầu xác thực.')
     const pending = JSON.parse(raw) as { email: string; expiresAt: number }
-    assert(!email || pending.email.toLowerCase() === email.toLowerCase(), 'OTP', 'Email khÃ´ng khá»›p yÃªu cáº§u xÃ¡c minh.')
+    assert(!email || pending.email.toLowerCase() === email.toLowerCase(), 'Mã xác thực', 'Địa chỉ thư điện tử không khớp yêu cầu xác minh.')
     pending.expiresAt = Date.now() + 5 * 60000
     sessionStorage.setItem('smarttravel.pending', JSON.stringify(pending))
     return { demoOtp: '123456' }
   },
   resetPassword: async (email: string, password: string, otp: string) => {
-    assert(otp === '123456', 'OTP', 'Mã OTP demo không đúng.')
+    assert(otp === '123456', 'Mã xác thực', 'Mã xác thực không đúng.')
     const raw = sessionStorage.getItem('smarttravel.reset')
-    assert(raw, 'OTP', 'Vui lòng yêu cầu mã đặt lại mật khẩu.')
+    assert(raw, 'Mã xác thực', 'Vui lòng yêu cầu mã đặt lại mật khẩu.')
     const pending = JSON.parse(raw) as { email: string; expiresAt: number }
-    assert(pending.email === email && pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã demo đã hết hạn.')
+    assert(pending.email === email && pending.expiresAt > Date.now(), 'OTP_EXPIRED', 'Mã xác thực đã hết hạn.')
     const passwordHash = await hash(password)
     commit(data => { const user = data.users.find(u => u.email === email); assert(user, 'USER', 'Không tìm thấy tài khoản.'); user.passwordHash = passwordHash })
     sessionStorage.removeItem('smarttravel.reset')
@@ -251,7 +251,7 @@ export const mock = {
     assert(input.startDate <= input.endDate, 'DATE', 'Ngày kết thúc không hợp lệ.')
     assert(input.adults >= 1 && input.children >= 0 && input.budget > 0, 'INPUT', 'Kiểm tra số khách và ngân sách.')
     const days = nights(input.startDate, input.endDate) + 1
-    assert(days > 0 && days <= 10, 'DATE', 'Chuyến đi demo hỗ trợ từ 1 đến 10 ngày.')
+    assert(days > 0 && days <= 10, 'DATE', 'Chuyến đi hỗ trợ từ 1 đến 10 ngày.')
     const data = readData()
     const places = data.destinations.filter(d => d.city.toLowerCase().includes(input.city.toLowerCase()))
     assert(places.length, 'EMPTY', 'Chưa có dữ liệu địa điểm cho điểm đến này.')
@@ -294,10 +294,10 @@ export const mock = {
         remainingActivityBudget -= place.price * guests
       }
     }
-    assert(stops.length > 0, 'OPEN_HOURS', 'Không có địa điểm mở cửa trong khung giờ lịch trình demo.')
+    assert(stops.length > 0, 'OPEN_HOURS', 'Không có địa điểm mở cửa trong khung giờ lịch trình.')
     const costBreakdown = { lodging: lodgingCost, food: foodCost, activities: activityCost }
     const totalCost = costBreakdown.lodging + costBreakdown.food + costBreakdown.activities
-    return { trip, stops, activities, totalCost, costBreakdown, reasons, input, explanation: 'Lịch demo chọn địa điểm trong danh mục theo sở thích, ngân sách, giờ mở cửa và nhịp độ đã chọn. Khoảng nghỉ giữa các hoạt động chưa tính thời gian di chuyển. Lưu trú tạm tính 1.200.000 đ/đêm và ăn uống 250.000 đ/người/ngày.' }
+    return { trip, stops, activities, totalCost, costBreakdown, reasons, input, explanation: 'Lịch gợi ý chọn địa điểm trong danh mục theo sở thích, ngân sách, giờ mở cửa và nhịp độ đã chọn. Khoảng nghỉ giữa các hoạt động chưa tính thời gian di chuyển. Lưu trú tạm tính 1.200.000 đ/đêm và ăn uống 250.000 đ/người/ngày.' }
   },
   savePlannedTrip: async (userId: string, result: PlannerResult) => commit(data => {
     const trip = { ...result.trip, userId, status: 'SAVED' as const }
@@ -383,7 +383,7 @@ export const mock = {
   }),
   payBooking: async (userId: string, bookingId: string, outcome: 'success' | 'failure' | 'expire') => commit(data => {
     const booking = data.bookings.find(b => b.id === bookingId && b.userId === userId)
-    assert(booking, 'NOT_FOUND', 'Không tìm thấy booking.', 404)
+    assert(booking, 'NOT_FOUND', 'Không tìm thấy đơn đặt phòng.', 404)
     assert(booking.status === 'PENDING_PAYMENT' && activeHold(booking), 'EXPIRED', 'Thời gian giữ phòng đã hết.', 409)
     const payment: Payment = { id: uid('PAY'), bookingId, status: 'PROCESSING', amount: booking.total, createdAt: new Date().toISOString() }
     data.payments.push(payment)
@@ -394,12 +394,13 @@ export const mock = {
   }),
   cancelBooking: async (userId: string, bookingId: string) => commit(data => {
     const booking = data.bookings.find(b => b.id === bookingId && b.userId === userId)
-    assert(booking?.status === 'CONFIRMED', 'STATUS', 'Booking hiện không thể hủy.', 409)
-    const quote = cancellationQuote(booking)
+    assert(booking?.status === 'CONFIRMED' || booking?.status === 'PENDING_PAYMENT', 'STATUS', 'Đơn đặt phòng hiện không thể hủy.', 409)
+    const unpaid = booking.status === 'PENDING_PAYMENT'
+    const quote = unpaid ? { allowed: true, fee: 0 } : cancellationQuote(booking)
     assert(quote.allowed, 'CHECKED_IN', 'Đã đến giờ nhận phòng; không thể hủy trực tuyến.', 409)
     const fee = quote.fee
     booking.status = 'CANCELLED'; booking.cancelledAt = new Date().toISOString(); booking.cancellationFee = fee
-    if (booking.total - fee > 0) {
+    if (!unpaid && booking.total - fee > 0) {
       const refund = { id: uid('REF'), bookingId, status: 'PENDING' as const, amount: booking.total - fee, createdAt: new Date().toISOString() }
       data.refunds.push(refund); booking.refundId = refund.id
     }
@@ -412,8 +413,8 @@ export const mock = {
   }),
   addReview: async (userId: string, bookingId: string, stars: number, content: string) => commit(data => {
     const booking = data.bookings.find(b => b.id === bookingId && b.userId === userId)
-    assert(booking?.status === 'COMPLETED', 'STATUS', 'Chỉ booking đã hoàn tất mới được đánh giá.', 409)
-    assert(!data.reviews.some(r => r.bookingId === bookingId), 'DUPLICATE', 'Booking này đã được đánh giá.', 409)
+    assert(booking?.status === 'COMPLETED', 'STATUS', 'Chỉ đơn đặt phòng đã hoàn tất mới được đánh giá.', 409)
+    assert(!data.reviews.some(r => r.bookingId === bookingId), 'DUPLICATE', 'Đơn đặt phòng này đã được đánh giá.', 409)
     assert(stars >= 1 && stars <= 5 && content.trim().length >= 10, 'REVIEW', 'Chọn 1–5 sao và nhập ít nhất 10 ký tự.')
     const review = { id: uid('REV'), bookingId, hotelId: booking.hotelId, userId, stars, content, status: 'VISIBLE' as const, createdAt: new Date().toISOString() }
     data.reviews.push(review); return review
@@ -472,7 +473,7 @@ export const mock = {
       assert(settlement.bookingIds.every(bookingId => {
         const booking = data.bookings.find(b => b.id === bookingId)
         return booking?.status === 'COMPLETED' && data.payments.some(p => p.bookingId === bookingId && p.status === 'PAID') && !data.settlements.some(s => s.id !== settlement.id && s.bookingIds.includes(bookingId) && ['APPROVED', 'PROCESSING', 'PAID'].includes(s.status))
-      }), 'ELIGIBILITY', 'Có booking chưa đủ điều kiện hoặc đã thuộc khoản chi trả khác.', 409)
+      }), 'ELIGIBILITY', 'Có đơn đặt phòng chưa đủ điều kiện hoặc đã thuộc khoản chi trả khác.', 409)
     }
     settlement.status = next; settlement.revision++
     if (next === 'PAID') settlement.transferReference = uid('MOCK-TRF')

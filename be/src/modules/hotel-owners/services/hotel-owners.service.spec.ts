@@ -64,6 +64,7 @@ describe('HotelOwnersService', () => {
     expect(createHotelOwner).toHaveBeenCalledWith({
       userId,
       bankName: 'Example Bank',
+      bankBin: null,
       bankAccountNumber: '123456789',
       bankAccountHolder: 'NGUYEN VAN A',
     });
@@ -97,6 +98,35 @@ describe('HotelOwnersService', () => {
 
     expect(updated.bankAccountNumber).toBeNull();
     expect(saveHotelOwner).toHaveBeenCalledWith(existing);
+  });
+
+  it('saves the canonical bank for a selected BIN and preserves leading zeroes', async () => {
+    repository.findByUserId.mockResolvedValue(hotelOwner());
+    saveHotelOwner.mockImplementation(async value => value);
+
+    await expect(service.update(userId, {
+      bankBin: '970407',
+      bankName: 'Untrusted bank name',
+      bankAccountNumber: '0123456789',
+      bankAccountHolder: ' NGUYEN VAN A ',
+    })).resolves.toMatchObject({
+      bankBin: '970407', bankName: 'Techcombank', bankAccountNumber: '0123456789', bankAccountHolder: 'NGUYEN VAN A',
+    });
+  });
+
+  it('rejects unsupported selections and demo account details', async () => {
+    repository.findByUserId.mockResolvedValue(hotelOwner());
+    await expect(service.update(userId, { bankBin: '111111' })).rejects.toThrow('có trong danh sách');
+    await expect(service.update(userId, {
+      bankBin: '970407', bankAccountNumber: 'DEMO-NO-REAL', bankAccountHolder: 'DEMO ONLY - HOST 00000000',
+    })).rejects.toThrow('4 đến 24 chữ số');
+    expect(saveHotelOwner).not.toHaveBeenCalled();
+  });
+
+  it('clears the stored BIN when a legacy caller switches the bank name', async () => {
+    repository.findByUserId.mockResolvedValue(hotelOwner({ bankName: 'Techcombank', bankBin: '970407' }));
+    saveHotelOwner.mockImplementation(async value => value);
+    await expect(service.update(userId, { bankName: 'Vietcombank' })).resolves.toMatchObject({ bankBin: null, bankName: 'Vietcombank' });
   });
 
   it('rejects reading a user without an owner profile', async () => {

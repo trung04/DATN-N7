@@ -4,6 +4,7 @@ import { HotelsService } from './hotels.service';
 import { HotelStatus } from '../entities/hotel.entity';
 import { HotelImageEntity } from '../entities/hotel-image.entity';
 import { UserRole } from '../../users/entities/user.entity';
+import { ImageStorageProvider } from '../../media/entities/image.entity';
 import {
   InvalidHotelImageException,
   HotelImageNotFoundException,
@@ -15,7 +16,7 @@ import { HotelUpdateLockedException } from '../exceptions/hotel.exceptions';
 describe('HotelImagesService', () => {
   const actor = { id: 'owner', role: UserRole.HOTEL_OWNER };
   const hotels = { assertManagedBy: jest.fn(), assertActive: jest.fn() };
-  const repository = { create: jest.fn(), find: jest.fn(), delete: jest.fn() };
+  const repository = { create: jest.fn(), find: jest.fn(), delete: jest.fn(), makePrimary: jest.fn() };
   const storage = { put: jest.fn(), get: jest.fn(), delete: jest.fn() };
   const service = new HotelImagesService(
     hotels as unknown as HotelsService,
@@ -141,8 +142,113 @@ describe('HotelImagesService', () => {
     await expect(service.read('hotel', 'image')).rejects.toThrow('not active');
     expect(storage.get).not.toHaveBeenCalled();
   });
+  it('serves a hotel image from MinIO when its object is available', async () => {
+    hotels.assertActive.mockResolvedValue({ status: HotelStatus.ACTIVE });
+    const image = Object.assign(new HotelImageEntity(), {
+      id: 'image',
+      hotelId: 'hotel',
+      image: {
+        storageProvider: ImageStorageProvider.MINIO,
+        objectKey: 'hotels/hotel/image.webp',
+        fallbackUrl: '/images/hoi-an-lanterns.webp',
+      },
+    });
+    const data = Buffer.from('minio image');
+    repository.find.mockResolvedValue(image);
+    storage.get.mockResolvedValue(data);
+
+    await expect(service.read('hotel', 'image')).resolves.toEqual({
+      kind: 'stored',
+      image,
+      data,
+    });
+    expect(storage.get).toHaveBeenCalledWith('hotels/hotel/image.webp');
+  });
+  it('falls back to a safe original app image URL when MinIO cannot read it', async () => {
+    hotels.assertActive.mockResolvedValue({ status: HotelStatus.ACTIVE });
+    const image = Object.assign(new HotelImageEntity(), {
+      id: 'image',
+      hotelId: 'hotel',
+      image: {
+        storageProvider: ImageStorageProvider.MINIO,
+        objectKey: 'hotels/hotel/image.webp',
+        fallbackUrl: '/images/hoi-an-lanterns.webp',
+      },
+    });
+    repository.find.mockResolvedValue(image);
+    storage.get.mockRejectedValue(new HotelImageStorageException());
+
+    await expect(service.read('hotel', 'image')).resolves.toEqual({
+      kind: 'fallback',
+      image,
+      fallbackUrl: '/images/hoi-an-lanterns.webp',
+    });
+    expect(storage.get).toHaveBeenCalledWith('hotels/hotel/image.webp');
+  });
+  it('allows the approved Unsplash image CDN as a MinIO fallback', async () => {
+    hotels.assertActive.mockResolvedValue({ status: HotelStatus.ACTIVE });
+    const fallbackUrl =
+      'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1800&q=80';
+    repository.find.mockResolvedValue(
+      Object.assign(new HotelImageEntity(), {
+        id: 'image',
+        hotelId: 'hotel',
+        image: {
+          storageProvider: ImageStorageProvider.MINIO,
+          objectKey: 'hotels/hotel/image.webp',
+          fallbackUrl,
+        },
+      }),
+    );
+    storage.get.mockRejectedValue(new HotelImageStorageException());
+
+    await expect(service.read('hotel', 'image')).resolves.toMatchObject({
+      kind: 'fallback',
+      fallbackUrl,
+    });
+  });
+  it('does not redirect to an unsafe fallback when MinIO cannot read an image', async () => {
+    hotels.assertActive.mockResolvedValue({ status: HotelStatus.ACTIVE });
+    repository.find.mockResolvedValue(
+      Object.assign(new HotelImageEntity(), {
+        id: 'image',
+        hotelId: 'hotel',
+        image: {
+          storageProvider: ImageStorageProvider.MINIO,
+          objectKey: 'hotels/hotel/image.webp',
+          fallbackUrl: 'https://outside.example/image.webp',
+        },
+      }),
+    );
+    storage.get.mockRejectedValue(new HotelImageStorageException());
+
+    await expect(service.read('hotel', 'image')).rejects.toBeInstanceOf(
+      HotelImageStorageException,
+    );
+  });
+  it('uses the original URL for external images that have no MinIO object', async () => {
+    hotels.assertActive.mockResolvedValue({ status: HotelStatus.ACTIVE });
+    const image = Object.assign(new HotelImageEntity(), {
+      id: 'image',
+      hotelId: 'hotel',
+      image: {
+        storageProvider: ImageStorageProvider.EXTERNAL,
+        objectKey: null,
+        imageUrl: '/images/hoi-an-lanterns.webp',
+      },
+    });
+    repository.find.mockResolvedValue(image);
+
+    await expect(service.read('hotel', 'image')).resolves.toEqual({
+      kind: 'fallback',
+      image,
+      fallbackUrl: '/images/hoi-an-lanterns.webp',
+    });
+    expect(storage.get).not.toHaveBeenCalled();
+  });
   it('scopes reads and deletes to the requested hotel', async () => {
     repository.find.mockResolvedValue(null);
+    repository.delete.mockResolvedValue(false);
     await expect(
       service.read('hotel', 'other-image', actor),
     ).rejects.toBeInstanceOf(HotelImageNotFoundException);
@@ -153,13 +259,39 @@ describe('HotelImagesService', () => {
     expect(storage.delete).not.toHaveBeenCalled();
   });
   it('retains metadata on a storage deletion failure to allow retry', async () => {
-    repository.find.mockResolvedValue({
-      image: { objectKey: 'hotels/h/image.webp' },
-    } as HotelImageEntity);
+    const image = {
+      id: 'image', imageId: 'image', image: { storageProvider: ImageStorageProvider.MINIO, objectKey: 'hotels/hotel/image.webp' },
+    } as HotelImageEntity;
+    repository.delete.mockImplementation(async (_hotel, _id, beforeDelete) => {
+      await beforeDelete(image, HotelStatus.DRAFT);
+      return true;
+    });
     storage.delete.mockRejectedValue(new HotelImageStorageException());
     await expect(
       service.delete('hotel', 'image', actor),
     ).rejects.toBeInstanceOf(HotelImageStorageException);
-    expect(repository.delete).not.toHaveBeenCalled();
+    expect(storage.delete).toHaveBeenCalledWith('hotels/hotel/image.webp');
+  });
+  it('unlinks a shared seed photo without deleting the shared object', async () => {
+    const image = { id: 'link', imageId: 'shared', image: { storageProvider: ImageStorageProvider.MINIO, objectKey: 'demo-lodging/hotels/shared.webp', sourceProvider: 'UNSPLASH' } } as HotelImageEntity;
+    repository.delete.mockImplementation(async (_hotel, _id, beforeDelete) => {
+      expect(await beforeDelete(image, HotelStatus.DRAFT)).toBe(false);
+      return true;
+    });
+    await service.delete('hotel', 'link', actor);
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+  it('refuses to delete a photo after the hotel enters review', async () => {
+    repository.delete.mockImplementation(async (_hotel, _id, beforeDelete) => {
+      await beforeDelete(new HotelImageEntity(), HotelStatus.PENDING_APPROVAL);
+      return true;
+    });
+    await expect(service.delete('hotel', 'image', actor)).rejects.toMatchObject({ code: 'HOTEL_UPDATE_LOCKED' });
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+  it('chooses a cover in the requested hotel only', async () => {
+    repository.makePrimary.mockResolvedValue({ id: 'image' }); await service.makePrimary('hotel', 'image', actor);
+    expect(repository.makePrimary).toHaveBeenCalledWith('hotel', 'image');
+    repository.makePrimary.mockResolvedValue(null); await expect(service.makePrimary('hotel', 'foreign', actor)).rejects.toBeInstanceOf(HotelImageNotFoundException);
   });
 });

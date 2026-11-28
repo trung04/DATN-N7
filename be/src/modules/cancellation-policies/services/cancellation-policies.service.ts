@@ -6,6 +6,7 @@ import { CreateCancellationPolicyRequest } from '../dtos/requests/create-cancell
 import { ListCancellationPoliciesRequest } from '../dtos/requests/list-cancellation-policies.request';
 import { UpdateCancellationPolicyRequest } from '../dtos/requests/update-cancellation-policy.request';
 import { CancellationPolicyEntity } from '../entities/cancellation-policy.entity';
+import type { CancellationPolicyTier } from '../entities/cancellation-policy.entity';
 import {
   CancellationPolicyActiveConflictException,
   CancellationPolicyDescriptionRequiredException,
@@ -41,7 +42,16 @@ export class CancellationPoliciesService {
     if (await this.repository.findByHotelAndName(input.hotelId, name)) {
       throw new CancellationPolicyNameConflictException(input.hotelId, name);
     }
-    this.assertValues(input.cancelHours, input.penaltyPercent, input.cancellationAllowed, input.description);
+    const terms = input.tiers === undefined
+      ? {
+        cancelHours: input.cancelHours ?? NaN,
+        penaltyPercent: input.penaltyPercent ?? NaN,
+        cancellationAllowed: input.cancellationAllowed ?? true,
+      }
+      : this.validateTiers(input.tiers);
+    if (input.tiers === undefined) {
+      this.assertValues(terms.cancelHours, terms.penaltyPercent, terms.cancellationAllowed, input.description);
+    }
     const isActive = input.isActive ?? true;
     if (isActive && await this.repository.findActiveByHotel(input.hotelId)) {
       throw new CancellationPolicyActiveConflictException(input.hotelId);
@@ -50,9 +60,7 @@ export class CancellationPoliciesService {
     return this.repository.create({
       hotelId: input.hotelId,
       name,
-      cancelHours: input.cancelHours,
-      penaltyPercent: input.penaltyPercent,
-      cancellationAllowed: input.cancellationAllowed ?? true,
+      ...terms,
       description: this.normalizeNullable(input.description),
       isActive,
     });
@@ -66,6 +74,7 @@ export class CancellationPoliciesService {
       cancelHours: policy.cancelHours,
       penaltyPercent: policy.penaltyPercent,
       cancellationAllowed: policy.cancellationAllowed,
+      ...(policy.tiers ? { tiers: policy.tiers } : {}),
       description: policy.description,
     }] : [];
     const version = createHash('sha256').update(JSON.stringify(rules)).digest('hex');
@@ -113,7 +122,9 @@ export class CancellationPoliciesService {
   ): Promise<CancellationPolicyEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyCancellationPolicyUpdateException();
     const policy = await this.findById(id);
-    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
 
     const cancelHours = input.cancelHours ?? policy.cancelHours;
     const penaltyPercent = input.penaltyPercent ?? policy.penaltyPercent;
@@ -121,7 +132,16 @@ export class CancellationPoliciesService {
     const description = input.description === undefined
       ? policy.description
       : this.normalizeNullable(input.description);
-    this.assertValues(cancelHours, penaltyPercent, cancellationAllowed, description);
+    if (input.tiers !== undefined) {
+      Object.assign(policy, this.validateTiers(input.tiers));
+    } else if (!policy.tiers) {
+      this.assertValues(cancelHours, penaltyPercent, cancellationAllowed, description);
+      policy.cancelHours = cancelHours;
+      policy.penaltyPercent = penaltyPercent;
+      policy.cancellationAllowed = cancellationAllowed;
+    } else if ([input.cancelHours, input.penaltyPercent, input.cancellationAllowed].some(value => value !== undefined)) {
+      throw new InvalidCancellationPolicyRangeException('Hãy cập nhật điều khoản bằng danh sách mốc phí hủy.');
+    }
 
     if (input.name !== undefined) {
       const name = input.name.trim();
@@ -131,9 +151,6 @@ export class CancellationPoliciesService {
       }
       policy.name = name;
     }
-    if (input.cancelHours !== undefined) policy.cancelHours = input.cancelHours;
-    if (input.penaltyPercent !== undefined) policy.penaltyPercent = input.penaltyPercent;
-    if (input.cancellationAllowed !== undefined) policy.cancellationAllowed = input.cancellationAllowed;
     if (input.description !== undefined) policy.description = description;
     if (input.isActive !== undefined && input.isActive && !policy.isActive) {
       const active = await this.repository.findActiveByHotel(policy.hotelId);
@@ -148,14 +165,47 @@ export class CancellationPoliciesService {
 
   async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const policy = await this.findById(id);
-    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     await this.repository.delete(policy);
   }
 
   private isEmptyUpdate(input: UpdateCancellationPolicyRequest): boolean {
     return [input.name, input.cancelHours, input.penaltyPercent,
-      input.cancellationAllowed, input.description, input.isActive]
+      input.cancellationAllowed, input.description, input.isActive, input.tiers]
       .every((value) => value === undefined);
+  }
+
+  private validateTiers(tiers: CancellationPolicyTier[]) {
+    if (!Array.isArray(tiers) || tiers.at(-1)?.upToHours !== null) {
+      throw new InvalidCancellationPolicyRangeException('Cần có điều khoản sau mốc cuối.');
+    }
+    let previous = -1;
+    let cancelHours = 0;
+    let stillFree = true;
+    for (const [index, tier] of tiers.entries()) {
+      const last = index === tiers.length - 1;
+      const { upToHours, feePercent } = tier;
+      if (!last && (upToHours === null || !Number.isInteger(upToHours) ||
+        upToHours <= previous || upToHours > 87600)) {
+        throw new InvalidCancellationPolicyRangeException('Mốc giờ phải tăng dần, không trùng nhau và nằm trong khoảng 0 đến 87.600.');
+      }
+      if (feePercent === null ? !last : !Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) {
+        throw new InvalidCancellationPolicyRangeException('Phí hủy phải từ 0% đến 100%. Chỉ điều khoản cuối có thể không cho hủy.');
+      }
+      if (upToHours !== null) {
+        previous = upToHours;
+        stillFree = stillFree && feePercent === 0;
+        if (stillFree) cancelHours = upToHours;
+      }
+    }
+    return {
+      tiers: tiers.map(({ upToHours, feePercent }) => ({ upToHours, feePercent })),
+      cancelHours,
+      penaltyPercent: tiers.at(-1)?.feePercent ?? 100,
+      cancellationAllowed: tiers.some(tier => tier.feePercent !== null),
+    };
   }
 
   private assertValues(

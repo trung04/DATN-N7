@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Roles } from '../../authorization/decorators/roles.decorator';
@@ -6,6 +6,7 @@ import { UserEntity, UserRole } from '../../users/entities/user.entity';
 import { ConfirmSettlementRequest } from '../dtos/requests/confirm-settlement.request';
 import { CreateSettlementBatchRequest } from '../dtos/requests/create-settlement-batch.request';
 import { SettlementFailureRequest } from '../dtos/requests/settlement-failure.request';
+import { RequestSettlementPayout } from '../dtos/requests/request-settlement-payout.request';
 import { SettlementBatchWithItems } from '../interfaces/settlement.repository.interface';
 import { SettlementsService } from '../services/settlements.service';
 
@@ -27,15 +28,24 @@ export class SettlementsController {
   @Get('mine')
   @Roles(UserRole.HOTEL_OWNER)
   async findMine(@CurrentUser() user: UserEntity) {
-    const batches = await this.settlementsService.findPage({
-      ownerUserId: user.id,
-    });
+    const batches = await this.settlementsService.findMine(user.id);
     return batches.map(settlementBatchResponse);
+  }
+
+  @Post(':id/payout')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(200)
+  async requestPayout(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: RequestSettlementPayout,
+    @CurrentUser() user: UserEntity,
+  ) {
+    return settlementBatchResponse(await this.settlementsService.requestPayout(id, input.revision, user));
   }
 
   @Get(':id')
   async findById(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return settlementBatchResponse(await this.settlementsService.findById(id));
+    return settlementBatchResponse(await this.settlementsService.findForAdmin(id));
   }
 
   @Post()
@@ -78,9 +88,38 @@ export class SettlementsController {
   }
 }
 
-export function settlementBatchResponse(batch: SettlementBatchWithItems) {
+export function settlementBatchResponse(batch: SettlementBatchWithItems & { payoutUnavailableReason?: string | null }) {
   return {
-    ...batch,
+    id: batch.id,
+    hotelId: batch.hotelId,
+    hotelNameSnapshot: batch.hotelNameSnapshot,
+    ownerUserId: batch.ownerUserId,
+    periodStart: batch.periodStart,
+    periodEnd: batch.periodEnd,
+    currency: batch.currency,
+    bookingCount: batch.bookingCount,
+    grossAmount: batch.grossAmount,
+    commissionAmount: batch.commissionAmount,
+    adjustmentAmount: batch.adjustmentAmount,
+    netAmount: batch.netAmount,
+    status: batch.status,
+    bankNameSnapshot: batch.bankNameSnapshot,
+    bankAccountNumberSnapshot: batch.bankAccountNumberSnapshot,
+    bankAccountHolderSnapshot: batch.bankAccountHolderSnapshot,
+    approvedBy: batch.approvedBy,
+    approvedAt: batch.approvedAt,
+    processingAt: batch.processingAt,
+    paidAt: batch.paidAt,
+    failedAt: batch.failedAt,
+    failureReason: batch.failureReason,
+    transferReference: batch.transferReference,
+    transferMode: batch.transferMode,
+    providerTransferId: batch.providerTransferId,
+    payoutUnavailableReason: batch.payoutUnavailableReason,
+    revision: batch.revision,
+    createdAt: batch.createdAt,
+    updatedAt: batch.updatedAt,
+    events: batch.events,
     items: batch.items.map((item) => ({
       ...item,
       grossAmount: Number(item.grossAmount),

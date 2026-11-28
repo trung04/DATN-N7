@@ -5,7 +5,7 @@ import {
   GoogleAccountConflictException,
   UserEmailConflictException,
 } from '../../users/exceptions/user.exceptions';
-import { UserEntity, UserStatus } from '../../users/entities/user.entity';
+import { UserEntity, UserRole, UserStatus } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/services/users.service';
 import { LoginRequest } from '../dtos/requests/login.request';
 import { RegisterRequest } from '../dtos/requests/register.request';
@@ -19,8 +19,11 @@ import {
   InvalidSessionException,
   AuthChallengeInvalidException,
   AuthChallengeRateLimitException,
+  AuthAccountNotFoundException,
+  AuthPasswordResetUnavailableException,
   AuthEmailDeliveryException,
   AuthEmailUnavailableException,
+  AuthRegistrationSessionUnavailableException,
 } from '../exceptions/auth.exceptions';
 import {
   AUTH_SESSION_STORE,
@@ -69,24 +72,64 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterRequest): Promise<void> {
+    await this.registerAccount(input, UserRole.TOURIST);
+  }
+
+  async registerHotelOwner(input: RegisterRequest): Promise<void> {
+    await this.registerAccount(input, UserRole.HOTEL_OWNER);
+  }
+
+  private async registerAccount(input: RegisterRequest, role: UserRole.TOURIST | UserRole.HOTEL_OWNER): Promise<void> {
     this.assertEmailConfigured();
     const email = input.email.trim().toLowerCase();
-    await this.usersService.create({
+    const user = await this.usersService.create({
       username: input.username,
       email,
       displayName: input.displayName,
       password: input.password,
       status: UserStatus.INACTIVE,
-    });
-    await this.issueOtp(email, 'EMAIL_VERIFICATION');
+    }, role);
+    await this.issueOtp(email, 'EMAIL_VERIFICATION', role === UserRole.HOTEL_OWNER ? user.id : undefined);
   }
 
   async verifyEmail(input: EmailOtpRequest): Promise<void> {
+    await this.activateRegistration(await this.consumeRegistrationOtp(input));
+  }
+
+  async verifyEmailAndCreateSession(input: EmailOtpRequest): Promise<AuthenticatedSession> {
+    const pending = await this.consumeRegistrationOtp(input, true);
+    let session: SessionTokens;
+    try {
+      session = await this.sessions.create(pending.id);
+    } catch {
+      throw new AuthRegistrationSessionUnavailableException();
+    }
+
+    try {
+      const user = await this.activateRegistration(pending);
+      return { user, ...session };
+    } catch (error) {
+      // Keep the new tokens private until account activation commits.
+      await this.sessions.revokeByTokens(session.accessToken, session.refreshToken).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async consumeRegistrationOtp(input: EmailOtpRequest, createSession = false): Promise<UserEntity> {
     const email = input.email.trim().toLowerCase();
-    await this.consumeOtp(email, 'EMAIL_VERIFICATION', input.otp);
     const user = await this.usersService.findByEmail(email);
-    if (!user || user.status !== UserStatus.INACTIVE) throw new AuthChallengeInvalidException();
-    await this.usersService.verifyEmail(user.id);
+    if (!user || user.status !== UserStatus.INACTIVE || user.isEmailVerified) throw new AuthChallengeInvalidException();
+    if (createSession && user.role !== UserRole.TOURIST && user.role !== UserRole.HOTEL_OWNER) {
+      throw new AuthChallengeInvalidException();
+    }
+    await this.consumeOtp(email, 'EMAIL_VERIFICATION', input.otp, user.role === UserRole.HOTEL_OWNER ? user.id : undefined);
+    return user;
+  }
+
+  private async activateRegistration(pending: UserEntity): Promise<UserEntity> {
+    const user = await this.usersService.verifyEmail(pending.id, pending.email, pending.role);
+    if (!user) throw new AuthChallengeInvalidException();
+    return user;
   }
 
   async resendVerification(input: RequestPasswordResetRequest): Promise<void> {
@@ -95,7 +138,7 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     if (!user || user.isEmailVerified || user.status !== UserStatus.INACTIVE) return;
     try {
-      await this.issueOtp(email, 'EMAIL_VERIFICATION');
+      await this.issueOtp(email, 'EMAIL_VERIFICATION', user.role === UserRole.HOTEL_OWNER ? user.id : undefined);
     } catch (error) {
       if (error instanceof AuthChallengeRateLimitException || error instanceof AuthEmailDeliveryException) return;
       throw error;
@@ -103,16 +146,13 @@ export class AuthService {
   }
 
   async requestPasswordReset(input: RequestPasswordResetRequest): Promise<void> {
-    this.assertEmailConfigured();
     const email = input.email.trim().toLowerCase();
     const user = await this.usersService.findByEmail(email);
-    if (!user || !user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) return;
-    try {
-      await this.issueOtp(email, 'PASSWORD_RESET');
-    } catch (error) {
-      if (error instanceof AuthChallengeRateLimitException || error instanceof AuthEmailDeliveryException) return;
-      throw error;
+    if (!user) throw new AuthAccountNotFoundException();
+    if (!user.isEmailVerified || user.status !== UserStatus.ACTIVE || !user.passwordHash) {
+      throw new AuthPasswordResetUnavailableException();
     }
+    await this.issueOtp(email, 'PASSWORD_RESET');
   }
 
   async resetPassword(input: ResetPasswordRequest): Promise<void> {
@@ -125,10 +165,10 @@ export class AuthService {
     await this.usersService.resetPassword(user.id, { newPassword: input.password });
   }
 
-  private async issueOtp(email: string, purpose: AuthChallengePurpose): Promise<void> {
+  private async issueOtp(email: string, purpose: AuthChallengePurpose, userId?: string): Promise<void> {
     this.assertEmailConfigured();
     const otp = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const codeHash = this.hashOtp(email, purpose, otp);
+    const codeHash = this.hashOtp(email, purpose, otp, userId);
     if (!(await this.challenges.issue(email, purpose, codeHash, AUTH_OTP_TTL_MS, AUTH_OTP_COOLDOWN_MS))) {
       throw new AuthChallengeRateLimitException();
     }
@@ -140,14 +180,15 @@ export class AuthService {
     }
   }
 
-  private async consumeOtp(email: string, purpose: AuthChallengePurpose, otp: string): Promise<void> {
-    const result = await this.challenges.consume(email, purpose, this.hashOtp(email, purpose, otp));
+  private async consumeOtp(email: string, purpose: AuthChallengePurpose, otp: string, userId?: string): Promise<void> {
+    const result = await this.challenges.consume(email, purpose, this.hashOtp(email, purpose, otp, userId));
     if (result !== 'valid') throw new AuthChallengeInvalidException();
   }
 
-  private hashOtp(email: string, purpose: AuthChallengePurpose, otp: string): string {
+  private hashOtp(email: string, purpose: AuthChallengePurpose, otp: string, userId?: string): string {
     const pepper = this.config.getOrThrow<string>('AUTH_OTP_PEPPER');
-    return createHmac('sha256', pepper).update(`${purpose}:${email}:${otp}`).digest('hex');
+    const scope = userId ? `${purpose}:${userId}` : purpose;
+    return createHmac('sha256', pepper).update(`${scope}:${email}:${otp}`).digest('hex');
   }
 
   private assertEmailConfigured(): void {

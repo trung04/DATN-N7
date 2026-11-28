@@ -82,6 +82,18 @@ export class AuthChallengeRateLimitException extends DomainException {
   }
 }
 
+export class AuthAccountNotFoundException extends DomainException {
+  constructor() {
+    super('No account is registered with this email address.', 'AUTH_ACCOUNT_NOT_FOUND', 'not_found');
+  }
+}
+
+export class AuthPasswordResetUnavailableException extends DomainException {
+  constructor() {
+    super('This account is not eligible for password reset.', 'AUTH_PASSWORD_RESET_UNAVAILABLE', 'forbidden');
+  }
+}
+
 export class AuthEmailUnavailableException extends DomainException {
   constructor() {
     super('Email delivery is not configured. Contact the administrator.', 'AUTH_EMAIL_UNAVAILABLE', 'service_unavailable');
@@ -91,5 +103,11 @@ export class AuthEmailUnavailableException extends DomainException {
 export class AuthEmailDeliveryException extends DomainException {
   constructor() {
     super('The verification email could not be delivered. Please try again later.', 'AUTH_EMAIL_DELIVERY_FAILED', 'service_unavailable');
+  }
+}
+
+export class AuthRegistrationSessionUnavailableException extends DomainException {
+  constructor() {
+    super('Could not start a session. Request a new verification code and try again.', 'AUTH_REGISTRATION_SESSION_UNAVAILABLE', 'service_unavailable');
   }
 }
