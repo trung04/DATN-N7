@@ -32,6 +32,7 @@ import { TopicEntity } from '../users/entities/topic.entity';
   controllers: [PlacesController, PlaceCategoriesController, TopicsController],
   providers: [
     PlacesService,
+    PlaceTaxonomiesService,
     { provide: PLACE_IMAGE_STORAGE, useClass: S3PlaceImageStorage },
     {
       provide: PLACE_REPOSITORY,
