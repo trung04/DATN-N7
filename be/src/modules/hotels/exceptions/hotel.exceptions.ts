@@ -29,7 +29,7 @@ export class EmptyHotelUpdateException extends DomainException {
 export class HotelUpdateLockedException extends DomainException {
   constructor() {
     super(
-      'Hotel information cannot be changed while approval is pending.',
+      'Khách sạn đang chờ duyệt. Bạn có thể xem hồ sơ và theo dõi trạng thái xét duyệt.',
       'HOTEL_UPDATE_LOCKED',
       'conflict',
     );

@@ -1,9 +1,9 @@
-export const PAGE_SIZES = [10, 15, 20] as const
-export const PAGE_SIZE = 10
+export const PAGE_SIZES = [6, 10, 15, 20] as const
+export const PAGE_SIZE = 6
 
-export function readPageSize(params: URLSearchParams) {
-  const size = Number(params.get('limit') ?? PAGE_SIZE)
-  return PAGE_SIZES.some(value => value === size) ? size : PAGE_SIZE
+export function readPageSize(params: URLSearchParams, defaultSize = PAGE_SIZE) {
+  const size = Number(params.get('limit') ?? defaultSize)
+  return PAGE_SIZES.some(value => value === size) ? size : defaultSize
 }
 
 export function readPage(params: URLSearchParams, key = 'page') {

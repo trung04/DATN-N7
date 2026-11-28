@@ -26,13 +26,13 @@ import {
 import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
 import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
-import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
+import { ConfirmManualRefundRequest, RefundBookingRequest } from '../dtos/requests/refund-booking.request';
 import { UpdateBookingRequest } from '../dtos/requests/update-booking.request';
 import {
   BookingListResponse,
   BookingResponse,
 } from '../dtos/responses/booking.response';
-import { SePayPaymentResponse } from '../dtos/responses/sepay-payment.response';
+import { PayosPaymentResponse } from '../dtos/responses/payos-payment.response';
 import { BookingMapper } from '../mappers/booking.mapper';
 import { BookingsService } from '../services/bookings.service';
 
@@ -145,52 +145,57 @@ export class BookingsController {
     );
   }
 
-  @Put(':bookingId/payment/sepay')
-  @ApiUpdateOperation(
-    'Create a SePay API v2 Sandbox virtual account order',
-    SePayPaymentResponse,
-    'bookingId',
-  )
-  async createSePayPayment(
+  @Put(':bookingId/payment/payos')
+  @ApiUpdateOperation('Create a payOS checkout URL', PayosPaymentResponse, 'bookingId')
+  async createPayosPayment(
     @CurrentUser() user: UserEntity,
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): Promise<SePayPaymentResponse> {
-    const result = await this.bookingsService.createSePayPaymentForActor(id, user);
-    return {
-      bookingId: result.booking.id,
-      bookingCode: result.booking.bookingCode,
-      paymentMethod: result.booking.paymentMethod,
-      paymentStatus: result.booking.paymentStatus,
-      orderCode: result.booking.sepayOrderCode!,
-      vaNumber: result.booking.sepayVaNumber!,
-      qrCode: result.booking.sepayQrCode,
-      bankName: result.booking.sepayBankName,
-      accountNumber: result.booking.sepayAccountNumber,
-      accountHolderName: result.booking.sepayAccountHolderName,
-      expiresAt: result.booking.paymentExpiresAt?.toISOString() ?? null,
-    };
+  ): Promise<PayosPaymentResponse> {
+    return this.bookingsService.createPayosPaymentForActor(id, user);
+  }
+
+  @Put(':bookingId/payment/payos/refresh')
+  @ApiUpdateOperation('Reconcile a payOS payment', BookingResponse, 'bookingId')
+  async refreshPayosPayment(
+    @CurrentUser() user: UserEntity,
+    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<BookingResponse> {
+    return BookingMapper.toResponse(await this.bookingsService.refreshPayosPaymentForActor(id, user));
   }
 
   @Put(':bookingId/refund')
   @Roles(UserRole.ADMIN)
-  @ApiUpdateOperation('Submit an automatic refund through SePay API v2', BookingResponse, 'bookingId')
+  @ApiUpdateOperation('Submit a payOS payout refund', BookingResponse, 'bookingId')
   async refund(
+    @CurrentUser() user: UserEntity,
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: RefundBookingRequest,
   ): Promise<BookingResponse> {
     return BookingMapper.toResponse(
-      await this.bookingsService.refund(id, input),
+      await this.bookingsService.refund(id, input, user),
     );
   }
 
-  @Put(':bookingId/refund/sync')
+  @Put(':bookingId/refund/refresh')
   @Roles(UserRole.ADMIN)
-  @ApiUpdateOperation('Refresh the refund status from SePay API v2', BookingResponse, 'bookingId')
-  async syncRefund(
+  @ApiUpdateOperation('Reconcile a payOS payout refund', BookingResponse, 'bookingId')
+  async refreshPayosRefund(
+    @CurrentUser() user: UserEntity,
     @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<BookingResponse> {
+    return BookingMapper.toResponse(await this.bookingsService.refreshPayosRefund(id, user));
+  }
+
+  @Put(':bookingId/refund/manual-completion')
+  @Roles(UserRole.ADMIN)
+  @ApiUpdateOperation('Record a completed historical refund', BookingResponse, 'bookingId')
+  async confirmManualRefund(
+    @CurrentUser() user: UserEntity,
+    @Param('bookingId', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ConfirmManualRefundRequest,
+  ): Promise<BookingResponse> {
     return BookingMapper.toResponse(
-      await this.bookingsService.syncSePayRefund(id),
+      await this.bookingsService.confirmManualRefund(id, input, user),
     );
   }
 }

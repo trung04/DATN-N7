@@ -38,7 +38,7 @@ describe('hotel image management', () => {
     expect(upload).not.toHaveBeenCalled()
     await user.upload(picker, new File(['png'], 'hotel.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Tải ảnh lên' }))
-    await screen.findByText('Storage unavailable')
+    await screen.findByText('Kho lưu trữ tạm thời không khả dụng.')
     expect(picker.files).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Tải ảnh lên' })).toBeEnabled()
   })

@@ -1,7 +1,9 @@
+import { DateField } from '@/components/ui/date-input'
+import { PaginatedList } from '@/components/paginated-list'
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, BedDouble, CalendarDays, ChevronDown, Hotel, Minus, Plus, ReceiptText, ShieldCheck, UsersRound } from 'lucide-react'
+import { ArrowRight, BedDouble, CalendarDays, ChevronDown, Hotel, LoaderCircle, Minus, Plus, ReceiptText, ShieldCheck, UsersRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CancellationPolicyTerms } from '@/components/cancellation-policy-terms'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader } from '@/components/common'
@@ -12,6 +14,7 @@ import { useSession } from '@/stores/session'
 import { useCatalog } from '@/hooks/data'
 import { api } from '@/services/api/client'
 import type { BookingInput, RoomType } from '@/types/domain'
+import { normalizeVietnamesePhone } from './booking-phone'
 
 const maxGuestsPerCategory = 100
 
@@ -61,6 +64,7 @@ export function BookingCheckoutPage() {
     guestPhone: user?.phone ?? '',
     specialRequest: '',
   })
+  const bookingPhone = normalizeVietnamesePhone(form.guestPhone)
   const firstBookableDay = todayPlus(0)
   const earliestCheckout = addDay(Number.isFinite(nights(form.checkIn, form.checkIn)) ? form.checkIn : firstBookableDay, 1)
   const stayIsValid = form.checkIn >= firstBookableDay && nights(form.checkIn, form.checkOut) > 0
@@ -158,15 +162,22 @@ export function BookingCheckoutPage() {
       if (!stayIsValid || !available) return
       setStep(2)
     } else if (step === 2) {
-      if (form.guestName.trim().length < 2 || !/^\S+@\S+\.\S+$/.test(form.guestEmail) || !/^0\d{9,10}$/.test(form.guestPhone)) { setMessage('Kiểm tra họ tên, email và số điện thoại.'); return }
+      if (form.guestName.trim().length < 2 || !/^\S+@\S+\.\S+$/.test(form.guestEmail)) {
+        setMessage('Kiểm tra họ tên và thư điện tử.')
+        return
+      }
+      if (!bookingPhone) {
+        setMessage('Nhập số điện thoại Việt Nam hợp lệ, chẳng hạn 0912 345 678 hoặc +84 912 345 678.')
+        return
+      }
       setStep(3)
     }
   }
 
   const confirm = async () => {
-    if (!allocation || !available || !policyReady || !policyAccepted || busy) return
+    if (!allocation || !available || !policyReady || !policyAccepted || !bookingPhone || busy) return
     const roomIds = requestedRooms.map(room => room.id)
-    const bookingInput = { ...form, adults: bookedAdults, children: bookedChildAges.length,
+    const bookingInput = { ...form, guestPhone: bookingPhone, adults: bookedAdults, children: bookedChildAges.length,
       roomId: roomIds[0] ?? '', roomIds, roomGuests: allocation, rooms: requestedRooms.length,
       cancellationPolicyVersion: cancellationPolicyQuery.data?.version }
     const payload = JSON.stringify(bookingInput)
@@ -214,8 +225,8 @@ export function BookingCheckoutPage() {
                 {stayIsValid && <span className="rounded-full bg-[#E9F1F9] px-2.5 py-1 text-xs font-semibold text-[#1E3A5F]">{dates.length} đêm</span>}
               </div>
               <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4">
-                <FormField label="Nhận phòng"><input type="date" lang="vi" min={firstBookableDay} value={form.checkIn} onChange={event => set('checkIn', event.target.value)} /></FormField>
-                <FormField label="Trả phòng"><input type="date" lang="vi" min={earliestCheckout} value={form.checkOut} onChange={event => set('checkOut', event.target.value)} /></FormField>
+                <DateField label="Nhận phòng" min={firstBookableDay} value={form.checkIn} onChange={value => set('checkIn', value)} />
+                <DateField label="Trả phòng" min={earliestCheckout} value={form.checkOut} onChange={value => set('checkOut', value)} />
               </div>
               {!stayIsValid && <Feedback kind="error" message="Chọn ngày nhận phòng từ hôm nay và ngày trả phòng sau ngày nhận." />}
             </section>
@@ -265,8 +276,8 @@ export function BookingCheckoutPage() {
         {step === 2 && <form id="guest-details" className="grid gap-4" onSubmit={event => { event.preventDefault(); next() }}>
           <h2 className="text-lg font-semibold">Thông tin người đặt</h2>
           <FormField label="Họ tên"><input required minLength={2} value={form.guestName} onChange={event => set('guestName', event.target.value)} autoComplete="name" /></FormField>
-          <FormField label="Email"><input required type="email" value={form.guestEmail} onChange={event => set('guestEmail', event.target.value)} autoComplete="email" /></FormField>
-          <FormField label="Số điện thoại"><input required inputMode="tel" value={form.guestPhone} onChange={event => set('guestPhone', event.target.value)} autoComplete="tel" /></FormField>
+          <FormField label="Thư điện tử"><input required type="email" value={form.guestEmail} onChange={event => set('guestEmail', event.target.value)} autoComplete="email" /></FormField>
+          <FormField label="Số điện thoại" hint="Nhập theo dạng 0912 345 678 hoặc +84 912 345 678."><input required type="tel" value={form.guestPhone} onChange={event => set('guestPhone', event.target.value)} autoComplete="tel" /></FormField>
           <FormField label="Yêu cầu đặc biệt"><textarea maxLength={5000} value={form.specialRequest} onChange={event => set('specialRequest', event.target.value)} /></FormField>
         </form>}
         {step === 3 && <>
@@ -299,7 +310,7 @@ export function BookingCheckoutPage() {
               <h3 id="confirmation-guest" className="flex items-center gap-2.5 font-semibold text-slate-900"><UsersRound size={18} className="text-[#1E3A5F]" aria-hidden="true" />Thông tin người đặt</h3>
               <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3 sm:gap-4">
                 <div><dt className="text-slate-600">Họ tên</dt><dd className="mt-1 font-medium wrap-anywhere text-slate-900">{form.guestName}</dd></div>
-                <div><dt className="text-slate-600">Email</dt><dd className="mt-1 font-medium wrap-anywhere text-slate-900">{form.guestEmail}</dd></div>
+                <div><dt className="text-slate-600">Thư điện tử</dt><dd className="mt-1 font-medium wrap-anywhere text-slate-900">{form.guestEmail}</dd></div>
                 <div><dt className="text-slate-600">Số điện thoại</dt><dd className="mt-1 font-medium wrap-anywhere text-slate-900">{form.guestPhone}</dd></div>
                 {form.specialRequest && <div className="border-t border-slate-200 pt-3 sm:col-span-3"><dt className="text-slate-600">Yêu cầu đặc biệt</dt><dd className="mt-1 wrap-anywhere whitespace-pre-wrap text-slate-900">{form.specialRequest}</dd></div>}
               </dl>
@@ -310,7 +321,7 @@ export function BookingCheckoutPage() {
                 ? <div id="confirmation-policy-summary" className="text-sm leading-relaxed text-slate-700">
                   {isMock ? hotel.cancellationPolicy : cancellationRule && <CancellationPolicyTerms {...cancellationRule} />}
                 </div>
-                : <Feedback kind="error" message={cancellationPolicy?.issue ?? 'Chính sách hủy chưa hoàn chỉnh; khách sạn chưa thể nhận booking.'} />}
+                : <Feedback kind="error" message={cancellationPolicy?.issue ?? 'Chính sách hủy chưa hoàn chỉnh; khách sạn chưa thể nhận đơn đặt phòng.'} />}
               {!isMock && cancellationPolicy?.complete && <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-[#DBE8F3] bg-white px-3 py-2.5 text-sm leading-5 text-slate-800 hover:border-slate-400">
                 <input type="checkbox" className="mt-0.5! size-4! min-h-0! shrink-0 p-0! accent-[#1E3A5F] focus-visible:outline-2! focus-visible:outline-offset-2 focus-visible:outline-[#1E3A5F]" aria-describedby="confirmation-policy-summary" checked={policyAccepted} onChange={event => setAcceptedPolicyVersion(event.target.checked ? cancellationPolicy.version : '')} />
                 <span>Tôi đã đọc và đồng ý với chính sách hủy của khách sạn.</span>
@@ -345,9 +356,9 @@ export function BookingCheckoutPage() {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md py-1.5 text-sm font-medium text-[#1E3A5F] focus-visible:outline-2 focus-visible:outline-offset-4 [&::-webkit-details-marker]:hidden">
               Xem giá theo từng đêm <ChevronDown size={16} className="shrink-0 group-open:rotate-180" aria-hidden="true" />
             </summary>
-            <dl className="mt-1 max-h-60 divide-y divide-slate-100 overflow-y-auto text-sm text-slate-600">
-              {dates.map((date, index) => <div key={date} className="flex justify-between gap-3 py-2"><dt>{day(date)}</dt><dd className="shrink-0 tabular-nums">{currency((byNight[index] ?? 0) + surchargePerNight)}</dd></div>)}
-            </dl>
+            <PaginatedList items={dates} label="Phân trang giá theo đêm">{(visible, offset) => <dl className="mt-1 divide-y divide-slate-100 text-sm text-slate-600">
+              {visible.map((date, index) => <div key={date} className="flex justify-between gap-3 py-2"><dt>{day(date)}</dt><dd className="shrink-0 tabular-nums">{currency((byNight[offset + index] ?? 0) + surchargePerNight)}</dd></div>)}
+            </dl>}</PaginatedList>
           </details>}
           <div className="mt-3 bg-[#EAF2FA] px-4 py-4 sm:px-5">
             <dl aria-live="polite" aria-atomic="true" className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[#173759]"><dt className="font-semibold">Tổng cộng</dt><dd className="text-lg font-bold tracking-tight tabular-nums sm:text-xl">{available ? currency(total) : '—'}</dd></dl>
@@ -360,7 +371,8 @@ export function BookingCheckoutPage() {
             {step === 3 && <div className="mt-3 space-y-2">
               {message && <Feedback message={message} kind="error" />}
               <Button className="h-11 w-full justify-between rounded-xl px-4" type="button" disabled={busy || !available || !policyReady || !policyAccepted} onClick={() => void confirm()}>
-                {busy ? 'Đang đặt…' : 'Xác nhận và thanh toán'}<ArrowRight size={18} aria-hidden="true" />
+                {busy ? 'Đang đặt phòng…' : 'Xác nhận và thanh toán'}
+                {busy ? <LoaderCircle size={18} className="motion-safe:animate-spin" aria-hidden="true" /> : <ArrowRight size={18} aria-hidden="true" />}
               </Button>
               <Button className="w-full rounded-xl" type="button" variant="secondary" disabled={busy} onClick={() => { setMessage(''); setStep(2) }}>Quay lại</Button>
             </div>}

@@ -52,7 +52,7 @@ it('keeps the selected batch and metadata after upload failure for retry', async
   await user.type(screen.getByLabelText('Số giấy tờ'), 'LIC-RETRY')
   await user.upload(screen.getByLabelText('Ảnh giấy tờ'), files())
   await user.click(screen.getByRole('button', { name: 'Tải ảnh và thêm giấy tờ' }))
-  await screen.findByText('Storage unavailable')
+  await screen.findByText('Kho lưu trữ tạm thời không khả dụng.')
   expect(screen.getAllByRole('img')).toHaveLength(3)
   expect(screen.getByLabelText('Số giấy tờ')).toHaveValue('LIC-RETRY')
 })

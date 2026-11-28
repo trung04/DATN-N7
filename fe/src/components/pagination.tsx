@@ -1,13 +1,13 @@
 import { Button } from '@/components/ui/button'
 import { lastPage, PAGE_SIZE, PAGE_SIZES } from '@/lib/pagination'
 
-export function Pagination({ page, total, onPageChange, onSizeChange, size = PAGE_SIZE }: {
-  page: number; total: number; onPageChange: (page: number) => void; onSizeChange: (size: number) => void; size?: number
+export function Pagination({ page, total, onPageChange, onSizeChange, size = PAGE_SIZE, label = 'Phân trang' }: {
+  page: number; total: number; onPageChange: (page: number) => void; onSizeChange: (size: number) => void; size?: number; label?: string
 }) {
   const count = lastPage(total, size)
   const current = Math.min(page, count)
   const pages = [...new Set([1, current - 1, current, current + 1, count])].filter(n => n >= 1 && n <= count).sort((a, b) => a - b)
-  return <nav aria-label="Phân trang" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+  return <nav aria-label={label} className="management-pagination mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
     <span>{total ? `Hiển thị ${(current - 1) * size + 1}–${Math.min(current * size, total)} / ${total.toLocaleString('vi-VN')}` : '0 kết quả'} · Trang {current}/{count}</span>
     <label className="flex items-center gap-2">Số dòng mỗi trang
       <select className="!w-auto !min-w-0 !py-1.5" value={size} onChange={event => onSizeChange(Number(event.target.value))}>

@@ -1,3 +1,5 @@
+import { useMapboxToken } from '@/lib/use-mapbox-token'
+import { mapboxLocaleVi } from '@/lib/mapbox-locale'
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import mapboxgl, { type GeoJSONSource, type Map as MapboxMap, type Marker } from 'mapbox-gl'
 import { Check, LocateFixed, Navigation, Search, Square, X } from 'lucide-react'
@@ -9,7 +11,6 @@ import { distanceKm, nextLiveStop } from './itinerary-live-progress'
 import { stopOverlapsDay } from './trip-schedule'
 import { mapPlacesToGeoJson, toggleCategory } from './map-place-geojson'
 
-const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim()
 
 type Coordinates = [number, number]
 
@@ -36,6 +37,7 @@ export function ItineraryMap({
   onChoosePlaceId: (placeId: string) => void
   onSelectStop: (stopId: string) => void
 }) {
+  const token = useMapboxToken()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap | null>(null)
   const stopMarkersRef = useRef<Marker[]>([])
@@ -210,6 +212,7 @@ export function ItineraryMap({
     let map: MapboxMap
     try {
       map = new mapboxgl.Map({
+        locale: mapboxLocaleVi,
         accessToken: token,
         container: containerRef.current,
         style: 'mapbox://styles/mapbox/streets-v12',

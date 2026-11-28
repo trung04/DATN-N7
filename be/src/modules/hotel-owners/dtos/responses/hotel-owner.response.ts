@@ -1,6 +1,7 @@
 export class HotelOwnerResponse {
   userId: string;
   bankName: string | null;
+  bankBin: string | null;
   bankAccountNumber: string | null;
   bankAccountHolder: string | null;
 }

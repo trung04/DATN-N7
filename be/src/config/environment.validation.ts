@@ -1,6 +1,11 @@
+
 /** Never include secret values in configuration errors. */
 export function validateEnvironment(input: Record<string, unknown>) {
   const config = { ...input };
+  if (config.SETTINGS_ENCRYPTION_KEY &&
+    (typeof config.SETTINGS_ENCRYPTION_KEY !== 'string' || !/^[0-9a-f]{64}$/i.test(config.SETTINGS_ENCRYPTION_KEY))) {
+    throw new Error('SETTINGS_ENCRYPTION_KEY must contain 64 hexadecimal characters');
+  }
   for (const [postgresKey, databaseKey] of Object.entries({
     POSTGRES_HOST: 'DATABASE_HOST',
     POSTGRES_PORT: 'DATABASE_PORT',
@@ -209,52 +214,18 @@ export function validateEnvironment(input: Record<string, unknown>) {
     validateHttpUrl(config, 'GOOGLE_REDIRECT_URI');
   }
 
-  config.SEPAY_V2_BASE_URL ??= 'https://userapi-sandbox.sepay.vn/v2';
-  validateHttpUrl(config, 'SEPAY_V2_BASE_URL');
-  const sepayBaseUrl = new URL(config.SEPAY_V2_BASE_URL as string);
-  if (sepayBaseUrl.protocol !== 'https:' || sepayBaseUrl.origin !== 'https://userapi-sandbox.sepay.vn' || sepayBaseUrl.pathname !== '/v2') {
-    throw new Error('SEPAY_V2_BASE_URL must use https://userapi-sandbox.sepay.vn/v2 in test mode');
-  }
-  for (const key of ['SEPAY_V2_API_TOKEN', 'SEPAY_V2_BANK_ACCOUNT_XID', 'SEPAY_V2_TERMINAL_ID', 'SEPAY_WEBHOOK_SECRET', 'SEPAY_WEBHOOK_API_KEY']) {
-    config[key] ??= '';
-    if (typeof config[key] !== 'string') throw new Error(`${key} must be a string`);
-  }
-  if (Boolean(config.SEPAY_V2_API_TOKEN) !== Boolean(config.SEPAY_V2_BANK_ACCOUNT_XID)) {
-    throw new Error('SEPAY_V2_API_TOKEN and SEPAY_V2_BANK_ACCOUNT_XID must be configured together');
-  }
-  if (config.SEPAY_V2_BANK_ACCOUNT_XID && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.SEPAY_V2_BANK_ACCOUNT_XID as string)) {
-    throw new Error('SEPAY_V2_BANK_ACCOUNT_XID must be a UUID');
-  }
-  for (const key of [
-    'SEPAY_BANKHUB_CLIENT_ID',
-    'SEPAY_BANKHUB_CLIENT_SECRET',
-    'SEPAY_BANKHUB_BANK_ACCOUNT_XID',
-  ]) {
-    config[key] ??= '';
-    if (typeof config[key] !== 'string') {
-      throw new Error(`${key} must be a string`);
+  for (const prefix of ['PAYOS', 'PAYOS_PAYOUT']) {
+    const settings = ['CLIENT_ID', 'API_KEY', 'CHECKSUM_KEY'].map(key => config[`${prefix}_${key}`] ?? '');
+    if (!settings.every(value => typeof value === 'string') ||
+        (settings.some(value => String(value).trim()) && !settings.every(value => String(value).trim()))) {
+      throw new Error(`${prefix}_CLIENT_ID, ${prefix}_API_KEY and ${prefix}_CHECKSUM_KEY must be configured together`);
     }
   }
-  if (
-    Boolean(config.SEPAY_BANKHUB_CLIENT_ID) !==
-    Boolean(config.SEPAY_BANKHUB_CLIENT_SECRET)
-  ) {
-    throw new Error(
-      'SEPAY_BANKHUB_CLIENT_ID and SEPAY_BANKHUB_CLIENT_SECRET must be configured together',
-    );
+  const autoRefunds = config.PAYOS_AUTO_REFUNDS_ENABLED ?? 'true';
+  if (autoRefunds !== 'true' && autoRefunds !== 'false') {
+    throw new Error('PAYOS_AUTO_REFUNDS_ENABLED must be true or false');
   }
-  if (
-    config.SEPAY_BANKHUB_BANK_ACCOUNT_XID &&
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      config.SEPAY_BANKHUB_BANK_ACCOUNT_XID as string,
-    )
-  ) {
-    throw new Error('SEPAY_BANKHUB_BANK_ACCOUNT_XID must be a UUID');
-  }
-  config.SEPAY_WEBHOOK_AUTH_TYPE ??= 'HMAC_SHA256';
-  if (!['HMAC_SHA256', 'API_KEY'].includes(config.SEPAY_WEBHOOK_AUTH_TYPE as string)) {
-    throw new Error('SEPAY_WEBHOOK_AUTH_TYPE must be HMAC_SHA256 or API_KEY');
-  }
+  config.PAYOS_AUTO_REFUNDS_ENABLED = autoRefunds === 'true';
   return config;
 }
 

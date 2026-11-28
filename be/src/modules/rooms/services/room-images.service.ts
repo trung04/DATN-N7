@@ -52,7 +52,9 @@ export class RoomImagesService {
     if (![UserRole.ADMIN, UserRole.HOTEL_OWNER].includes(actor.role))
       throw new AuthorizationDeniedException();
     const room = await this.room(roomId);
-    const hotel = await this.hotels.assertManagedBy(room.hotelId, actor);
+    const hotel = await this.hotels.assertManagedBy(room.hotelId, actor, {
+      requiresActiveHotel: mutate,
+    });
     if (mutate && hotel.status === HotelStatus.PENDING_APPROVAL)
       throw new HotelUpdateLockedException();
     return room;

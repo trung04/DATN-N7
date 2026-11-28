@@ -9,8 +9,8 @@ test('dashboard Admin cân đối trên desktop rộng và mobile', async ({ pag
   await page.getByRole('button', { name: /Quản trị: admin@demo.vn/ }).click()
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Tổng quan quản trị' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Booking theo trạng thái' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Booking gần đây' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Đơn đặt phòng theo trạng thái' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Đơn đặt phòng gần đây' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Đối soát cần duyệt' })).toBeVisible()
 
   for (const width of mobile ? [360] : [1440, 1920, 2560]) {

@@ -122,7 +122,9 @@ export class CancellationPoliciesService {
   ): Promise<CancellationPolicyEntity> {
     if (this.isEmptyUpdate(input)) throw new EmptyCancellationPolicyUpdateException();
     const policy = await this.findById(id);
-    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
 
     const cancelHours = input.cancelHours ?? policy.cancelHours;
     const penaltyPercent = input.penaltyPercent ?? policy.penaltyPercent;
@@ -163,7 +165,9 @@ export class CancellationPoliciesService {
 
   async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const policy = await this.findById(id);
-    await this.hotelsService.assertManagedBy(policy.hotelId, actor);
+    await this.hotelsService.assertManagedBy(policy.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     await this.repository.delete(policy);
   }
 

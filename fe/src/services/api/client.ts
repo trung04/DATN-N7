@@ -1,12 +1,17 @@
+import type { MapPlacePage, MapPlaceQuery, PlaceTaxonomy, CreatePlaceTaxonomyInput, UpdatePlaceTaxonomyInput, TwoFactorRequired, TwoFactorVerification, TwoFactorSetup, TwoFactorRecoveryCodes, PreferenceOptions } from '@/types/domain'
 import type { HotelDocumentUploadInput } from '@/types/domain'
+import type { BookingSettings, PlatformSettingSection, PlatformSettingValue } from '@/types/domain'
+import type { BankOption } from '@/types/domain'
 import axios, { AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios'
 import { DomainError } from '@/lib/errors'
+import { localizedErrorMessage } from '@/lib/error-messages'
 import { hasValidCoordinates } from '@/lib/coordinates'
+import { fetchAllPages } from '@/lib/pagination'
 import type { HotelLocationResult } from '@/lib/hotel-location-search'
-import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, CreatePlaceTaxonomyInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, MapPlacePage, MapPlaceQuery, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlaceTaxonomy, PlannerResult, PreferenceOptions, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, TwoFactorRecoveryCodes, TwoFactorRequired, TwoFactorSetup, TwoFactorVerification, UpdateAdminUserInput, UpdatePlaceTaxonomyInput, User, UserProfileInput } from '@/types/domain'
+import type { RoomImage, AdminHotelReviewCommand, AdminHotelReviewHistory, AdminPlace, AdminUser, AdminUserPage, AdminUserQuery, AmenityOption, Booking, BookingInput, BookingListQuery, CancellationPolicy, CancellationPolicyInput, CancellationPolicySchedule, CancellationPolicySnapshot, CreateAdminUserInput, Destination, Hotel, HotelOwnerPage, HotelOwnerProfile, Itinerary, ManagedBooking, ManagedRoom, ManagedRoomInput, ManagedRoomPage, Notification, PartnerHotel, PartnerHotelDocumentInput, PartnerHotelInput, PartnerHotelPage, PartnerHotelQuery, Payment, PlaceAdminListItem, PlaceAdminRequest, PlaceCatalogOptions, PlannerResult, Refund, ReportQuery, ReportSummary, ReportTimeseries, Review, ReviewManagementQuery, ReviewModerationAction, ReviewModerationHistory, ReviewSummary, Role, RoomType, RoomGuestPolicy, RoomGuestPolicyInput, SettlementBatch, SettlementStatus, Stopover, TravelActivity, TravelPreference, UpdateAdminUserInput, User, UserProfileInput } from '@/types/domain'
 import type { MockRepository } from '../mock/logic'
 
-export interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
+interface Page<T> { data: T[]; meta: { page: number; limit: number; total: number } }
 interface BackendHotel {
   id: string; placeId?: string | null; name: string; description: string | null; address: string
   starRating: number | null; checkInTime: string
@@ -27,30 +32,10 @@ interface BackendPlace {
   status?: 'ACTIVE' | 'INACTIVE'
   price?: { isFree: boolean; minPrice: number; maxPrice: number; currency: string; pricingUnit?: string; description?: string | null } | null
 }
-interface BackendMapPlacePoint {
-  id: string; name: string; categoryCode: string | null; categoryName: string | null
-  latitude: number; longitude: number
-}
-interface BackendMapPlacePage { data: BackendMapPlacePoint[]; meta: MapPlacePage['meta'] }
 const placeCategoryLabels: Record<string, string> = {
   ATTRACTION: 'Điểm tham quan',
   RESTAURANT: 'Nhà hàng',
   HOTEL: 'Khách sạn',
-}
-export interface PublicPlaceQuery {
-  page: number
-  limit: number
-  search?: string
-  city?: string
-  categoryCode?: string
-  sortBy: 'name' | 'averageRating'
-  sortOrder: 'ASC' | 'DESC'
-  relevance?: boolean
-}
-export type PublicPlacePage<T> = Page<T> & { searchMode?: 'semantic' | 'keyword' }
-export interface PublicPlaceOptions {
-  cities: string[]
-  categories: PlaceCatalogOptions['categories']
 }
 interface BackendItinerary {
   id: string; touristUserId: string; name: string; destinationCity: string
@@ -120,7 +105,7 @@ const mapBookingStatus = (booking: BackendBooking): Booking['status'] => {
   if (booking.bookingStatus === 'CANCELLED') return 'CANCELLED'
   if (booking.bookingStatus === 'COMPLETED') return 'COMPLETED'
   if (booking.bookingStatus === 'CONFIRMED') return 'CONFIRMED'
-  if (booking.paymentStatus === 'EXPIRED' || (booking.paymentStatus === 'PENDING' && Date.parse(booking.reservationExpiresAt) <= Date.now())) return 'EXPIRED'
+  if (booking.paymentStatus === 'EXPIRED' || Date.parse(booking.reservationExpiresAt) <= Date.now()) return 'EXPIRED'
   return 'PENDING_PAYMENT'
 }
 
@@ -206,17 +191,6 @@ export function mapBackendUser(user: BackendUser): User {
 }
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-
-export function googleLoginUrl(returnTo: string | null = null): string {
-  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/start'
-  if (!returnTo) return startPath
-  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
-}
-export function googleLinkUrl(returnTo: string | null = null): string {
-  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/link/start'
-  if (!returnTo) return startPath
-  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
-}
 export function apiAssetUrl(path: string): string {
   return new URL(path, new URL(baseURL, window.location.origin)).href
 }
@@ -231,7 +205,6 @@ client.interceptors.response.use(undefined, async (error: AxiosError) => {
   const path = config?.url ?? ''
   const canRefresh = error.response?.status === 401 && config && !config._sessionRetry
     && !['/auth/login', '/auth/refresh', '/auth/logout'].some(route => path.endsWith(route))
-    && !path.includes('/auth/2fa/')
   if (!canRefresh) throw error
 
   config._sessionRetry = true
@@ -250,31 +223,20 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
   try { return (await client.request<T>(config)).data }
   catch (error) {
     if (error instanceof AxiosError) {
-      const response = error.response?.data as { detail?: string; message?: string; code?: string } | undefined
-      throw new DomainError(response?.code ?? 'HTTP_ERROR', response?.detail ?? response?.message ?? (error.response ? 'Máy chủ trả về lỗi. Vui lòng thử lại.' : 'Không thể kết nối máy chủ.'), error.response?.status ?? 0)
+      const response = error.response?.data as { detail?: unknown; message?: unknown; code?: string } | undefined
+      const status = error.response?.status ?? 0
+      throw new DomainError(response?.code ?? 'HTTP_ERROR', localizedErrorMessage(response?.detail ?? response?.message, response?.code, status), status)
     }
     throw error
   }
 }
 
-function mapBackendPlace(place: BackendPlace): Destination {
-  return {
-    id: place.id,
-    name: place.name,
-    city: place.city ?? '',
-    region: place.address ?? place.city ?? '',
-    category: place.category
-      ? placeCategoryLabels[place.category] ?? place.category
-      : 'Điểm tham quan',
-    description: place.description ?? '',
-    tags: place.tags ?? [],
-    price: place.price?.isFree ? 0 : place.price?.minPrice ?? 0,
-    ...(place.averageRating !== undefined ? { rating: place.averageRating } : {}),
-    ...(place.openingHours?.display ? { openingHours: place.openingHours.display } : {}),
-    ...(place.latitude != null ? { lat: place.latitude } : {}),
-    ...(place.longitude != null ? { lng: place.longitude } : {}),
-    ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
-  }
+function writePlace(method: 'POST' | 'PATCH', url: string, input: PlaceAdminRequest, image?: File) {
+  if (!image) return request<AdminPlace>({ method, url, data: input })
+  const data = new FormData()
+  data.append('data', JSON.stringify(input))
+  data.append('file', image)
+  return request<AdminPlace>({ method, url, data, headers: { 'Content-Type': undefined }, timeout: 60000 })
 }
 
 async function publicCatalog() {
@@ -326,7 +288,21 @@ async function publicCatalog() {
     ))
   }
   const allPlaceRecords = placePages.flatMap(page => page.data)
-  const destinations: Destination[] = allPlaceRecords.map(mapBackendPlace)
+  const destinations: Destination[] = allPlaceRecords.map(place => ({
+    id: place.id,
+    name: place.name,
+    city: place.city ?? '',
+    region: place.address ?? place.city ?? '',
+    category: place.category
+      ? placeCategoryLabels[place.category] ?? place.category
+      : 'Điểm tham quan',
+    description: place.description ?? '',
+    tags: place.tags ?? [],
+    price: place.price?.isFree ? 0 : place.price?.minPrice ?? 0,
+    ...(place.latitude != null ? { lat: place.latitude } : {}),
+    ...(place.longitude != null ? { lng: place.longitude } : {}),
+    ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
+  }))
   const rooms: RoomType[] = allRoomRecords.map(room => ({
     id: room.id,
     hotelId: room.hotelId,
@@ -368,7 +344,7 @@ async function publicCatalog() {
       imageIllustrative: hotel.images?.[0]?.illustrative ?? false,
       amenities: [...new Set(hotelRooms.flatMap(room => room.amenities))],
       partnerId: '',
-      cancellationPolicy: 'Chính sách phí được xác định khi hủy booking.',
+      cancellationPolicy: 'Chính sách phí được xác định khi hủy đơn đặt phòng.',
       cancellationTerms: {
         freeUntilHours: 0,
         lateFeeRate: 0,
@@ -412,7 +388,7 @@ type AdminHotelsApi = {
 }
 
 type PartnerRoomsApi = {
-  amenities: (page?: number) => Promise<Page<AmenityOption>>
+  amenities: (page?: number, limit?: number) => Promise<Page<AmenityOption>>
   roomGuestPolicies: (hotelId: string | string[]) => Promise<RoomGuestPolicy[]>
   saveRoomGuestPolicy: (input: RoomGuestPolicyInput) => Promise<RoomGuestPolicy>
   managedRooms: (hotelId: string) => Promise<ManagedRoomPage>
@@ -426,6 +402,7 @@ type PartnerRoomsApi = {
 type HotelOwnersApi = {
   hotelOwners: (page: number, limit: number, search?: string) => Promise<HotelOwnerPage>
   hotelOwnerProfile: (userId: string) => Promise<HotelOwnerProfile>
+  hotelOwnerBanks: () => Promise<BankOption[]>
   createHotelOwnerProfile: (profile: HotelOwnerProfile) => Promise<HotelOwnerProfile>
   updateHotelOwnerProfile: (userId: string, profile: Partial<HotelOwnerProfile>) => Promise<HotelOwnerProfile>
   deleteHotelOwnerProfile: (userId: string) => Promise<void>
@@ -442,27 +419,9 @@ type PlaceManagementApi = {
   adminPlaces: (query?: { page?: number; limit?: number; search?: string; status?: 'ACTIVE' | 'INACTIVE' }) => Promise<Page<PlaceAdminListItem>>
   adminPlace: (placeId: string) => Promise<AdminPlace>
   placeCatalogOptions: () => Promise<PlaceCatalogOptions>
-  createPlace: (input: PlaceAdminRequest) => Promise<AdminPlace>
-  updatePlace: (placeId: string, input: PlaceAdminRequest) => Promise<AdminPlace>
+  createPlace: (input: PlaceAdminRequest, image?: File) => Promise<AdminPlace>
+  updatePlace: (placeId: string, input: PlaceAdminRequest, image?: File) => Promise<AdminPlace>
   deletePlace: (placeId: string) => Promise<void>
-}
-
-type PublicPlacesApi = {
-  publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<PublicPlacePage<Destination>>
-  publicPlace: (placeId: string, signal?: AbortSignal) => Promise<Destination>
-  publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
-  mapPlaces: (query: MapPlaceQuery, signal?: AbortSignal) => Promise<MapPlacePage>
-}
-
-type PlaceTaxonomiesApi = {
-  placeCategories: () => Promise<PlaceTaxonomy[]>
-  createPlaceCategory: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
-  updatePlaceCategory: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
-  deletePlaceCategory: (id: string) => Promise<void>
-  placeTopics: () => Promise<PlaceTaxonomy[]>
-  createPlaceTopic: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
-  updatePlaceTopic: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
-  deletePlaceTopic: (id: string) => Promise<void>
 }
 
 type CancellationPoliciesApi = {
@@ -474,16 +433,22 @@ type CancellationPoliciesApi = {
 }
 
 type BookingsManagementApi = {
+  platformSettings: () => Promise<PlatformSettingSection[]>
+  savePlatformSettings: (section: string, revision: number, values: Record<string, PlatformSettingValue>) => Promise<PlatformSettingSection>
+  publicMapSettings: () => Promise<{ mapboxToken: string | null }>
+  bookingSettings: () => Promise<BookingSettings>
+  saveBookingSettings: (commissionRate: number) => Promise<BookingSettings>
   managedBookings: (query: BookingListQuery) => Promise<Page<ManagedBooking>>
   managedBooking: (bookingId: string) => Promise<ManagedBooking>
   completeManagedBooking: (bookingId: string) => Promise<ManagedBooking>
   refundManagedBooking: (bookingId: string, refundAmount: number, refundReason: string) => Promise<ManagedBooking>
-  syncManagedRefund: (bookingId: string) => Promise<ManagedBooking>
+  confirmManagedManualRefund: (bookingId: string, refundAmount: number, refundTransactionId: string) => Promise<ManagedBooking>
 }
 
 type SettlementsApi = {
   settlementBatches: (filters?: { hotelId?: string; status?: SettlementStatus }) => Promise<SettlementBatch[]>
   partnerSettlementBatches: () => Promise<SettlementBatch[]>
+  requestSettlementPayout: (id: string, revision: number) => Promise<SettlementBatch>
   settlementBatch: (id: string) => Promise<SettlementBatch>
   createSettlementBatch: (input: { hotelId: string; periodStart: string; periodEnd: string }) => Promise<SettlementBatch>
   approveSettlementBatch: (id: string) => Promise<SettlementBatch>
@@ -516,23 +481,23 @@ const toDateTimeInput = (value: string) => {
 const toBackendTime = (value: string) => new Date(value).toISOString()
 
 async function loadMyItineraries(userId: string) {
-  const page = await request<Page<BackendItinerary>>({
+  const itineraries = await fetchAllPages(page => request<Page<BackendItinerary>>({
     method: 'GET', url: '/itineraries',
-    params: { page: 1, limit: 100, sortBy: 'updatedAt', sortOrder: 'DESC' },
-  })
-  const stopPages = await Promise.all(page.data.map(itinerary => request<Page<BackendStopover>>({
+    params: { page, limit: 100, sortBy: 'updatedAt', sortOrder: 'DESC' },
+  }))
+  const stopPages = await Promise.all(itineraries.map(itinerary => fetchAllPages(page => request<Page<BackendStopover>>({
     method: 'GET', url: '/itineraries/' + itinerary.id + '/stopovers',
-    params: { page: 1, limit: 100, sortBy: 'stopOrder', sortOrder: 'ASC' },
-  })))
-  const backendStops = stopPages.flatMap(response => response.data)
+    params: { page, limit: 100, sortBy: 'stopOrder', sortOrder: 'ASC' },
+  }))))
+  const backendStops = stopPages.flat()
   const placeIds = [...new Set(backendStops.flatMap(stop => stop.placeId ? [stop.placeId] : []))]
   const places = await Promise.all(placeIds.map(id => request<BackendPlace>({ method: 'GET', url: '/places/' + id })))
   const placeById = new Map(places.map(place => [place.id, place]))
-  const activityPages = await Promise.all(backendStops.map(stop => request<Page<BackendActivity>>({
+  const activityPages = await Promise.all(backendStops.map(stop => fetchAllPages(page => request<Page<BackendActivity>>({
     method: 'GET', url: '/stopovers/' + stop.id + '/activities',
-    params: { page: 1, limit: 100, sortBy: 'activityOrder', sortOrder: 'ASC' },
-  })))
-  const trips: Itinerary[] = page.data.map(itinerary => ({
+    params: { page, limit: 100, sortBy: 'activityOrder', sortOrder: 'ASC' },
+  }))))
+  const trips: Itinerary[] = itineraries.map(itinerary => ({
     id: itinerary.id,
     userId: itinerary.touristUserId || userId,
     name: itinerary.name,
@@ -554,15 +519,15 @@ async function loadMyItineraries(userId: string) {
       placeId: stop.placeId ?? undefined,
       name: stop.customName ?? place?.name ?? 'Địa điểm đã lưu',
       address: stop.customAddress ?? place?.address ?? place?.city ?? '',
-      lat: stop.latitude ?? place?.latitude ?? undefined,
-      lng: stop.longitude ?? place?.longitude ?? undefined,
+      lat: stop.latitude ?? undefined,
+      lng: stop.longitude ?? undefined,
       start: toDateTimeInput(stop.arrivalTime),
       end: toDateTimeInput(stop.departureTime),
       order: stop.stopOrder,
       note: stop.description ?? '',
     }
   })
-  const activities: TravelActivity[] = activityPages.flatMap(response => response.data.map(activity => ({
+  const activities: TravelActivity[] = activityPages.flat().map(activity => ({
     id: activity.id,
     stopId: activity.stopoverId,
     name: activity.name,
@@ -571,31 +536,27 @@ async function loadMyItineraries(userId: string) {
     end: toDateTimeInput(activity.endTime),
     note: activity.description ?? '',
     cost: activity.estimatedCost ?? 0,
-  })))
+  }))
   return { trips, stops, activities }
 }
 
-export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & PublicPlacesApi & PlaceTaxonomiesApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
-  login: (username: string, password: string) => Promise<User | TwoFactorRequired>
+export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotelsApi & PartnerRoomsApi & HotelOwnersApi & PlaceManagementApi & CancellationPoliciesApi & BookingsManagementApi & SettlementsApi & ReviewsApi & ReportsApi & {
+  registerHotelOwner: (name: string, username: string, email: string, password: string) => Promise<unknown>
   myProfile: () => Promise<User>
   myFavorites: () => Promise<ApiFavorite[]>
   toggleMyFavorite: (targetType: FavoriteTargetType, targetId: string) => Promise<{ saved: boolean }>
   myItineraries: (userId: string) => Promise<{ trips: Itinerary[]; stops: Stopover[]; activities: TravelActivity[] }>
   myPreference: () => Promise<TravelPreference | null>
-  preferenceOptions: () => Promise<PreferenceOptions>
   searchRoomAvailability: (query: { hotelId?: string; checkInDate: string; checkOutDate: string }) => Promise<{ hotelId: string | null; checkInDate: string; checkOutDate: string; availableRoomIds: string[] }>
   touristBookings: () => Promise<{ bookings: Booking[]; payments: Payment[]; refunds: Refund[] }>
   touristBooking: (bookingId: string) => Promise<{ booking: Booking; payment: Payment; refund: Refund | null; reviewed: false }>
-  createSePayPayment: (bookingId: string) => Promise<{ bookingId: string; bookingCode: string; paymentMethod: string | null; paymentStatus: string; orderCode: string; vaNumber: string; qrCode: string | null; bankName: string | null; accountNumber: string | null; accountHolderName: string | null; expiresAt: string | null }>
+  refreshPayosPayment: (bookingId: string) => Promise<ManagedBooking>
+  refreshPayosRefund: (bookingId: string) => Promise<ManagedBooking>
+  createPayosPayment: (bookingId: string) => Promise<{ bookingId: string; paymentUrl: string; expiresAt: string }>
   notifications: (page?: number, limit?: number) => Promise<Page<Notification> & { meta: Page<Notification>['meta'] & { unreadCount: number } }>
   markNotificationRead: (notificationId: string) => Promise<Notification>
   markAllNotificationsRead: () => Promise<{ updated: number }>
-} = {
-  publicData: publicCatalog,
-  touristData: userId => request({ method: 'GET', url: '/users/' + userId + '/overview' }),
-  myItineraries: loadMyItineraries,
-  partnerData: userId => request({ method: 'GET', url: '/partners/by-user/' + userId + '/overview' }),
-  adminData: () => request({ method: 'GET', url: '/admin/overview' }),
+} & PublicPlacesApi & PlaceTaxonomiesApi & { login: (username: string, password: string) => Promise<User | TwoFactorRequired>; preferenceOptions: () => Promise<PreferenceOptions> } = {
   publicPlaces: async (query, signal) => {
     const { relevance, search, ...filters } = query
     const keyword = search?.trim()
@@ -650,11 +611,22 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   createPlaceTopic: input => request<PlaceTaxonomy>({ method: 'POST', url: '/topics', data: input }),
   updatePlaceTopic: (id, input) => request<PlaceTaxonomy>({ method: 'PATCH', url: '/topics/' + id, data: input }),
   deletePlaceTopic: id => request<void>({ method: 'DELETE', url: '/topics/' + id }),
+  verifyTwoFactor: (code: string) => request<BackendUser & { returnTo: string }>({ method: 'POST', url: '/auth/2fa/verify', data: { code } }).then(result => ({ user: mapBackendUser(result), returnTo: result.returnTo } satisfies TwoFactorVerification)),
+  setupTwoFactor: () => request<TwoFactorSetup>({ method: 'POST', url: '/auth/2fa/setup' }),
+  confirmTwoFactor: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/confirm', data: { code } }),
+  regenerateTwoFactorRecoveryCodes: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/recovery-codes', data: { code } }),
+  disableTwoFactor: (code: string) => request<void>({ method: 'POST', url: '/auth/2fa/disable', data: { code } }),
+  preferenceOptions: () => request<PreferenceOptions>({ method: 'GET', url: '/users/me/preference-options' }),
+  publicData: publicCatalog,
+  touristData: userId => request({ method: 'GET', url: '/users/' + userId + '/overview' }),
+  myItineraries: loadMyItineraries,
+  partnerData: userId => request({ method: 'GET', url: '/partners/by-user/' + userId + '/overview' }),
+  adminData: () => request({ method: 'GET', url: '/admin/overview' }),
   adminPlaces: query => request<Page<PlaceAdminListItem>>({ method: 'GET', url: '/places', params: { page: 1, limit: 100, sortBy: 'name', sortOrder: 'ASC', ...query } }),
   adminPlace: placeId => request<AdminPlace>({ method: 'GET', url: '/places/' + placeId }),
   placeCatalogOptions: () => request<PlaceCatalogOptions>({ method: 'GET', url: '/places/options' }),
-  createPlace: input => request<AdminPlace>({ method: 'POST', url: '/places', data: input }),
-  updatePlace: (placeId, input) => request<AdminPlace>({ method: 'PATCH', url: '/places/' + placeId, data: input }),
+  createPlace: (input, image) => writePlace('POST', '/places', input, image),
+  updatePlace: (placeId, input, image) => writePlace('PATCH', '/places/' + placeId, input, image),
   deletePlace: placeId => request<void>({ method: 'DELETE', url: '/places/' + placeId }),
   adminUsers: (query: AdminUserQuery) => request<AdminUserPage>({ method: 'GET', url: '/users', params: query }),
   adminUser: (userId: string) => request<AdminUser>({ method: 'GET', url: '/users/' + userId }),
@@ -697,7 +669,7 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   adminHotel: (hotelId: string) => request<PartnerHotel>({ method: 'GET', url: '/admin/hotels/' + hotelId }),
   adminHotelReviewHistory: (hotelId: string) => request<AdminHotelReviewHistory[]>({ method: 'GET', url: '/admin/hotels/' + hotelId + '/review-history' }),
   reviewHotel: (hotelId: string, action: AdminHotelReviewCommand, reason?: string) => request<PartnerHotel>({ method: 'PATCH', url: '/admin/hotels/' + hotelId + '/status', data: { action, ...(reason ? { reason } : {}) } }),
-  amenities: (page?: number) => request<Page<AmenityOption>>({ method: 'GET', url: '/amenities', params: { page, limit: 100, sortBy: 'name', sortOrder: 'ASC' } }),
+  amenities: (page?: number, limit = 100) => request<Page<AmenityOption>>({ method: 'GET', url: '/amenities', params: { page, limit, sortBy: 'name', sortOrder: 'ASC' } }),
   roomGuestPolicies: hotelId => request<RoomGuestPolicy[]>({ method: 'GET', url: '/rooms/guest-policies', params: Array.isArray(hotelId) ? { hotelIds: hotelId.join(',') } : { hotelId } }),
   saveRoomGuestPolicy: input => request<RoomGuestPolicy>({ method: 'PUT', url: '/rooms/guest-policies', data: input }),
   managedRoomPage: query => request<ManagedRoomPage>({ method: 'GET', url: '/rooms/mine', params: { ...query, sortBy: 'roomNumber', sortOrder: 'ASC' } }),
@@ -708,6 +680,7 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   deleteManagedRoom: roomId => request<void>({ method: 'DELETE', url: '/rooms/' + roomId }),
   hotelOwners: (page, limit, search) => request<HotelOwnerPage>({ method: 'GET', url: '/hotel-owners', params: { page, limit, ...(search ? { search } : {}), sortBy: 'userId', sortOrder: 'ASC' } }),
   hotelOwnerProfile: userId => request<HotelOwnerProfile>({ method: 'GET', url: '/hotel-owners/' + userId }),
+  hotelOwnerBanks: () => request<BankOption[]>({ method: 'GET', url: '/hotel-owners/banks' }),
   createHotelOwnerProfile: input => request<HotelOwnerProfile>({ method: 'POST', url: '/hotel-owners', data: input }),
   updateHotelOwnerProfile: (userId, input) => request<HotelOwnerProfile>({ method: 'PATCH', url: '/hotel-owners/' + userId, data: input }),
   deleteHotelOwnerProfile: userId => request<void>({ method: 'DELETE', url: '/hotel-owners/' + userId }),
@@ -727,7 +700,7 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   managedBooking: bookingId => request<ManagedBooking>({ method: 'GET', url: '/bookings/' + bookingId }),
   completeManagedBooking: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/complete' }),
   refundManagedBooking: (bookingId, refundAmount, refundReason) => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund', data: { refundAmount, refundReason } }),
-  syncManagedRefund: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/sync' }),
+  confirmManagedManualRefund: (bookingId, refundAmount, refundTransactionId) => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/manual-completion', data: { refundAmount, refundTransactionId } }),
   reviewPage: query => request<Page<Review>>({ method: 'GET', url: '/reviews', params: query }),
   managedReview: reviewId => request<Review>({ method: 'GET', url: '/reviews/' + reviewId }),
   publicReviewPage: query => request<Page<Review>>({ method: 'GET', url: '/reviews/public', params: query }),
@@ -741,22 +714,17 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   reportTimeseries: query => request<ReportTimeseries>({ method: 'GET', url: '/reports/timeseries', params: query }),
   currentUser: () => request<BackendUser>({ method: 'GET', url: '/auth/me' }).then(mapBackendUser),
   login: (username, password) => request<BackendUser | TwoFactorRequired>({ method: 'POST', url: '/auth/login', data: { username, password } }).then(result => 'requiresTwoFactor' in result ? result : mapBackendUser(result)),
-  verifyTwoFactor: (code: string) => request<BackendUser & { returnTo: string }>({ method: 'POST', url: '/auth/2fa/verify', data: { code } }).then(result => ({ user: mapBackendUser(result), returnTo: result.returnTo } satisfies TwoFactorVerification)),
-  setupTwoFactor: () => request<TwoFactorSetup>({ method: 'POST', url: '/auth/2fa/setup' }),
-  confirmTwoFactor: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/confirm', data: { code } }),
-  regenerateTwoFactorRecoveryCodes: (code: string) => request<TwoFactorRecoveryCodes>({ method: 'POST', url: '/auth/2fa/recovery-codes', data: { code } }),
-  disableTwoFactor: (code: string) => request<void>({ method: 'POST', url: '/auth/2fa/disable', data: { code } }),
   logout: () => request<void>({ method: 'POST', url: '/auth/logout' }),
   register: (name, username, email, password) => request({ method: 'POST', url: '/auth/register', data: { displayName: name, username, email, password } }),
-  verifyOtp: (email, otp) => request({ method: 'POST', url: '/auth/verify-otp', data: { email, otp } }),
+  registerHotelOwner: (name, username, email, password) => request({ method: 'POST', url: '/auth/hotel-owners/register', data: { displayName: name, username, email, password } }),
+  verifyOtp: (email, otp) => request<BackendUser>({ method: 'POST', url: '/auth/verify-otp/session', data: { email, otp } }).then(mapBackendUser),
   requestOtp: email => request({ method: 'POST', url: '/auth/forgot-password', data: { email } }),
   resendOtp: email => request({ method: 'POST', url: '/auth/resend-otp', data: { email } }),
   resetPassword: (email, password, otp) => request({ method: 'POST', url: '/auth/reset-password', data: { email, password, otp } }),
   myProfile: () => request<BackendUser>({ method: 'GET', url: '/users/me' }).then(mapBackendUser),
-  saveProfile: (_userId: string, values: UserProfileInput) => request<BackendUser>({ method: 'PATCH', url: '/users/me', data: { displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null, bio: values.bio?.trim() || null } }).then(mapBackendUser),
+  saveProfile: (_userId: string, values: UserProfileInput) => request<BackendUser>({ method: 'PATCH', url: '/users/me', data: { displayName: values.name, phoneNumber: values.phone ?? null, dateOfBirth: values.dateOfBirth ?? null, gender: values.gender ?? null } }).then(mapBackendUser),
   requestDeletion: (userId, password) => request({ method: 'POST', url: '/users/' + userId + '/deletion-request', data: { password } }),
   myPreference: () => request<TravelPreference | null>({ method: 'GET', url: '/users/me/preferences' }),
-  preferenceOptions: () => request<PreferenceOptions>({ method: 'GET', url: '/users/me/preference-options' }),
   savePreference: (_userId, pref) => request<TravelPreference>({ method: 'PUT', url: '/users/me/preferences', data: pref }),
   clearPreference: _userId => request<void>({ method: 'DELETE', url: '/users/me/preferences' }),
   myFavorites: () => request<ApiFavorite[]>({ method: 'GET', url: '/users/me/favorites' }),
@@ -767,21 +735,22 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
     return (await request<ApiFavorite[]>({ method: 'GET', url: '/users/me/favorites' })).map(favorite => favorite.targetId)
   },
   toggleMyFavorite: (targetType, targetId) => request<{ saved: boolean }>({ method: 'POST', url: '/users/me/favorites/toggle', data: { targetType, targetId } }),
-  recommend: (query, userId) => request({ method: 'POST', url: '/ai/recommendations', data: { query, usePreferences: Boolean(userId) }, timeout: 125000 }),
-  plan: input => request({ method: 'POST', url: '/ai/trip-planner', data: input, timeout: 125000 }),
+  recommend: (query, userId) => request({ method: 'POST', url: '/ai/recommendations', data: { query, userId } }),
+  plan: input => request({ method: 'POST', url: '/ai/trip-planner', data: input }),
   savePlannedTrip: async (userId, result: PlannerResult) => {
-    if (result.trip.userId !== userId) throw new DomainError('PLAN_OWNER_MISMATCH', 'Vui lòng tạo lại lịch trình bằng tài khoản đang đăng nhập.')
-    if (result.stops.some(stop => !stop.placeId)) throw new DomainError('PLACE_REQUIRED', 'Một điểm dừng chưa gắn với địa điểm trong danh mục.')
     const trip = await request<BackendItinerary>({
       method: 'POST', url: '/itineraries',
-      data: { name: result.trip.name, destinationCity: result.trip.city, description: result.trip.note, startDate: result.trip.startDate, endDate: result.trip.endDate, adultCount: result.trip.adults, childCount: result.trip.children, budget: result.trip.budget, currency: 'VND', status: 'SAVED', isAiGenerated: true },
+      data: { name: result.trip.name, destinationCity: result.trip.city, description: result.trip.note, startDate: result.trip.startDate, endDate: result.trip.endDate, adultCount: result.trip.adults, childCount: result.trip.children, budget: result.trip.budget, currency: 'VND', status: 'SAVED' },
     })
+    const savedStops = new Map<string, string>()
     try {
       for (const stop of [...result.stops].sort((a, b) => a.order - b.order)) {
+        if (!stop.placeId) throw new DomainError('PLACE_REQUIRED', 'Một điểm dừng chưa gắn với địa điểm trong danh mục.')
         const created = await request<BackendStopover>({
           method: 'POST', url: '/itineraries/' + trip.id + '/stopovers',
           data: { placeId: stop.placeId, stopOrder: stop.order, arrivalTime: toBackendTime(stop.start), departureTime: toBackendTime(stop.end), description: stop.note },
         })
+        savedStops.set(stop.id, created.id)
         const activities = result.activities.filter(item => item.stopId === stop.id).sort((a, b) => a.start.localeCompare(b.start))
         for (const [index, activity] of activities.entries()) {
           await request<BackendActivity>({
@@ -828,11 +797,13 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   markNotificationRead: notificationId => request({ method: 'PATCH', url: '/notifications/' + notificationId + '/read' }),
   markAllNotificationsRead: () => request({ method: 'PATCH', url: '/notifications/read-all' }),
   touristBookings: async () => {
-    const page = await request<BackendBookingPage>({ method: 'GET', url: '/bookings', params: { page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' } })
+    const bookings = await fetchAllPages(page => request<BackendBookingPage>({
+      method: 'GET', url: '/bookings', params: { page, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' },
+    }))
     return {
-      bookings: page.data.map(mapBackendBooking),
-      payments: page.data.map(mapBackendPayment),
-      refunds: page.data.map(mapBackendRefund).filter((refund): refund is Refund => refund !== null),
+      bookings: bookings.map(mapBackendBooking),
+      payments: bookings.map(mapBackendPayment),
+      refunds: bookings.map(mapBackendRefund).filter((refund): refund is Refund => refund !== null),
     }
   },
   touristBooking: async bookingId => {
@@ -856,13 +827,20 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
     },
     headers: { 'Idempotency-Key': values.idempotencyKey ?? crypto.randomUUID() },
   }).then(mapBackendBooking),
-  createSePayPayment: bookingId => request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/sepay' }),
+  refreshPayosPayment: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos/refresh' }),
+  refreshPayosRefund: bookingId => request<ManagedBooking>({ method: 'PUT', url: '/bookings/' + bookingId + '/refund/refresh' }),
+  createPayosPayment: bookingId => request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos' }),
   payBooking: async (_userId, bookingId) => {
-    await request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/sepay' })
+    await request({ method: 'PUT', url: '/bookings/' + bookingId + '/payment/payos' })
     return request<BackendBooking>({ method: 'GET', url: '/bookings/' + bookingId }).then(mapBackendBooking)
   },
   cancelBooking: async (_userId, bookingId) => request<BackendBooking>({ method: 'POST', url: '/bookings/' + bookingId + '/cancel' }).then(mapBackendBooking),
-  resolveRefund: () => { throw new DomainError('API_ONLY', 'Trạng thái hoàn tiền do backend/cổng thanh toán xác nhận.') },
+  bookingSettings: () => request<BookingSettings>({ method: 'GET', url: '/admin/settings/bookings' }),
+  platformSettings: () => request<PlatformSettingSection[]>({ method: 'GET', url: '/admin/settings/integrations' }),
+  savePlatformSettings: (section, revision, values) => request<PlatformSettingSection>({ method: 'PUT', url: '/admin/settings/integrations/' + encodeURIComponent(section), data: { revision, values } }),
+  publicMapSettings: () => request<{ mapboxToken: string | null }>({ method: 'GET', url: '/public-settings/map' }),
+  saveBookingSettings: commissionRate => request<BookingSettings>({ method: 'PUT', url: '/admin/settings/bookings', data: { commissionRate } }),
+  resolveRefund: () => { throw new DomainError('API_ONLY', 'Trạng thái hoàn tiền do máy chủ/cổng thanh toán xác nhận.') },
   addReview: (_userId, bookingId, stars, content) => request({ method: 'POST', url: '/bookings/' + bookingId + '/reviews', data: { stars, content } }),
   saveRoom: (userId, room) => request({ method: room.id ? 'PUT' : 'POST', url: '/partners/by-user/' + userId + '/rooms' + (room.id ? '/' + room.id : ''), data: room }),
   saveInventory: (userId, roomId, rows) => request({ method: 'PUT', url: '/partners/by-user/' + userId + '/rooms/' + roomId + '/inventory', data: rows }),
@@ -872,6 +850,7 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   moderateReview: (id, status, reason) => request({ method: 'POST', url: '/admin/reviews/' + id + '/moderation', data: { status, reason } }),
   settlementBatches: filters => request<SettlementBatch[]>({ method: 'GET', url: '/settlements', params: filters }),
   partnerSettlementBatches: () => request<SettlementBatch[]>({ method: 'GET', url: '/settlements/mine' }),
+  requestSettlementPayout: (id, revision) => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/payout', data: { revision } }),
   settlementBatch: id => request<SettlementBatch>({ method: 'GET', url: '/settlements/' + id }),
   createSettlementBatch: input => request<SettlementBatch>({ method: 'POST', url: '/settlements', data: input }),
   approveSettlementBatch: id => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/approve' }),
@@ -880,4 +859,79 @@ export const api: Omit<MockRepository, 'login'> & PartnerHotelsApi & AdminHotels
   failSettlementBatch: (id, reason) => request<SettlementBatch>({ method: 'POST', url: '/settlements/' + id + '/fail', data: { reason } }),
   transitionSettlement: (_id: string, _next: 'APPROVED' | 'PROCESSING' | 'PAID' | 'FAILED', _revision: number) => { throw new DomainError('API_ONLY', 'Dùng quy trình kỳ đối soát tại trang quản trị.') },
   reset: () => { throw new DomainError('API_ONLY', 'Không hỗ trợ đặt lại dữ liệu trong chế độ kết nối máy chủ.') },
+}
+
+interface BackendMapPlacePoint {
+  id: string; name: string; categoryCode: string | null; categoryName: string | null
+  latitude: number; longitude: number
+}
+
+interface BackendMapPlacePage { data: BackendMapPlacePoint[]; meta: MapPlacePage['meta'] }
+
+export interface PublicPlaceQuery {
+  page: number
+  limit: number
+  search?: string
+  city?: string
+  categoryCode?: string
+  sortBy: 'name' | 'averageRating'
+  sortOrder: 'ASC' | 'DESC'
+  relevance?: boolean
+}
+
+export type PublicPlacePage<T> = Page<T> & { searchMode?: 'semantic' | 'keyword' }
+
+export interface PublicPlaceOptions {
+  cities: string[]
+  categories: PlaceCatalogOptions['categories']
+}
+
+type PublicPlacesApi = {
+  publicPlaces: (query: PublicPlaceQuery, signal?: AbortSignal) => Promise<PublicPlacePage<Destination>>
+  publicPlace: (placeId: string, signal?: AbortSignal) => Promise<Destination>
+  publicPlaceOptions: (signal?: AbortSignal) => Promise<PublicPlaceOptions>
+  mapPlaces: (query: MapPlaceQuery, signal?: AbortSignal) => Promise<MapPlacePage>
+}
+
+type PlaceTaxonomiesApi = {
+  placeCategories: () => Promise<PlaceTaxonomy[]>
+  createPlaceCategory: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  updatePlaceCategory: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  deletePlaceCategory: (id: string) => Promise<void>
+  placeTopics: () => Promise<PlaceTaxonomy[]>
+  createPlaceTopic: (input: CreatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  updatePlaceTopic: (id: string, input: UpdatePlaceTaxonomyInput) => Promise<PlaceTaxonomy>
+  deletePlaceTopic: (id: string) => Promise<void>
+}
+
+export function googleLoginUrl(returnTo: string | null = null): string {
+  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/start'
+  if (!returnTo) return startPath
+  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
+}
+
+export function googleLinkUrl(returnTo: string | null = null): string {
+  const startPath = baseURL.replace(/\/+$/, '') + '/auth/google/link/start'
+  if (!returnTo) return startPath
+  return startPath + '?' + new URLSearchParams({ returnTo }).toString()
+}
+
+function mapBackendPlace(place: BackendPlace): Destination {
+  return {
+    id: place.id,
+    name: place.name,
+    city: place.city ?? '',
+    region: place.address ?? place.city ?? '',
+    category: place.category
+      ? placeCategoryLabels[place.category] ?? place.category
+      : 'Điểm tham quan',
+    description: place.description ?? '',
+    tags: place.tags ?? [],
+    price: place.price?.isFree ? 0 : place.price?.minPrice ?? 0,
+    ...(place.averageRating !== undefined ? { rating: place.averageRating } : {}),
+    ...(place.openingHours?.display ? { openingHours: place.openingHours.display } : {}),
+    ...(place.latitude != null ? { lat: place.latitude } : {}),
+    ...(place.longitude != null ? { lng: place.longitude } : {}),
+    ...(place.primaryImageUrl ? { image: apiAssetUrl(place.primaryImageUrl) } : {}),
+  }
 }

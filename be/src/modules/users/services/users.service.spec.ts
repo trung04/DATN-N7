@@ -52,6 +52,7 @@ describe('UsersService', () => {
       findPage: jest.fn(),
       create: createUser,
       save: saveUser,
+      activatePendingAccount: jest.fn(),
       delete: jest.fn(),
     };
     passwordHasher = { hash: hashPassword, verify: jest.fn() };

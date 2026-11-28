@@ -1,4 +1,7 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { SearchButton } from '@/components/management-search'
+import { HotelManagementLocked } from '@/components/hotel-management-locked'
+import { useSearchFilters } from '@/lib/use-search-filters'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
@@ -6,6 +9,7 @@ import { CancellationPolicyTerms } from '@/components/cancellation-policy-terms'
 import { Pagination } from '@/components/pagination'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { DialogPagination, DialogSections } from '@/components/ui/dialog-sections'
 import { Card, EmptyState, ErrorState, Feedback, FormField, LoadingState, PageHeader } from '@/components/common'
 import { fetchAllPages, pageItems, PAGE_SIZE } from '@/lib/pagination'
 import { usePagination } from '@/lib/use-pagination'
@@ -46,9 +50,10 @@ function readTiers(rows: TierRow[], tailFee: string, noCancellationAfterLast: bo
   return { tiers: [...finite, { upToHours: null, feePercent: noCancellationAfterLast ? null : Number(tailFee) }] }
 }
 
-function PolicyEditor({ policy, hotelId, canActivate, onSaved, onClose }: {
+function PolicyEditor({ policy, hotelId, hotelName, canActivate, onSaved, onClose }: {
   policy: CancellationPolicy | null
   hotelId: string
+  hotelName: string
   canActivate: boolean
   onSaved: () => Promise<void>
   onClose: () => void
@@ -65,6 +70,8 @@ function PolicyEditor({ policy, hotelId, canActivate, onSaved, onClose }: {
   const [noCancellationAfterLast, setNoCancellationAfterLast] = useState(tail?.feePercent === null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const formId = useId()
+  const [tierPage, setTierPage] = useState(0)
   const nextId = useRef(rows.length)
   const preview = readTiers(rows, tailFee, noCancellationAfterLast)
   const lastHour = preview.tiers?.at(-2)?.upToHours
@@ -96,47 +103,79 @@ function PolicyEditor({ policy, hotelId, canActivate, onSaved, onClose }: {
     }
   }
 
-  return <form className="grid gap-4" onSubmit={event => void save(event)}>
-    <FormField label="Tên chính sách"><input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></FormField>
-    <fieldset className="grid gap-3">
-      <legend className="mb-1 font-semibold text-slate-900">Các mốc phí hủy</legend>
-      <p className="text-sm text-slate-600">Mốc giờ tính từ lúc đặt phòng. Mỗi mức phí áp dụng đến hết giờ đã nhập.</p>
-      {rows.map((row, index) => <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 sm:gap-3">
-        <FormField label={'Hạn cuối mốc ' + (index + 1) + ' (giờ)'}><input required type="number" min="0" max="87600" step="1" value={row.hours} onChange={event => updateRow(row.id, 'hours', event.target.value)} /></FormField>
-        <FormField label={'Phí hủy mốc ' + (index + 1) + ' (%)'}><input required type="number" min="0" max="100" step="0.01" value={row.fee} onChange={event => updateRow(row.id, 'fee', event.target.value)} /></FormField>
-        <Button type="button" size="icon" variant="ghost" className="text-red-700" aria-label={'Xóa mốc ' + (index + 1)} onClick={() => setRows(current => current.filter(item => item.id !== row.id))}><Trash2 size={16} aria-hidden="true" /></Button>
-      </div>)}
-      <Button type="button" size="sm" variant="secondary" className="justify-self-start" onClick={() => {
+  const nameField = <FormField label="Tên chính sách">
+    <input required maxLength={100} value={name} onChange={event => setName(event.target.value)} />
+  </FormField>
+  const policyInfo = <div className="grid gap-3">
+    <div className="grid gap-3 sm:grid-cols-2">
+      {nameField}
+      <FormField label="Trạng thái">
+        <select value={active ? 'active' : 'inactive'} onChange={event => setActive(event.target.value === 'active')}>
+          <option value="active" disabled={!canActivate}>Áp dụng cho đơn đặt phòng mới</option>
+          <option value="inactive">Chưa áp dụng</option>
+        </select>
+      </FormField>
+    </div>
+    <FormField label="Mô tả thêm"><textarea maxLength={5000} value={description} onChange={event => setDescription(event.target.value)} /></FormField>
+  </div>
+
+  const pageSize = 2
+  const currentPage = Math.min(tierPage, Math.max(0, Math.ceil(rows.length / pageSize) - 1))
+  const firstTier = currentPage * pageSize
+  const tierFields = <fieldset className="grid gap-2">
+    <legend className="sr-only">Các mốc phí hủy</legend>
+    <p className="text-sm text-slate-600">Mốc giờ tính từ lúc đặt phòng. Mỗi mức phí áp dụng đến hết giờ đã nhập.</p>
+    {rows.slice(firstTier, firstTier + pageSize).map((row, index) => {
+      const tierNumber = firstTier + index + 1
+      return <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2 sm:gap-3">
+        <FormField label={`Hạn cuối mốc ${tierNumber} (giờ)`}><input required type="number" min="0" max="87600" step="1" value={row.hours} onChange={event => updateRow(row.id, 'hours', event.target.value)} /></FormField>
+        <FormField label={`Phí hủy mốc ${tierNumber} (%)`}><input required type="number" min="0" max="100" step="0.01" value={row.fee} onChange={event => updateRow(row.id, 'fee', event.target.value)} /></FormField>
+        <Button type="button" size="icon" variant="ghost" className="text-red-700" aria-label={`Xóa mốc ${tierNumber}`} onClick={() => {
+          setRows(current => current.filter(item => item.id !== row.id))
+          setTierPage(Math.min(currentPage, Math.max(0, Math.ceil((rows.length - 1) / pageSize) - 1)))
+        }}><Trash2 size={16} aria-hidden="true" /></Button>
+      </div>
+    })}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <Button type="button" size="sm" variant="secondary" onClick={() => {
         const id = nextId.current++
         setRows(current => [...current, { id, hours: '', fee: '' }])
+        setTierPage(Math.floor(rows.length / pageSize))
       }}><Plus size={16} aria-hidden="true" />Thêm mốc</Button>
-      <div className="grid gap-3 rounded-xl border border-[#DBE8F3] bg-[#F2F7FB] p-3.5 sm:grid-cols-2">
-        <FormField label={highestHour === undefined ? rows.length === 0 ? 'Kể từ lúc đặt phòng' : 'Sau mốc cuối' : 'Sau ' + highestHour + ' giờ'}>
-          <select value={noCancellationAfterLast ? 'deny' : 'charge'} onChange={event => setNoCancellationAfterLast(event.target.value === 'deny')}>
-            <option value="charge">Áp dụng phí hủy</option>
-            <option value="deny">Không cho hủy</option>
-          </select>
-        </FormField>
-        {!noCancellationAfterLast && <FormField label="Phí hủy sau mốc cuối (%)"><input required type="number" min="0" max="100" step="0.01" value={tailFee} onChange={event => setTailFee(event.target.value)} /></FormField>}
-      </div>
-    </fieldset>
-    <FormField label="Mô tả thêm"><textarea maxLength={5000} value={description} onChange={event => setDescription(event.target.value)} /></FormField>
-    <FormField label="Trạng thái">
-      <select value={active ? 'active' : 'inactive'} onChange={event => setActive(event.target.value === 'active')}>
-        <option value="active" disabled={!canActivate}>Áp dụng cho đơn đặt phòng mới</option>
-        <option value="inactive">Chưa áp dụng</option>
-      </select>
-    </FormField>
-    {preview.tiers && <section aria-labelledby="policy-preview">
-      <h3 id="policy-preview" className="mb-2 font-semibold text-slate-900">Khách sẽ thấy</h3>
-      <CancellationPolicyTerms tiers={preview.tiers} description={description.trim()} />
-    </section>}
-    <Feedback message={error} kind="error" />
-    <div className="flex flex-wrap justify-end gap-2">
-      <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>Đóng</Button>
-      <Button disabled={busy}>{busy ? 'Đang lưu…' : active ? 'Lưu và áp dụng' : 'Lưu chính sách'}</Button>
+      <DialogPagination label="Trang mốc phí hủy" page={currentPage} pageSize={pageSize} total={rows.length} onChange={setTierPage} />
     </div>
-  </form>
+    <div className="grid grid-cols-2 items-start gap-2 rounded-lg border border-[#DBE8F3] bg-[#F2F7FB] p-2 sm:p-3">
+      <FormField label={highestHour === undefined ? rows.length === 0 ? 'Kể từ lúc đặt phòng' : 'Sau mốc cuối' : 'Sau ' + highestHour + ' giờ'}>
+        <select value={noCancellationAfterLast ? 'deny' : 'charge'} onChange={event => setNoCancellationAfterLast(event.target.value === 'deny')}>
+          <option value="charge">Áp dụng phí hủy</option>
+          <option value="deny">Không cho hủy</option>
+        </select>
+      </FormField>
+      {!noCancellationAfterLast && <FormField label="Phí hủy sau mốc cuối (%)"><input required type="number" min="0" max="100" step="0.01" value={tailFee} onChange={event => setTailFee(event.target.value)} /></FormField>}
+    </div>
+  </fieldset>
+
+  return <DialogContent
+    title={policy ? 'Sửa chính sách hủy' : 'Thêm chính sách hủy'}
+    description={hotelName}
+    layout="workspace"
+    className="max-w-4xl"
+    footer={<>
+      <Button variant="secondary" disabled={busy} onClick={onClose}>Hủy</Button>
+      <Button form={formId} type="submit" disabled={busy}>{busy ? 'Đang lưu…' : active ? 'Lưu và áp dụng' : 'Lưu chính sách'}</Button>
+    </>}
+  >
+    <form id={formId} className="grid gap-3" onSubmit={event => void save(event)}>
+      <DialogSections label="Chỉnh sửa chính sách hủy" sections={[
+        { id: 'info', label: 'Thông tin', content: policyInfo },
+        { id: 'tiers', label: 'Mốc phí hủy', content: tierFields },
+        { id: 'preview', label: 'Xem trước', content: preview.tiers
+          ? <CancellationPolicyTerms tiers={preview.tiers} description={description.trim()} />
+          : <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{preview.error}</p> },
+      ]} />
+      <Feedback message={error} kind="error" />
+    </form>
+  </DialogContent>
 }
 
 function PolicyCard({ policy, edit, remove }: { policy: CancellationPolicy; edit: () => void; remove: () => void }) {
@@ -162,9 +201,12 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
   const [params, setParams] = useSearchParams()
   const queryClient = useQueryClient()
   const hotels = useQuery({ queryKey: [admin ? 'admin' : 'partner', 'policy-hotels'], queryFn: () => loadHotelOptions(admin) })
-  const hotel = hotels.data?.find(item => item.id === params.get('hotelId')) ?? hotels.data?.[0]
+  const hotel = hotels.data?.find(item => item.id === params.get('hotelId'))
+    ?? (admin ? undefined : hotels.data?.find(item => item.status === 'ACTIVE')) ?? hotels.data?.[0]
   const hotelId = hotel?.id ?? ''
-  const policies = useQuery({ queryKey: ['cancellation-policies', hotelId], queryFn: () => fetchAllPages(page => api.cancellationPolicies(hotelId, page)), enabled: Boolean(hotelId) })
+  const canOperate = Boolean(hotelId) && (admin || hotel?.status === 'ACTIVE')
+  const { filters, changeFilters, applyFilters } = useSearchFilters(params, setParams, { hotelId })
+  const policies = useQuery({ queryKey: ['cancellation-policies', hotelId], queryFn: () => fetchAllPages(page => api.cancellationPolicies(hotelId, page)), enabled: canOperate })
   const activePolicy = policies.data?.find(policy => policy.isActive)
   const inactive = policies.data?.filter(policy => !policy.isActive) ?? []
   const pagination = usePagination(policies.data && inactive.length)
@@ -183,7 +225,7 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
   }
 
   async function remove() {
-    if (!deleting) return
+    if (!deleting || !canOperate || deleting.hotelId !== hotelId) return
     setBusy(true)
     setError('')
     try {
@@ -207,22 +249,18 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
     edit={() => setEditor({ hotelId, policy })}
     remove={() => { setDeleting(policy); setError('') }} />
 
-  return <div>
-    <PageHeader title="Chính sách hủy" description="Thiết lập mức phí theo thời gian tính từ lúc đặt phòng." actions={activePolicy && <Button onClick={addPolicy}><Plus size={16} aria-hidden="true" />Thêm chính sách</Button>} />
-    <div className="mb-5 max-w-lg"><FormField label="Khách sạn">
-      <select value={hotelId} onChange={event => {
-        const next = new URLSearchParams(params)
-        next.delete('page')
-        next.set('hotelId', event.target.value)
-        setParams(next, { replace: true })
-        setNotice('')
-      }}>{hotels.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-    </FormField></div>
+  return <div className="management-list">
+    <PageHeader title="Chính sách hủy" description="Thiết lập mức phí theo thời gian tính từ lúc đặt phòng." actions={canOperate && activePolicy && <Button onClick={addPolicy}><Plus size={16} aria-hidden="true" />Thêm chính sách</Button>} />
+    <form onSubmit={event => { applyFilters(event); setNotice('') }} aria-label="Tìm kiếm chính sách hủy" className="management-filters grid max-w-lg grid-cols-[minmax(0,1fr)_auto] items-end gap-2 rounded-xl border border-slate-200 bg-white">
+      <FormField label="Khách sạn"><select value={filters.hotelId} onChange={event => changeFilters({ hotelId: event.target.value })}>{hotels.data.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></FormField>
+      <SearchButton />
+    </form>
 
+    {!canOperate ? <HotelManagementLocked hotel={hotel} /> : <>
     <Feedback message={notice} />
     {policies.isPending ? <LoadingState /> : policies.isError
       ? <ErrorState message={errorMessage(policies.error)} retry={() => { void policies.refetch() }} />
-      : <div className="mt-4 grid gap-5">
+      : <div className="management-results grid gap-3">
         {activePolicy ? policyCard(activePolicy) : <Card className="rounded-2xl p-5">
           <EmptyState
             title={inactive.length ? 'Chưa có chính sách đang áp dụng' : 'Khách sạn chưa có chính sách hủy'}
@@ -233,18 +271,16 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
         {inactive.length > 0 && <section aria-labelledby="inactive-policies" className="grid gap-3">
           <h2 id="inactive-policies" className="font-semibold text-slate-900">Chính sách chưa áp dụng</h2>
           {pageItems(inactive, pagination.page, pagination.size).map(policyCard)}
-          {inactive.length > Math.min(PAGE_SIZE, pagination.size) && <Pagination page={pagination.page} total={inactive.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />}
         </section>}
       </div>}
+    {inactive.length > Math.min(PAGE_SIZE, pagination.size) && <Pagination page={pagination.page} total={inactive.length} onPageChange={pagination.setPage} size={pagination.size} onSizeChange={pagination.setSize} />}
 
-    <Dialog open={Boolean(editor)} onOpenChange={open => { if (!open) setEditor(null) }}>
-      {editor && <DialogContent className="max-w-2xl" title={editor.policy ? 'Sửa chính sách hủy' : 'Thêm chính sách hủy'} description={hotel.name}>
-        <PolicyEditor policy={editor.policy} hotelId={editor.hotelId} canActivate={!activePolicy || editor.policy?.id === activePolicy.id}
-          onClose={() => setEditor(null)} onSaved={async () => { await refresh(editor.hotelId); setEditor(null); setNotice('Đã lưu chính sách hủy.') }} />
-      </DialogContent>}
+    <Dialog open={editor?.hotelId === hotelId} onOpenChange={open => { if (!open) setEditor(null) }}>
+      {editor?.hotelId === hotelId && <PolicyEditor policy={editor.policy} hotelId={editor.hotelId} hotelName={hotel.name} canActivate={!activePolicy || editor.policy?.id === activePolicy.id}
+          onClose={() => setEditor(null)} onSaved={async () => { await refresh(editor.hotelId); setEditor(null); setNotice('Đã lưu chính sách hủy.') }} />}
     </Dialog>
 
-    <Dialog open={Boolean(deleting)} onOpenChange={open => { if (!open && !busy) setDeleting(null) }}>
+    <Dialog open={deleting?.hotelId === hotelId} onOpenChange={open => { if (!open && !busy) setDeleting(null) }}>
       <DialogContent title="Xóa chính sách hủy?" description={deleting?.name}>
         <p className="text-sm text-slate-600">{deleting?.isActive ? 'Khách sạn cần áp dụng chính sách khác để nhận đơn đặt phòng mới. ' : ''}Đơn đã đặt dùng điều khoản đã lưu lúc đặt.</p>
         <Feedback message={error} kind="error" />
@@ -254,5 +290,6 @@ export function CancellationPoliciesPage({ admin = false }: { admin?: boolean })
         </div>
       </DialogContent>
     </Dialog>
+    </>}
   </div>
 }

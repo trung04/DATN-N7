@@ -7,6 +7,7 @@ import {
   ImageStorageProvider,
 } from '../../media/entities/image.entity';
 import { HotelImageEntity } from '../entities/hotel-image.entity';
+import { HotelEntity, HotelStatus } from '../entities/hotel.entity';
 import type {
   CreateHotelImageData,
   HotelImageRepository,
@@ -70,19 +71,28 @@ export class TypeOrmHotelImageRepository implements HotelImageRepository {
   async delete(
     hotelId: string,
     id: string,
-    deleteOwnedImage: boolean,
-  ): Promise<void> {
-    await this.repository.manager.transaction(async (manager) => {
-      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `hotel-images:${hotelId}`,
-      ]);
-      const link = await manager
-        .getRepository(HotelImageEntity)
-        .findOne({ where: { hotelId, id } });
-      if (!link) return;
-      await manager.getRepository(HotelImageEntity).softDelete(link.id);
-      if (deleteOwnedImage)
-        await manager.getRepository(ImageEntity).softDelete(link.imageId);
-    });
+    beforeDelete: (image: HotelImageEntity, status: HotelStatus) => Promise<boolean>,
+  ): Promise<boolean> {
+    const runner = this.repository.manager.connection.createQueryRunner();
+    const key = [`hotel-images:${hotelId}`];
+    try {
+      // Keep uploads and submission serialized with deletion while storage I/O runs outside a transaction.
+      await runner.query('SELECT pg_advisory_lock(hashtext($1))', key);
+      try {
+        const hotel = await runner.manager.findOneBy(HotelEntity, { id: hotelId });
+        const link = await runner.manager.findOneBy(HotelImageEntity, { hotelId, id });
+        if (!hotel || !link) return false;
+        const deleteOwnedImage = await beforeDelete(link, hotel.status);
+        await runner.manager.transaction(async (manager) => {
+          await manager.softDelete(HotelImageEntity, link.id);
+          if (deleteOwnedImage) await manager.softDelete(ImageEntity, link.imageId);
+        });
+        return true;
+      } finally {
+        await runner.query('SELECT pg_advisory_unlock(hashtext($1))', key);
+      }
+    } finally {
+      await runner.release();
+    }
   }
 }

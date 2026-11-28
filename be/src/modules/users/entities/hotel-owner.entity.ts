@@ -15,6 +15,9 @@ export class HotelOwnerEntity {
   @Column({ name: 'bank_name', type: 'varchar', length: 150, nullable: true })
   bankName: string | null;
 
+  @Column({ name: 'bank_bin', type: 'varchar', length: 6, nullable: true })
+  bankBin: string | null;
+
   @Column({
     name: 'bank_account_number',
     type: 'varchar',

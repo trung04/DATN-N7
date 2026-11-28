@@ -2,6 +2,9 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import type { NextFunction, Response } from 'express';
+import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
+import { UserRole } from '../src/modules/users/entities/user.entity';
 import { ProblemDetailsFilter } from '../src/common/filters/problem-details.filter';
 import { configureHttpApplication } from '../src/common/http/configure-http-application';
 import { ActivitiesController } from '../src/modules/activities/controllers/activities.controller';
@@ -63,6 +66,10 @@ describe('Itinerary management API (e2e)', () => {
       ],
     }).compile();
     app = module.createNestApplication();
+    app.use((request: AuthenticatedRequest, _response: Response, next: NextFunction) => {
+      request.authUser = { id: touristUserId, role: UserRole.TOURIST } as AuthenticatedRequest['authUser'];
+      next();
+    });
     configureHttpApplication(app);
     app.useGlobalFilters(new ProblemDetailsFilter());
     await app.init();
@@ -76,6 +83,7 @@ describe('Itinerary management API (e2e)', () => {
         id: itineraryId,
         touristUserId,
         name: 'Central Vietnam',
+        destinationCity: 'Da Nang',
         description: null,
         startDate: '2026-12-01',
         endDate: '2026-12-05',
@@ -94,8 +102,8 @@ describe('Itinerary management API (e2e)', () => {
     await request(app.getHttpServer())
       .post('/api/v1/itineraries')
       .send({
-        touristUserId,
         name: 'Central Vietnam',
+        destinationCity: 'Da Nang',
         startDate: '2026-12-01',
         endDate: '2026-12-05',
         adultCount: 2,

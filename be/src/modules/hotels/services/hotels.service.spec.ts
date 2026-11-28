@@ -3,19 +3,21 @@ import { PlacesService } from '../../places/services/places.service';
 import { UsersService } from '../../users/services/users.service';
 import { UserRole } from '../../users/entities/user.entity';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
+import { ListHotelsRequest } from '../dtos/requests/list-hotels.request';
 import { HotelReviewCommand } from '../dtos/requests/review-hotel.request';
 import {
   HotelDocumentEntity,
   HotelDocumentType,
 } from '../entities/hotel-document.entity';
 import { HotelReviewAction } from '../entities/hotel-review-history.entity';
+import { HotelImageEntity } from '../entities/hotel-image.entity';
 import { HotelEntity, HotelStatus } from '../entities/hotel.entity';
 import {
   HotelDocumentLockedException,
   HotelLegalInformationLockedException,
   HotelNotActiveException,
+  HotelNotFoundException,
   HotelSubmissionInvalidException,
-  InvalidHotelStatusTransitionException,
 } from '../exceptions/hotel.exceptions';
 import type { HotelRepository } from '../interfaces/hotel.repository.interface';
 import { HotelsService } from './hotels.service';
@@ -24,6 +26,7 @@ const hotelId = '11111111-1111-4111-8111-111111111111';
 const ownerUserId = '22222222-2222-4222-8222-222222222222';
 const reviewerUserId = '33333333-3333-4333-8333-333333333333';
 const ownerActor = { id: ownerUserId, role: UserRole.HOTEL_OWNER };
+const adminActor = { id: reviewerUserId, role: UserRole.ADMIN };
 
 const document = (
   overrides: Partial<HotelDocumentEntity> = {},
@@ -171,8 +174,37 @@ describe('HotelsService', () => {
     expect(repository.save.mock.calls).toHaveLength(0);
   });
 
-  it('submits a hotel with a valid business license without rooms or policies', async () => {
-    const existing = hotel({ documents: [document()] });
+  it('allows the owner to read a pending hotel and unlocks operations after approval', async () => {
+    const pending = hotel({ status: HotelStatus.PENDING_APPROVAL });
+    repository.findById.mockResolvedValue(pending);
+    await expect(service.assertManagedBy(hotelId, ownerActor)).resolves.toBe(pending);
+    await expect(service.assertManagedBy(hotelId, ownerActor, { requiresActiveHotel: true }))
+      .rejects.toMatchObject({ code: 'HOTEL_UPDATE_LOCKED' });
+    await expect(service.assertManagedBy(hotelId, adminActor, { requiresActiveHotel: true }))
+      .resolves.toBe(pending);
+
+    const active = hotel({ status: HotelStatus.ACTIVE });
+    repository.findById.mockResolvedValue(active);
+    await expect(service.assertManagedBy(hotelId, ownerActor, { requiresActiveHotel: true }))
+      .resolves.toBe(active);
+    await expect(service.assertManagedBy(hotelId, { ...ownerActor, id: reviewerUserId }, { requiresActiveHotel: true }))
+      .rejects.toBeInstanceOf(AuthorizationDeniedException);
+  });
+
+  it.each([HotelStatus.DRAFT, HotelStatus.REJECTED, HotelStatus.INACTIVE, HotelStatus.SUSPENDED])(
+    'disallows owner operations while the hotel is %s',
+    async (status) => {
+      repository.findById.mockResolvedValue(hotel({ status }));
+      await expect(service.assertManagedBy(hotelId, ownerActor, { requiresActiveHotel: true }))
+        .rejects.toBeInstanceOf(HotelNotActiveException);
+    },
+  );
+
+  it('submits a hotel with a photo and a valid license even if another license expired', async () => {
+    const existing = hotel({
+      documents: [document({ expiresAt: '2020-01-01' }), document({ expiresAt: null })],
+      images: [new HotelImageEntity()],
+    });
     repository.findById.mockResolvedValue(existing);
     repository.saveWithReview.mockImplementation(async (value) => value);
 
@@ -185,15 +217,21 @@ describe('HotelsService', () => {
         actorUserId: ownerUserId,
         action: HotelReviewAction.SUBMITTED,
       }),
+      expect.any(Function),
     ]);
   });
 
-  it('does not submit a hotel without a business license', async () => {
-    repository.findById.mockResolvedValue(hotel());
-
+  it.each([
+    hotel({ images: [new HotelImageEntity()] }),
+    hotel({ images: [new HotelImageEntity()], documents: [document({ fileUrl: '' })] }),
+    hotel({ images: [new HotelImageEntity()], documents: [document({ expiresAt: '2020-01-01' })] }),
+    hotel({ images: [], documents: [document()] }),
+  ])('does not submit an incomplete hotel profile', async (incomplete) => {
+    repository.findById.mockResolvedValue(incomplete);
     await expect(service.submit(hotelId, ownerActor)).rejects.toBeInstanceOf(
       HotelSubmissionInvalidException,
     );
+    expect(repository.saveWithReview).not.toHaveBeenCalled();
   });
 
   it('approves only a pending hotel with valid documents', async () => {
@@ -216,16 +254,71 @@ describe('HotelsService', () => {
     ]);
   });
 
-  it('rejects an invalid approval transition', async () => {
-    repository.findById.mockResolvedValue(
-      hotel({ status: HotelStatus.DRAFT, documents: [document()] }),
-    );
+  it('excludes drafts from the review list and keeps them in the owner list', async () => {
+    const query = Object.assign(new ListHotelsRequest(), {
+      page: 2,
+      limit: 6,
+      search: 'Sun',
+      status: HotelStatus.DRAFT,
+    });
+    repository.findPage.mockResolvedValue({ items: [], total: 0 });
 
+    await service.findReviewPage(query);
+    await service.findOwnedPage(query, ownerUserId);
+
+    expect(repository.findPage.mock.calls).toEqual([
+      [
+        expect.objectContaining({
+          page: 2,
+          limit: 6,
+          search: 'Sun',
+          status: HotelStatus.DRAFT,
+          excludedStatus: HotelStatus.DRAFT,
+        }),
+      ],
+      [
+        expect.objectContaining({
+          ownerUserId,
+          status: HotelStatus.DRAFT,
+          excludedStatus: undefined,
+        }),
+      ],
+    ]);
+  });
+
+  it('keeps a draft accessible to its owner and out of admin review and management', async () => {
+    const draft = hotel();
+    repository.findById.mockResolvedValue(draft);
+
+    await expect(service.assertManagedBy(hotelId, ownerActor)).resolves.toBe(
+      draft,
+    );
+    await expect(
+      service.assertManagedBy(hotelId, adminActor),
+    ).rejects.toBeInstanceOf(HotelNotFoundException);
+    await expect(service.findForReview(hotelId)).rejects.toBeInstanceOf(
+      HotelNotFoundException,
+    );
+    await expect(service.findReviewHistory(hotelId)).rejects.toBeInstanceOf(
+      HotelNotFoundException,
+    );
     await expect(
       service.review(hotelId, reviewerUserId, {
         action: HotelReviewCommand.APPROVE,
       }),
-    ).rejects.toBeInstanceOf(InvalidHotelStatusTransitionException);
+    ).rejects.toBeInstanceOf(HotelNotFoundException);
+    expect(repository.findReviewHistory.mock.calls).toHaveLength(0);
+    expect(repository.saveWithReview.mock.calls).toHaveLength(0);
+  });
+
+  it('keeps active hotels without a submission date available for review', async () => {
+    const active = hotel({ status: HotelStatus.ACTIVE });
+    repository.findById.mockResolvedValue(active);
+
+    await expect(service.findForReview(hotelId)).resolves.toBe(active);
+    await expect(service.assertManagedBy(hotelId, adminActor)).resolves.toBe(
+      active,
+    );
   });
 
   it('locks approved legal information and documents', async () => {

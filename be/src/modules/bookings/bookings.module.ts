@@ -5,9 +5,13 @@ import { RoomsModule } from '../rooms/rooms.module';
 import { HotelsModule } from '../hotels/hotels.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { BookingsController } from './controllers/bookings.controller';
+import { AdminBookingSettingsController } from './controllers/admin-booking-settings.controller';
 import { SettlementsController } from './controllers/settlements.controller';
-import { SePayCallbacksController } from './controllers/sepay-callbacks.controller';
+import { PayosGatewayClient } from './integrations/payos/payos.gateway';
+import { PAYOS_GATEWAY } from './interfaces/payos-gateway.interface';
+import { PayosWebhookController } from './controllers/payos-webhook.controller';
 import { BookingEntity } from './entities/booking.entity';
+import { BookingSettingsEntity } from './entities/booking-settings.entity';
 import { BookingIdempotencyKeyEntity } from './entities/booking-idempotency-key.entity';
 import { BookingRoomEntity } from './entities/booking-room.entity';
 import { BookingRoomChildEntity } from './entities/booking-room-child.entity';
@@ -15,22 +19,22 @@ import { SettlementBatchEntity } from './entities/settlement-batch.entity';
 import { SettlementItemEntity } from './entities/settlement-item.entity';
 import { SettlementBatchEventEntity } from './entities/settlement-batch-event.entity';
 import { RandomBookingCodeGenerator } from './integrations/code/random-booking-code.generator';
-import { SePayV2ClientImpl } from './integrations/sepay/sepay-v2.client';
 import { BOOKING_CODE_GENERATOR } from './interfaces/booking-code-generator.interface';
 import { BOOKING_REPOSITORY } from './interfaces/booking.repository.interface';
-import { SEPAY_V2_CLIENT } from './interfaces/sepay-v2.interface';
+import { BOOKING_SETTINGS_REPOSITORY } from './interfaces/booking-settings.repository.interface';
 import { TypeOrmBookingRepository } from './repositories/typeorm-booking.repository';
+import { TypeOrmBookingSettingsRepository } from './repositories/typeorm-booking-settings.repository';
 import { TypeOrmSettlementRepository } from './repositories/typeorm-settlement.repository';
 import { BookingsService } from './services/bookings.service';
+import { BookingSettingsService } from './services/booking-settings.service';
 import { SettlementsService } from './services/settlements.service';
 import { SETTLEMENT_REPOSITORY } from './interfaces/settlement.repository.interface';
-import { SEPAY_BANKHUB_PAYOUT } from './interfaces/sepay-bankhub-payout.interface';
-import { SePayBankHubPayoutClientImpl } from './integrations/sepay/sepay-bankhub-payout.client';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       BookingEntity,
+      BookingSettingsEntity,
       BookingRoomEntity,
       BookingRoomChildEntity,
       BookingIdempotencyKeyEntity,
@@ -43,15 +47,14 @@ import { SePayBankHubPayoutClientImpl } from './integrations/sepay/sepay-bankhub
     HotelsModule,
     NotificationsModule,
   ],
-  controllers: [BookingsController, SePayCallbacksController, SettlementsController],
+  controllers: [BookingsController, AdminBookingSettingsController, SettlementsController, PayosWebhookController],
   providers: [
     BookingsService,
+    BookingSettingsService,
+    { provide: BOOKING_SETTINGS_REPOSITORY, useClass: TypeOrmBookingSettingsRepository },
+    { provide: PAYOS_GATEWAY, useClass: PayosGatewayClient },
     SettlementsService,
     { provide: SETTLEMENT_REPOSITORY, useClass: TypeOrmSettlementRepository },
-    {
-      provide: SEPAY_BANKHUB_PAYOUT,
-      useClass: SePayBankHubPayoutClientImpl,
-    },
     {
       provide: BOOKING_REPOSITORY,
       useClass: TypeOrmBookingRepository,
@@ -59,10 +62,6 @@ import { SePayBankHubPayoutClientImpl } from './integrations/sepay/sepay-bankhub
     {
       provide: BOOKING_CODE_GENERATOR,
       useClass: RandomBookingCodeGenerator,
-    },
-    {
-      provide: SEPAY_V2_CLIENT,
-      useClass: SePayV2ClientImpl,
     },
   ],
 })

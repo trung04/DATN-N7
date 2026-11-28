@@ -44,6 +44,19 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
     return this.repository.findOneBy({ id });
   }
 
+  async findImageObjectKey(placeId: string, imageId: string): Promise<string | null> {
+    const rows = (await this.repository.query(
+      `SELECT i.object_key
+       FROM place_images pi
+       JOIN places p ON p.id = pi.place_id AND p.deleted_at IS NULL
+       JOIN images i ON i.id = pi.image_id AND i.deleted_at IS NULL
+       WHERE pi.place_id = $1 AND pi.image_id = $2 AND pi.deleted_at IS NULL
+         AND i.storage_provider = 'MINIO' AND i.object_key LIKE 'places/%'`,
+      [placeId, imageId],
+    )) as Array<{ object_key: string }>;
+    return rows[0]?.object_key ?? null;
+  }
+
   async findDetailsById(id: string): Promise<PlaceDetailsData | null> {
     const place = await this.findById(id);
     if (!place) return null;
@@ -341,14 +354,27 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
       }
     }
 
-    if (catalog.imageUrl !== undefined) {
+    if (catalog.uploadedImage || catalog.imageUrl !== undefined) {
       await manager.query(
         `UPDATE place_images SET deleted_at = now(), updated_at = now()
          WHERE place_id = $1 AND deleted_at IS NULL`,
         [placeId],
       );
-      if (catalog.imageUrl) {
-        let images = (await manager.query(
+      if (catalog.uploadedImage) {
+        const { objectKey, byteSize, width, height } = catalog.uploadedImage;
+        await manager.query(
+          `WITH uploaded AS (
+             INSERT INTO images (storage_provider, object_key, content_type,
+                                 byte_size, width, height, alt_text, source_provider)
+             VALUES ('MINIO', $2, 'image/webp', $3, $4, $5, $6, 'ADMIN')
+             RETURNING id
+           )
+           INSERT INTO place_images (place_id, image_id, image_order)
+           SELECT $1, id, 1 FROM uploaded`,
+          [placeId, objectKey, byteSize, width, height, catalog.imageAltText ?? null],
+        );
+      } else if (catalog.imageUrl) {
+        const images = (await manager.query(
           `SELECT id FROM images
            WHERE image_url = $1 AND deleted_at IS NULL LIMIT 1`,
           [catalog.imageUrl],
@@ -446,7 +472,11 @@ export class TypeOrmPlaceRepository implements PlaceRepository {
           COALESCE((
             SELECT jsonb_agg(
               jsonb_build_object(
-                'imageUrl', i.image_url,
+                'imageUrl', CASE
+                  WHEN i.storage_provider = 'MINIO' AND i.object_key LIKE 'places/%'
+                  THEN '/api/v1/places/' || p.id || '/images/' || i.id || '/file'
+                  ELSE i.image_url
+                END,
                 'imageOrder', pi.image_order,
                 'altText', i.alt_text,
                 'attributionText', i.attribution_text

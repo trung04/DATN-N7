@@ -4,7 +4,9 @@ import { HotelsService } from '../../hotels/services/hotels.service';
 import {
   CancellationPolicyNameConflictException,
   CancellationPolicyNotFoundException,
+  CancellationPolicyRequiredException,
   EmptyCancellationPolicyUpdateException,
+  InvalidCancellationPolicyRangeException,
 } from '../exceptions/cancellation-policy.exceptions';
 import type { CancellationPolicyRepository } from '../interfaces/cancellation-policy.repository.interface';
 import { CancellationPoliciesService } from './cancellation-policies.service';
@@ -137,5 +139,41 @@ describe('CancellationPoliciesService', () => {
       CancellationPolicyNotFoundException,
     );
   });
+
+  it('blocks new bookings when there is no active policy', async () => {
+    await expect(service.getSchedule(hotelId)).resolves.toMatchObject({ complete: false, rules: [] });
+    await expect(service.getCompleteScheduleForBooking(hotelId, 'old'))
+      .rejects.toBeInstanceOf(CancellationPolicyRequiredException);
+  });
+
+  it('includes the tiers in the schedule and versions changes', async () => {
+    const tiers = [
+      { upToHours: 32, feePercent: 0 },
+      { upToHours: 45, feePercent: 16 },
+      { upToHours: 72, feePercent: 20 },
+      { upToHours: null, feePercent: null },
+    ];
+    repository.findByHotelAndName.mockResolvedValue(null);
+    createPolicy.mockResolvedValue(policy({ tiers }));
+    await service.create({ hotelId, name: 'Nhiều mốc', tiers }, ownerActor);
+    expect(createPolicy).toHaveBeenCalledWith(expect.objectContaining({ tiers, cancelHours: 32 }));
+    repository.findActiveByHotel.mockResolvedValue(policy({ tiers }));
+    const first = await service.getSchedule(hotelId);
+    expect(first.rules[0]?.tiers).toEqual(tiers);
+    const changed = [...tiers.slice(0, -1), { upToHours: null, feePercent: 35 }];
+    repository.findActiveByHotel.mockResolvedValue(policy({ tiers: changed }));
+    await expect(service.getSchedule(hotelId)).resolves.not.toMatchObject({ version: first.version });
+  });
+
+  it.each([
+    [[{ upToHours: 32, feePercent: 0 }]],
+    [[{ upToHours: 32, feePercent: 0 }, { upToHours: 32, feePercent: 16 }, { upToHours: null, feePercent: 20 }]],
+    [[{ upToHours: 45, feePercent: 0 }, { upToHours: 32, feePercent: 16 }, { upToHours: null, feePercent: 20 }]],
+    [[{ upToHours: 32, feePercent: 101 }, { upToHours: null, feePercent: 20 }]],
+  ])('rejects invalid schedules before persisting them (%j)', async tiers => {
+    repository.findByHotelAndName.mockResolvedValue(null);
+    await expect(service.create({ hotelId, name: 'Invalid', tiers }, ownerActor))
+      .rejects.toBeInstanceOf(InvalidCancellationPolicyRangeException);
+    expect(createPolicy).not.toHaveBeenCalled();
+  });
 });
-import { HotelsService } from '../../hotels/services/hotels.service';

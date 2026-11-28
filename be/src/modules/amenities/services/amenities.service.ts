@@ -70,7 +70,9 @@ export class AmenitiesService {
     input: CreateAmenityRequest,
     actor: AuthorizationActor,
   ): Promise<AmenityEntity> {
-    await this.hotelsService.assertManagedBy(hotelId, actor);
+    await this.hotelsService.assertManagedBy(hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     const code = this.normalizeCode(input.code);
     if (await this.repository.findByCode(code, hotelId)) {
       throw new AmenityCodeConflictException(code);
@@ -84,7 +86,9 @@ export class AmenitiesService {
     input: UpdateAmenityRequest,
     actor: AuthorizationActor,
   ): Promise<AmenityEntity> {
-    await this.hotelsService.assertManagedBy(hotelId, actor);
+    await this.hotelsService.assertManagedBy(hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     if (input.code === undefined && input.name === undefined) {
       throw new EmptyAmenityUpdateException();
     }
@@ -101,7 +105,9 @@ export class AmenitiesService {
   }
 
   async deleteForHotel(hotelId: string, id: string, actor: AuthorizationActor): Promise<void> {
-    await this.hotelsService.assertManagedBy(hotelId, actor);
+    await this.hotelsService.assertManagedBy(hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     const amenity = await this.repository.findById(id);
     if (!amenity || amenity.hotelId !== hotelId) throw new AmenityNotFoundException(id);
     await this.repository.delete(amenity);

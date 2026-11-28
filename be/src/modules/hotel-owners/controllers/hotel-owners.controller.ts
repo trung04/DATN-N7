@@ -67,6 +67,11 @@ export class HotelOwnersController {
     );
   }
 
+  @Get('banks')
+  listBanks() {
+    return this.hotelOwnersService.listBanks();
+  }
+
   @Get(':userId')
   @ApiDetailOperation('Get a hotel owner profile', HotelOwnerResponse, 'userId')
   async findByUserId(

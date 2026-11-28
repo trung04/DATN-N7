@@ -106,6 +106,12 @@ export class AuthEmailDeliveryException extends DomainException {
   }
 }
 
+export class AuthRegistrationSessionUnavailableException extends DomainException {
+  constructor() {
+    super('Could not start a session. Request a new verification code and try again.', 'AUTH_REGISTRATION_SESSION_UNAVAILABLE', 'service_unavailable');
+  }
+}
+
 export class TwoFactorCodeInvalidException extends DomainException {
   constructor() {
     super('The two-factor code is invalid or expired.', 'TWO_FACTOR_CODE_INVALID', 'unauthorized');

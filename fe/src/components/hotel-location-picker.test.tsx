@@ -20,6 +20,7 @@ vi.mock('mapbox-gl', () => ({ default: {
   NavigationControl: class {},
 } }))
 vi.mock('@/lib/hotel-location-search', () => ({ searchHotelLocations: vi.fn() }))
+vi.mock('@/lib/use-mapbox-token', () => ({ useMapboxToken: () => import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() }))
 
 function Form({ disabled = false, address = '1 Beach Road' }: { disabled?: boolean; address?: string }) {
   const [point, setPoint] = useState<HotelCoordinates>({ latitude: null, longitude: null })

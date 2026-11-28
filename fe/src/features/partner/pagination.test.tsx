@@ -20,7 +20,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-it('booking next page works and changing hotel returns to page 1', async () => {
+it('booking search applies the keyword and hotel together and returns to page 1', async () => {
   const user = userEvent.setup()
   const bookings = vi.spyOn(api, 'managedBookings').mockImplementation(async query => ({
     data: [{ id: `booking-${query.page}`, hotelId: query.hotelId, bookingCode: `BK-PAGE-${query.page}`, guestName: 'Khách', guestEmail: 'a@example.org', amount: 500000, bookingStatus: 'CONFIRMED', paymentStatus: 'PAID', refundStatus: 'NONE', checkInDate: '2026-11-19', checkOutDate: '2026-11-20', createdAt: '2026-11-01' } as ManagedBooking],
@@ -31,12 +31,22 @@ it('booking next page works and changing hotel returns to page 1', async () => {
   await user.click(screen.getByRole('button', { name: 'Sau' }))
   await screen.findByText('BK-PAGE-2')
   expect(bookings).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, hotelId: 'hotel-1' }))
+  const calls = bookings.mock.calls.length
   await user.selectOptions(screen.getByLabelText('Khách sạn'), 'hotel-2')
+  const search = screen.getByRole('searchbox', { name: 'Tìm đơn đặt phòng hoặc khách' })
+  await user.type(search, 'Minh')
+  expect(search).toHaveFocus()
+  expect(bookings).toHaveBeenCalledTimes(calls)
+  expect(screen.getByText('BK-PAGE-2')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Tìm kiếm' }))
   await screen.findByText('BK-PAGE-1')
-  expect(bookings).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, hotelId: 'hotel-2' }))
+  expect(bookings).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, hotelId: 'hotel-2', search: 'Minh' }))
+  expect(screen.queryByLabelText('Tạo từ')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Bộ lọc' }))
+  expect(screen.getByLabelText('Tạo từ')).toBeVisible()
 })
 
-it('reviews next page works and changing stars returns to page 1', async () => {
+it('applying review filters returns to page 1', async () => {
   const user = userEvent.setup()
   vi.spyOn(api, 'reviewSummary').mockResolvedValue({ hotelId: 'hotel-1', averageRating: 4.75, visibleCount: 45 })
   const reviews = vi.spyOn(api, 'reviewPage').mockImplementation(async query => ({
@@ -47,7 +57,11 @@ it('reviews next page works and changing stars returns to page 1', async () => {
   await screen.findByText('Đánh giá trang 1')
   await user.click(screen.getByRole('button', { name: 'Sau' }))
   await screen.findByText('Đánh giá trang 2')
+  const calls = reviews.mock.calls.length
   await user.selectOptions(screen.getByLabelText('Số sao'), '5')
+  expect(reviews).toHaveBeenCalledTimes(calls)
+  expect(screen.getByText('Đánh giá trang 2')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Tìm kiếm' }))
   await screen.findByText('Đánh giá trang 1')
   expect(reviews).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, stars: 5 }))
 })
@@ -58,12 +72,14 @@ it('rooms request one scoped page and reset pagination when selecting a hotel', 
   show(<PartnerRoomsPage />)
   await screen.findByRole('navigation', { name: 'Phân trang' })
   await user.click(screen.getByRole('button', { name: 'Sau' }))
-  await waitFor(() => expect(rooms).toHaveBeenLastCalledWith({ page: 2, limit: 10 }))
+  await waitFor(() => expect(rooms).toHaveBeenLastCalledWith({ page: 2, limit: 6 }))
   await user.selectOptions(screen.getByRole('combobox', { name: 'Số dòng mỗi trang' }), '15')
   await waitFor(() => expect(rooms).toHaveBeenLastCalledWith({ page: 1, limit: 15 }))
   await user.click(await screen.findByRole('button', { name: 'Sau' }))
   await waitFor(() => expect(rooms).toHaveBeenLastCalledWith({ page: 2, limit: 15 }))
   await screen.findByLabelText('Khách sạn')
   await user.selectOptions(screen.getByLabelText('Khách sạn'), 'hotel-2')
+  expect(rooms).toHaveBeenLastCalledWith({ page: 2, limit: 15 })
+  await user.click(screen.getByRole('button', { name: 'Tìm kiếm' }))
   await waitFor(() => expect(rooms).toHaveBeenLastCalledWith({ page: 1, limit: 15, hotelId: 'hotel-2' }))
 })

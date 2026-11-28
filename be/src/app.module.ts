@@ -1,3 +1,4 @@
+import { TravelAiModule } from './modules/travel-ai/travel-ai.module';
 import { Module } from '@nestjs/common';
 import { createObserveModule } from '@nestjs/observe';
 import { StarterModule } from './modules/app/app.module';
@@ -24,7 +25,7 @@ import { MediaModule } from './modules/media/media.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
-import { TravelAiModule } from './modules/travel-ai/travel-ai.module';
+import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -36,6 +37,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       validate: validateEnvironment,
     }),
     DatabaseModule,
+    PlatformSettingsModule,
     RedisCacheModule,
     StarterModule,
     AmenitiesModule,

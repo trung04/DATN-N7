@@ -32,6 +32,15 @@ describe('hotel image API transport', () => {
     transport.mockRejectedValueOnce(new axios.AxiosError('Unavailable', 'ERR_BAD_RESPONSE', undefined, undefined, {
       data: { code: 'HOTEL_IMAGE_STORAGE_UNAVAILABLE', detail: 'Image storage unavailable' }, status: 503, statusText: 'Unavailable', headers: {}, config: {} as never,
     }))
-    await expect(api.uploadHotelImage('hotel-id', new File(['x'], 'hotel.png', { type: 'image/png' }))).rejects.toMatchObject({ message: 'Image storage unavailable' })
+    await expect(api.uploadHotelImage('hotel-id', new File(['x'], 'hotel.png', { type: 'image/png' }))).rejects.toMatchObject({ message: 'Kho lưu trữ ảnh tạm thời không khả dụng.' })
+  })
+  it('uses room-specific multipart, public/managed galleries and cover endpoints', async () => {
+    const file = new File(['png'], 'room.png', { type: 'image/png' })
+    await api.uploadRoomImage('room-id', file)
+    expect(transport.mock.calls[0]![0]).toMatchObject({ method: 'post', url: '/rooms/room-id/images', withCredentials: true })
+    expect(transport.mock.calls[0]![0].data.get('file')).toBe(file)
+    await api.roomImages('room-id'); await api.roomImages('room-id', true)
+    await api.primaryRoomImage('room-id', 'image-id'); await api.primaryHotelImage('hotel-id', 'image-id')
+    expect(transport.mock.calls.slice(1).map(call => call[0].url)).toEqual(['/rooms/room-id/images', '/rooms/mine/room-id/images', '/rooms/room-id/images/image-id/primary', '/hotels/hotel-id/images/image-id/primary'])
   })
 })

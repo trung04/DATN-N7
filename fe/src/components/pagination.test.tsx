@@ -36,11 +36,11 @@ it('handles empty lists without enabling navigation', () => {
   expect(screen.getByRole('button', { name: 'Sau' })).toBeDisabled()
 })
 
-it('defaults to 10 and changing page size preserves filters and resets page 1', async () => {
+it('defaults to 6 and changing page size preserves filters and resets page 1', async () => {
   const user = userEvent.setup()
   render(<MemoryRouter initialEntries={['/?hotelId=owned&page=3']}><Pager total={50} /></MemoryRouter>)
-  expect(screen.getByRole('combobox')).toHaveValue('10')
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['10', '15', '20'])
+  expect(screen.getByRole('combobox')).toHaveValue('6')
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['6', '10', '15', '20'])
   await user.selectOptions(screen.getByRole('combobox'), '15')
   expect(screen.getByRole('status')).toHaveTextContent('?hotelId=owned&page=1&limit=15')
   expect(screen.getByRole('navigation')).toHaveTextContent('Hiển thị 1–15 / 50')

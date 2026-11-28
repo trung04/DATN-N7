@@ -3,7 +3,8 @@ import mapboxgl, { type Map as MapboxMap, type Marker } from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { hasValidCoordinates } from '@/lib/coordinates'
 
-const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim()
+import { useMapboxToken } from '@/lib/use-mapbox-token'
+import { mapboxLocaleVi } from '@/lib/mapbox-locale'
 
 export interface MapLocation {
   id: string
@@ -15,6 +16,7 @@ export interface MapLocation {
 }
 
 export function DestinationMap({ place, emptyMessage = 'Địa điểm này chưa có tọa độ bản đồ.' }: { place: MapLocation; emptyMessage?: string }) {
+  const token = useMapboxToken()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapboxMap | null>(null)
   const markerRef = useRef<Marker | null>(null)
@@ -35,11 +37,12 @@ export function DestinationMap({ place, emptyMessage = 'Địa điểm này chư
       return
     }
 
-    mapboxgl.accessToken = token
     let map: MapboxMap
     try {
       map = new mapboxgl.Map({
+        locale: mapboxLocaleVi,
         container: containerRef.current,
+        accessToken: token,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [place.lng!, place.lat!],
         zoom: 14,
@@ -85,7 +88,7 @@ export function DestinationMap({ place, emptyMessage = 'Địa điểm này chư
       markerRef.current = null
       mapRef.current = null
     }
-  }, [hasCoordinates, place.id, place.lat, place.lng, place.name])
+  }, [hasCoordinates, place.id, place.lat, place.lng, place.name, token])
 
   return <section className="mt-10">
     <h2 className="mb-4 text-2xl font-semibold text-[#1E3A5F]">Vị trí</h2>

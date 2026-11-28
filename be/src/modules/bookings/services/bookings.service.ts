@@ -1,10 +1,13 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { UnauthorizedException, ConflictException, Inject, Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
+import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { HotelsService } from '../../hotels/services/hotels.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { NotificationType } from '../../notifications/entities/notification.entity';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
+import type { SettingsReader } from '../../platform-settings/platform-settings.catalog';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
 import { UserRole } from '../../users/entities/user.entity';
 import { CancellationPoliciesService } from '../../cancellation-policies/services/cancellation-policies.service';
@@ -15,14 +18,14 @@ import { CreateBookingRequest } from '../dtos/requests/create-booking.request';
 import { RoomGuestAllocationRequest } from '../dtos/requests/room-guest-allocation.request';
 import { SearchRoomAvailabilityRequest } from '../dtos/requests/search-room-availability.request';
 import { ListBookingsRequest } from '../dtos/requests/list-bookings.request';
-import { RefundBookingRequest } from '../dtos/requests/refund-booking.request';
-import { SePayV2RequestException } from '../integrations/sepay/sepay-v2.client';
+import { ConfirmManualRefundRequest, RefundBookingRequest } from '../dtos/requests/refund-booking.request';
 import { UpdateBookingRequest } from '../dtos/requests/update-booking.request';
 import {
   BookingCancellationRuleSnapshot,
   BookingEntity,
   BookingStatus,
   PaymentMethod,
+  PaymentProvider,
   PaymentStatus,
   RefundStatus,
   SettlementStatus,
@@ -31,6 +34,7 @@ import {
   BookingActionNotAllowedException,
   BookingCancellationNotAllowedException,
   BookingAlreadyPaidException,
+  BookingAlreadyRefundedException,
   BookingNotFoundException,
   BookingPaymentAlreadyInitializedException,
   BookingPaymentRequiredException,
@@ -47,8 +51,8 @@ import {
   InvalidBookingFinancialTimestampException,
   InvalidBookingTransitionException,
   RefundAmountExceededException,
-  SePayAmountNotSupportedException,
-  SePayCurrencyNotSupportedException,
+  PayosAmountNotSupportedException,
+  PayosCurrencyNotSupportedException,
 } from '../exceptions/booking.exceptions';
 import { BOOKING_CODE_GENERATOR } from '../interfaces/booking-code-generator.interface';
 import type { BookingCodeGenerator } from '../interfaces/booking-code-generator.interface';
@@ -58,31 +62,48 @@ import type {
   BookingRepository,
   CreatedBookingResult,
 } from '../interfaces/booking.repository.interface';
-import { SEPAY_V2_CLIENT } from '../interfaces/sepay-v2.interface';
-import type { SePayV2Client, SePayWebhookPayload } from '../interfaces/sepay-v2.interface';
+import { PAYOS_GATEWAY } from '../interfaces/payos-gateway.interface';
+import type { PayosGateway, PayosPaymentInfo, PayosRefundInput, PayosRefundResult } from '../interfaces/payos-gateway.interface';
 import { assessCancellation } from './cancellation-assessment';
+import { BookingSettingsService } from './booking-settings.service';
 
-export interface CreatedSePayPayment {
-  booking: BookingEntity;
-}
+const AUTOMATIC_REFUND_INTERVAL_MS = 10_000;
+const REFUND_RECHECK_MS = 30_000;
+const REFUND_ITEMS_PER_POLL = 10;
 
 @Injectable()
-export class BookingsService {
+export class BookingsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BookingsService.name);
+  private readonly configService: SettingsReader;
+  private refundPoller?: ReturnType<typeof setInterval>;
+  private processingRefunds = false;
 
   constructor(
     @Inject(BOOKING_REPOSITORY)
     private readonly repository: BookingRepository,
     @Inject(BOOKING_CODE_GENERATOR)
     private readonly codeGenerator: BookingCodeGenerator,
-    @Inject(SEPAY_V2_CLIENT)
-    private readonly sepay: SePayV2Client,
+    @Inject(PAYOS_GATEWAY)
+    private readonly payos: PayosGateway,
     private readonly cancellationPoliciesService: CancellationPoliciesService,
     private readonly roomsService: RoomsService,
-    private readonly configService: ConfigService,
+    configService: ConfigService,
     private readonly hotelsService: HotelsService,
+    private readonly bookingSettingsService: BookingSettingsService,
     @Optional() private readonly notificationsService?: NotificationsService,
-  ) {}
+    @Optional() platformSettings?: PlatformSettingsService,
+  ) {
+    this.configService = platformSettings ?? configService;
+  }
+
+  onModuleInit(): void {
+    this.refundPoller = setInterval(() => { void this.processAutomaticRefunds(); }, AUTOMATIC_REFUND_INTERVAL_MS);
+    this.refundPoller.unref();
+  }
+
+  onModuleDestroy(): void {
+    if (this.refundPoller) clearInterval(this.refundPoller);
+  }
 
   async searchRoomAvailability(
     input: SearchRoomAvailabilityRequest,
@@ -185,9 +206,7 @@ export class BookingsService {
     const totalAmount = this.roundMoney(
       roomItems.reduce((total, room) => total + room.subtotal, 0),
     );
-    const appliedCommissionRate = this.configService.getOrThrow<number>(
-      'BOOKING_COMMISSION_RATE',
-    );
+    const { commissionRate: appliedCommissionRate } = await this.bookingSettingsService.get();
     const holdMinutes = this.configService.getOrThrow<number>(
       'BOOKING_HOLD_MINUTES',
     );
@@ -270,7 +289,7 @@ export class BookingsService {
         NotificationType.BOOKING_CREATED,
         'booking:' + created.booking.id + ':created',
         'Đã nhận yêu cầu đặt phòng',
-        'Booking ' +
+        'Đơn đặt phòng ' +
           created.booking.bookingCode +
           ' đã được tạo và đang chờ thanh toán.',
       );
@@ -548,7 +567,9 @@ export class BookingsService {
       throw new AuthorizationDeniedException();
     }
     const completed = await this.repository.withLockedById(id, async (booking) => {
-      await this.hotelsService.assertManagedBy(booking.hotelId, actor);
+      await this.hotelsService.assertManagedBy(booking.hotelId, actor, {
+        requiresActiveHotel: true,
+      });
       this.assertBookingTransition(booking, BookingStatus.COMPLETED);
       booking.bookingStatus = BookingStatus.COMPLETED;
       return booking;
@@ -572,368 +593,441 @@ export class BookingsService {
         const assessment = assessCancellation(booking);
         if (!assessment.allowed || !assessment.rule) {
           throw new BookingCancellationNotAllowedException(
-            assessment.reason ?? 'Booking không đủ điều kiện hủy theo chính sách đã xác nhận.',
+            assessment.reason ?? 'Đơn đặt phòng không đủ điều kiện hủy theo chính sách đã xác nhận.',
           );
         }
         policy = assessment.rule;
       }
-      const feeRate = policy
-        ? policy.cancellationFeeRate ?? policy.penaltyPercent ?? 0
-        : 0;
-      const feeAmount = unpaidPending
-        ? 0
-        : this.roundVnd(booking.amount * feeRate / 100);
-      if (policy) booking.cancellationPolicyId = policy.id;
-      if (policy) booking.cancellationWindowSnapshot = policy.cancelHours ?? policy.maxHoursAfterBooking ??
-        policy.maxHoursBeforeCheckIn ?? null;
-      booking.cancellationFeeRateSnapshot = feeRate;
-      booking.cancellationDescriptionSnapshot = unpaidPending
-        ? 'Hủy trước khi thanh toán; không phát sinh phí hủy.'
-        : policy!.description ?? policy!.name;
-      booking.cancellationFeeAmount = feeAmount;
-      booking.bookingStatus = BookingStatus.CANCELLED;
-      booking.cancelledAt = new Date();
-      // Keep PAYMENT_PENDING intact: if a payment races with cancellation,
-      // the SePay webhook can recognize it and trigger a full refund.
-      const refundAmount = this.roundVnd(Math.max(0, booking.amount - feeAmount));
-      booking.refundAmount = !unpaidPending && booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
-        ? refundAmount
-        : null;
-      booking.refundReason = booking.refundAmount === null
-        ? null
-        : `Khách hủy booking theo chính sách: ${policy?.name ?? 'đã xác nhận'}`;
-      booking.refundStatus = booking.refundAmount === null ? RefundStatus.NONE : RefundStatus.PENDING;
-      booking.refundRequestedAt = booking.refundAmount === null ? null : booking.cancelledAt;
-      booking.refundProcessingAt = null;
-      booking.refundAttempt = booking.refundAmount === null ? 0 : 1;
-      booking.refundFailureReason = null;
-      booking.refundFailedAt = null;
-      booking.refundHandledBy = null;
+      this.recordCancellation(booking, policy);
       return booking;
     });
     if (!cancelled) throw new BookingNotFoundException(id);
+    await this.notifyCancellation(cancelled);
+    return cancelled;
+  }
+
+  private recordCancellation(booking: BookingEntity, policy: BookingCancellationRuleSnapshot | null): void {
+    const feeRate = policy?.cancellationFeeRate ?? policy?.penaltyPercent ?? 0;
+    const feeAmount = this.roundVnd(booking.amount * feeRate / 100);
+    if (policy) {
+      // Tier IDs live in the snapshot and are not foreign keys.
+      if (!booking.cancellationPolicySnapshot?.inclusiveHourLimits && policy.id !== 'snapshot') {
+        booking.cancellationPolicyId = policy.id;
+      }
+      booking.cancellationWindowSnapshot = policy.cancelHours ?? policy.maxHoursAfterBooking ??
+        policy.maxHoursBeforeCheckIn ?? null;
+    }
+    booking.cancellationFeeRateSnapshot = feeRate;
+    booking.cancellationDescriptionSnapshot = policy
+      ? policy.description ?? policy.name
+      : 'Hủy trước khi thanh toán; không phát sinh phí hủy.';
+    booking.cancellationFeeAmount = feeAmount;
+    booking.bookingStatus = BookingStatus.CANCELLED;
+    booking.cancelledAt = new Date();
+    const refundAmount = this.roundVnd(Math.max(0, booking.amount - feeAmount));
+    booking.refundAmount = policy && booking.paymentStatus === PaymentStatus.PAID && refundAmount > 0
+      ? refundAmount
+      : null;
+    booking.refundReason = booking.refundAmount === null
+      ? null
+      : `Khách hủy đơn đặt phòng theo chính sách: ${policy?.name ?? 'đã xác nhận'}`;
+    booking.refundStatus = booking.refundAmount === null ? RefundStatus.NONE : RefundStatus.PENDING;
+    booking.refundRequestedAt = booking.refundAmount === null ? null : booking.cancelledAt;
+    booking.refundProcessingAt = null;
+    booking.refundAttempt = booking.refundAmount === null ? 0 : 1;
+    booking.refundFailureReason = null;
+    booking.refundFailedAt = null;
+    booking.refundHandledBy = null;
+    this.queueAutomaticRefund(booking);
+  }
+
+  private async notifyCancellation(booking: BookingEntity): Promise<void> {
     await this.notify(
-      cancelled,
+      booking,
       NotificationType.BOOKING_CANCELLED,
-      `booking:${cancelled.id}:cancelled`,
-      'Booking đã được hủy',
-      `Booking ${cancelled.bookingCode} đã được hủy theo chính sách.`,
+      `booking:${booking.id}:cancelled`,
+      'Đơn đặt phòng đã được hủy',
+      `Đơn đặt phòng ${booking.bookingCode} đã được hủy.`,
     );
-    return cancelled.refundAmount !== null && cancelled.refundAmount > 0
-      ? this.submitSePayRefund(id)
-      : cancelled;
   }
 
-  async createSePayPaymentForActor(
-    id: string,
-    actor: AuthorizationActor,
-  ): Promise<CreatedSePayPayment> {
-    const booking = await this.findById(id);
-    this.assertCanModify(booking, actor);
-    return this.createSePayPayment(id);
-  }
-
-  async createSePayPayment(id: string): Promise<CreatedSePayPayment> {
-    const now = new Date();
-    const holdMinutes = this.configService.getOrThrow<number>(
-      'BOOKING_HOLD_MINUTES',
-    );
-    const expiresAt = new Date(now.getTime() + holdMinutes * 60_000);
-    const reservation = await this.repository.withLockedById(id, (booking) => {
-      this.assertPayable(booking, 'create SePay payment');
-      if (booking.reservationExpiresAt <= now) {
-        throw new BookingReservationExpiredException();
+  async createPayosPaymentForActor(id: string, actor: AuthorizationActor) {
+    this.assertCanModify(await this.findById(id), actor);
+    if (!this.payos.isConfigured()) {
+      throw new ServiceUnavailableException('Chưa cấu hình kênh thanh toán payOS.');
+    }
+    const payment = await this.repository.withLockedById(id, (booking) => {
+      this.assertPayable(booking, 'create payOS payment');
+      const now = new Date();
+      if (booking.reservationExpiresAt <= now) throw new BookingReservationExpiredException();
+      if (booking.paymentProvider && booking.paymentProvider !== PaymentProvider.PAYOS) {
+        throw new ConflictException('Đơn đặt phòng này đã dùng cổng thanh toán cũ. Hãy tạo đơn đặt phòng mới để dùng payOS.');
       }
-      if (
-        booking.paymentStatus === PaymentStatus.PAYMENT_PENDING &&
-        booking.paymentCreatedAt !== null &&
-        booking.paymentExpiresAt !== null &&
-        booking.paymentExpiresAt > now
-      ) {
-        if (booking.sepayOrderXid) return { booking, createOrder: false };
-        if (booking.paymentCreatedAt.getTime() > now.getTime() - 30_000) {
-          throw new BookingPaymentAlreadyInitializedException();
-        }
+      if (booking.currency !== 'VND') throw new PayosCurrencyNotSupportedException();
+      if (!Number.isSafeInteger(booking.amount) || booking.amount <= 0) throw new PayosAmountNotSupportedException();
+      if (booking.paymentStatus === PaymentStatus.PENDING && !booking.paymentCreatedAt) {
+        booking.paymentProvider = PaymentProvider.PAYOS;
+        booking.paymentReference = String(randomInt(10_000_000_000_000, 100_000_000_000_000));
+        booking.paymentMethod = PaymentMethod.QR;
+        booking.paymentStatus = PaymentStatus.PAYMENT_PENDING;
+        booking.paymentCreatedAt = now;
+        booking.paymentExpiresAt = booking.reservationExpiresAt;
       }
-      if (booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING && (
-        booking.paymentStatus !== PaymentStatus.PENDING ||
-        booking.paymentCreatedAt !== null
-      )) {
+      if (booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING || !booking.paymentReference || !booking.paymentExpiresAt) {
         throw new BookingPaymentAlreadyInitializedException();
       }
-      if (booking.currency !== 'VND') {
-        throw new SePayCurrencyNotSupportedException();
-      }
-      if (!Number.isInteger(booking.amount) || booking.amount <= 0) {
-        throw new SePayAmountNotSupportedException();
-      }
-
-      booking.paymentMethod = PaymentMethod.BANK_TRANSFER;
-      booking.paymentStatus = PaymentStatus.PAYMENT_PENDING;
-      booking.paymentCreatedAt ??= now;
-      booking.paymentExpiresAt ??= expiresAt;
-      booking.reservationExpiresAt = booking.paymentExpiresAt;
-      booking.sepayOrderCode ??= `BK${createHash('sha256').update(booking.id).digest('hex').slice(0, 13).toUpperCase()}`;
-      return { booking, createOrder: !booking.sepayOrderXid };
-    });
-    if (!reservation) throw new BookingNotFoundException(id);
-    if (!reservation.createOrder) return { booking: reservation.booking };
-
-    const order = await this.sepay.createOrder({
-      orderCode: reservation.booking.sepayOrderCode!,
-      amount: reservation.booking.amount,
-      durationSeconds: holdMinutes * 60,
-    });
-    const saved = await this.repository.withLockedById(id, (booking) => {
-      if (booking.sepayOrderCode !== order.order_code) {
-        throw new BookingActionNotAllowedException('save the SePay order');
-      }
-      booking.sepayOrderXid = order.id;
-      booking.sepayOrderCode = order.order_code;
-      booking.sepayVaNumber = order.va_number ?? null;
-      booking.sepayQrCode = order.qr_code ?? order.qr_code_url ?? null;
-      booking.sepayBankName = order.bank_name ?? null;
-      booking.sepayAccountNumber = order.account_number ?? null;
-      booking.sepayAccountHolderName = order.account_holder_name ?? order.va_holder_name ?? null;
-      booking.sepayOrderStatus = order.status;
-      if (order.expired_at) {
-        const expires = new Date(order.expired_at.replace(' ', 'T') + '+07:00');
-        if (!Number.isNaN(expires.getTime())) booking.paymentExpiresAt = expires;
-      }
-      return booking;
-    });
-    if (!saved) throw new BookingNotFoundException(id);
-    return { booking: saved };
-  }
-
-  async handleSePayV2Webhook(payload: SePayWebhookPayload): Promise<boolean> {
-    const code = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
-    const booking = code ? await this.repository.findBySePayOrderCode(code) : null;
-    if (!booking) return false;
-    if (String(payload.transferType ?? '').toLowerCase() !== 'in') return false;
-    if (Number(payload.transferAmount) !== booking.amount) return false;
-    if (payload.subAccount && booking.sepayVaNumber &&
-      payload.subAccount.toUpperCase() !== booking.sepayVaNumber.toUpperCase()) return false;
-    const transactionId = payload.id === undefined ? '' : String(payload.id);
-    if (!transactionId) return false;
-
-    const updated = await this.repository.withLockedById(booking.id, (current) => {
-      if (current.paymentStatus === PaymentStatus.PAID) {
-        return {
-          accepted: current.paymentTransactionId === transactionId,
-          newlyPaid: false,
-          booking: current,
-          wasConfirmed: false,
-        };
-      }
-      if (current.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
-        current.paymentTransactionId !== null) {
-        return { accepted: false, newlyPaid: false, booking: current, wasConfirmed: false };
-      }
-
-      current.paymentStatus = PaymentStatus.PAID;
-      current.paymentMethod = PaymentMethod.BANK_TRANSFER;
-      current.paymentTransactionId = transactionId;
-      current.sepayOrderStatus = 'Paid';
-      const paidAt = typeof payload.transactionDate === 'string'
-        ? new Date(payload.transactionDate.replace(' ', 'T') + '+07:00')
-        : new Date();
-      current.paidAt = Number.isNaN(paidAt.getTime()) ? new Date() : paidAt;
-      const wasConfirmed = current.bookingStatus === BookingStatus.PENDING;
-      const latePaymentAfterCancellation = current.bookingStatus === BookingStatus.CANCELLED;
-      if (current.bookingStatus === BookingStatus.PENDING) {
-        current.bookingStatus = BookingStatus.CONFIRMED;
-      }
-      if (latePaymentAfterCancellation) {
-        current.refundAmount = current.amount;
-        current.refundReason = 'Thanh toán nhận được sau khi booking đã bị hủy.';
-        current.refundStatus = RefundStatus.PENDING;
-        current.refundRequestedAt = new Date();
-        current.refundProcessingAt = null;
-        current.refundAttempt = 1;
-        current.refundFailureReason = null;
-        current.refundFailedAt = null;
-        current.refundHandledBy = null;
-      }
       return {
-        accepted: true,
-        newlyPaid: true,
-        booking: current,
-        wasConfirmed,
-        latePaymentAfterCancellation,
+        bookingId: booking.id,
+        orderCode: Number(booking.paymentReference),
+        amount: booking.amount,
+        expiresAt: booking.paymentExpiresAt,
+        checkoutUrl: booking.paymentCheckoutUrl,
       };
     });
-    if (!updated?.accepted) return false;
-    if (updated.newlyPaid) {
-      const amount = this.formatVnd(updated.booking.amount);
-      await this.notify(
-        updated.booking,
-        NotificationType.PAYMENT_SUCCEEDED,
-        `booking:${updated.booking.id}:payment-succeeded`,
-        'Thanh toán thành công',
-        `Đã nhận thanh toán ${amount} cho booking ${updated.booking.bookingCode}.${this.sandboxNotice()}`,
-      );
-      if (updated.wasConfirmed) {
-        await this.notify(
-          updated.booking,
-          NotificationType.BOOKING_CONFIRMED,
-          `booking:${updated.booking.id}:confirmed`,
-          'Booking đã được xác nhận',
-          `Booking ${updated.booking.bookingCode} đã được khách sạn xác nhận.`,
-        );
+    if (!payment) throw new BookingNotFoundException(id);
+    if (payment.checkoutUrl) {
+      return { bookingId: id, expiresAt: payment.expiresAt.toISOString(), paymentUrl: payment.checkoutUrl };
+    }
+
+    const link = await this.payos.createPayment(payment);
+    const checkout = await this.repository.withLockedById(id, (booking) => {
+      this.assertPayable(booking, 'open payOS payment');
+      if (booking.reservationExpiresAt <= new Date()) throw new BookingReservationExpiredException();
+      if (booking.paymentStatus !== PaymentStatus.PAYMENT_PENDING ||
+          booking.paymentReference !== String(payment.orderCode) ||
+          (booking.paymentLinkId && booking.paymentLinkId !== link.linkId)) {
+        throw new BookingPaymentAlreadyInitializedException();
       }
-    }
-    if (
-      updated.booking.bookingStatus === BookingStatus.CANCELLED &&
-      updated.booking.refundStatus === RefundStatus.PENDING &&
-      updated.booking.refundAmount !== null &&
-      !updated.booking.sepayRefundId
-    ) {
-      await this.submitSePayRefund(updated.booking.id);
-    }
-    return true;
+      booking.paymentLinkId = link.linkId;
+      booking.paymentCheckoutUrl = link.checkoutUrl;
+      return { bookingId: id, expiresAt: payment.expiresAt.toISOString(), paymentUrl: link.checkoutUrl };
+    });
+    if (!checkout) throw new BookingNotFoundException(id);
+    return checkout;
   }
 
-  async refund(
-    id: string,
-    input: RefundBookingRequest,
-    _customerIp?: string,
-  ): Promise<BookingEntity> {
-    const initialized = await this.repository.withLockedById(id, (booking) => {
-      if (booking.paymentStatus !== PaymentStatus.PAID) {
-        throw new BookingPaymentRequiredException('refund');
+  async handlePayosWebhook(body: unknown): Promise<void> {
+    const event = await this.payos.verifyWebhook(body);
+    if (!event) throw new UnauthorizedException('Chữ ký webhook payOS không hợp lệ.');
+    const booking = await this.repository.findByPaymentReference(String(event.orderCode));
+    if (!booking || booking.paymentProvider !== PaymentProvider.PAYOS ||
+        (booking.paymentLinkId && booking.paymentLinkId !== event.linkId) ||
+        booking.paymentStatus === PaymentStatus.PAID) return;
+    const payment = await this.payos.getPayment(event.orderCode);
+    if (payment.linkId === event.linkId) await this.applyPayosPayment(booking.id, payment);
+  }
+
+  async refreshPayosPaymentForActor(id: string, actor: AuthorizationActor): Promise<BookingEntity> {
+    const booking = await this.findById(id);
+    this.assertCanModify(booking, actor);
+    const missingRefundDestination = this.canRecoverRefundDestination(booking);
+    const needsVerification = booking.paymentStatus === PaymentStatus.PAYMENT_PENDING ||
+      (booking.bookingStatus === BookingStatus.PENDING && booking.paymentStatus === PaymentStatus.FAILED) ||
+      missingRefundDestination;
+    if (booking.paymentProvider !== PaymentProvider.PAYOS ||
+        !needsVerification || !booking.paymentLinkId || !booking.paymentReference) {
+      return booking;
+    }
+    const payment = await this.payos.getPayment(Number(booking.paymentReference));
+    if (missingRefundDestination) {
+      return (await this.repository.withLockedById(id, (current) => {
+        const paid = payment.paid;
+        if (this.canRecoverRefundDestination(current) && paid?.destination &&
+            current.paymentReference === String(payment.orderCode) && current.paymentLinkId === payment.linkId &&
+            current.amount === payment.amount && current.amount === payment.amountPaid &&
+            current.paymentTransactionId === 'PAYOS:' + paid.reference) {
+          current.refundDestination = paid.destination;
+          this.queueAutomaticRefund(current);
+        }
+        return current;
+      })) ?? booking;
+    }
+    return (await this.applyPayosPayment(id, payment)) ?? booking;
+  }
+
+  private canRecoverRefundDestination(booking: BookingEntity): boolean {
+    return booking.paymentProvider === PaymentProvider.PAYOS && booking.paymentStatus === PaymentStatus.PAID &&
+      booking.bookingStatus === BookingStatus.CANCELLED && booking.settlementStatus === SettlementStatus.PENDING &&
+      booking.refundStatus === RefundStatus.PENDING && (booking.refundAmount ?? 0) > 0 &&
+      !booking.refundDestination && !booking.refundRequestId;
+  }
+
+  private async applyPayosPayment(id: string, payment: PayosPaymentInfo): Promise<BookingEntity | null> {
+    const result = await this.repository.withLockedById(id, (booking) => {
+      if (booking.paymentProvider !== PaymentProvider.PAYOS ||
+          booking.paymentReference !== String(payment.orderCode) ||
+          (booking.paymentLinkId && booking.paymentLinkId !== payment.linkId) ||
+          booking.amount !== payment.amount || booking.paymentStatus === PaymentStatus.PAID) {
+        return { booking, transition: null };
       }
-      if (booking.settlementStatus !== SettlementStatus.PENDING) {
-        throw new BookingActionNotAllowedException(
-          'refund after hotel settlement has started',
-        );
+      const transfer = payment.paid;
+      if (!transfer) {
+        if (payment.status === 'CANCELLED' && payment.amountPaid === 0 &&
+            booking.bookingStatus === BookingStatus.PENDING) {
+          booking.paymentStatus = PaymentStatus.FAILED;
+          this.recordCancellation(booking, null);
+          return { booking, transition: 'cancelled' };
+        }
+        if (booking.paymentStatus === PaymentStatus.PAYMENT_PENDING && payment.amountPaid === 0) {
+          if (payment.status === 'EXPIRED') booking.paymentStatus = PaymentStatus.EXPIRED;
+          if (['CANCELLED', 'FAILED'].includes(payment.status)) booking.paymentStatus = PaymentStatus.FAILED;
+        }
+        return { booking, transition: null };
       }
-      if (!booking.sepayOrderXid) {
-        throw new BookingActionNotAllowedException('SePay v2 refund without a VA order');
+      // Some payOS bank transfers are timestamped to the minute, with seconds set to zero.
+      const transferTime = transfer.at.getTime();
+      const precisionMs = transferTime % 60_000 === 0 ? 60_000 : 1_000;
+      if (!booking.paymentCreatedAt || transferTime < Math.floor(booking.paymentCreatedAt.getTime() / precisionMs) * precisionMs) {
+        return { booking, transition: null };
       }
-      const retry = booking.refundStatus === RefundStatus.FAILED && booking.refundAmount !== null;
-      const active = [RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus);
-      if (booking.refundStatus !== RefundStatus.NONE && !retry && !active) {
+      booking.paymentLinkId = payment.linkId;
+      booking.paymentStatus = PaymentStatus.PAID;
+      booking.paymentTransactionId = 'PAYOS:' + transfer.reference;
+      booking.refundDestination = transfer.destination;
+      booking.paidAt = transfer.at;
+      const now = new Date();
+      if (booking.bookingStatus === BookingStatus.PENDING && booking.reservationExpiresAt <= now) {
+        booking.bookingStatus = BookingStatus.CANCELLED;
+        booking.cancelledAt = now;
+        booking.cancellationFeeAmount = 0;
+      }
+      if (booking.bookingStatus === BookingStatus.CANCELLED) {
+        booking.refundAmount = booking.amount;
+        booking.refundReason = 'Thanh toán nhận được sau khi hủy hoặc hết thời gian giữ phòng.';
+        booking.refundStatus = RefundStatus.PENDING;
+        booking.refundRequestedAt = now;
+        booking.refundAttempt = 1;
+        this.queueAutomaticRefund(booking);
+      } else if (booking.bookingStatus === BookingStatus.PENDING) {
+        booking.bookingStatus = BookingStatus.CONFIRMED;
+      }
+      return { booking, transition: 'paid' };
+    });
+    if (!result) return null;
+    if (result.transition === 'cancelled') await this.notifyCancellation(result.booking);
+    if (result.transition === 'paid') {
+      const booking = result.booking;
+      await this.notify(booking, NotificationType.PAYMENT_SUCCEEDED,
+        'booking:' + booking.id + ':payment-succeeded', 'Thanh toán thành công',
+        'payOS xác nhận ' + this.formatVnd(booking.amount) + ' cho đơn đặt phòng ' + booking.bookingCode + '.');
+      if (booking.bookingStatus === BookingStatus.CONFIRMED) {
+        await this.notify(booking, NotificationType.BOOKING_CONFIRMED,
+          'booking:' + booking.id + ':confirmed', 'Đơn đặt phòng đã được xác nhận',
+          'Đơn đặt phòng ' + booking.bookingCode + ' đã được xác nhận.');
+      }
+    }
+    return result.booking;
+  }
+
+  async refund(id: string, input: RefundBookingRequest, actor: AuthorizationActor): Promise<BookingEntity> {
+    if (actor.role !== UserRole.ADMIN) throw new AuthorizationDeniedException();
+    if (!this.payos.isPayoutConfigured()) throw new ServiceUnavailableException('Chưa cấu hình Kênh chi payOS.');
+    const submission = await this.repository.withLockedById(id, (booking) => {
+      if (booking.paymentStatus !== PaymentStatus.PAID) throw new BookingPaymentRequiredException('refund');
+      if (booking.paymentProvider !== PaymentProvider.PAYOS || booking.bookingStatus !== BookingStatus.CANCELLED ||
+          booking.settlementStatus !== SettlementStatus.PENDING) {
+        throw new BookingActionNotAllowedException('refund through payOS');
+      }
+      if (!booking.refundDestination) throw new ConflictException('Giao dịch thiếu tài khoản người chuyển đã xác minh để hoàn qua payOS.');
+      if (![RefundStatus.PENDING, RefundStatus.FAILED].includes(booking.refundStatus)) {
         throw new BookingRefundAlreadyInitializedException();
       }
-      if ((retry || active) && input.refundAmount !== booking.refundAmount) {
+      if (!Number.isSafeInteger(input.refundAmount) || input.refundAmount <= 0 ||
+          input.refundAmount > booking.amount || booking.refundAmount !== input.refundAmount) {
         throw new RefundAmountExceededException();
       }
-      if (input.refundAmount > booking.amount) {
-        throw new RefundAmountExceededException();
-      }
-      if (!Number.isInteger(input.refundAmount) || input.refundAmount <= 0) {
-        throw new SePayAmountNotSupportedException();
-      }
-      booking.refundReason = input.refundReason.trim();
-      if (booking.refundStatus === RefundStatus.NONE) {
-        booking.refundAmount = input.refundAmount;
-        booking.refundAttempt = 1;
-      } else if (retry) {
-        booking.refundAttempt = (booking.refundAttempt ?? 0) + 1;
-        booking.sepayRefundId = null;
-        booking.sepayRefundProviderStatus = null;
-        booking.sepayRefundIdempotencyKey = null;
-      }
-      booking.refundStatus = RefundStatus.PENDING;
-      booking.refundRequestedAt = new Date();
-      booking.refundProcessingAt = null;
-      booking.refundHandledBy = null;
-      return booking;
+      booking.refundReason = input.refundReason;
+      return this.beginPayosRefund(booking, input.refundAmount, booking.refundDestination, actor.id);
     });
-    if (!initialized) throw new BookingNotFoundException(id);
-    return this.submitSePayRefund(id);
+    if (!submission) throw new BookingNotFoundException(id);
+
+    return this.submitPayosRefund(id, submission);
   }
 
-  async syncSePayRefund(id: string): Promise<BookingEntity> {
-    const booking = await this.findById(id);
-    if (!booking.sepayRefundId) return this.submitSePayRefund(id);
-    let refund;
-    try {
-      refund = await this.sepay.getRefund(booking.sepayRefundId);
-    } catch {
-      return booking;
+  private automaticRefundsEnabled(): boolean {
+    return this.configService.get<boolean>('PAYOS_AUTO_REFUNDS_ENABLED') === true && this.payos.isPayoutConfigured();
+  }
+
+  private automaticRefundDetails(booking: BookingEntity): Omit<PayosRefundInput, 'requestId'> | null {
+    const { refundAmount: amount, refundDestination: destination } = booking;
+    if (booking.bookingStatus !== BookingStatus.CANCELLED || booking.paymentProvider !== PaymentProvider.PAYOS ||
+        booking.paymentStatus !== PaymentStatus.PAID || booking.settlementStatus !== SettlementStatus.PENDING ||
+        booking.currency !== 'VND' || amount === null || !Number.isSafeInteger(amount) || amount <= 0 || amount > booking.amount ||
+        !destination || !/^\d{6}$/.test(destination.bank) || !/^\d{4,24}$/.test(destination.account)) return null;
+    return { amount, destination };
+  }
+
+  private queueAutomaticRefund(booking: BookingEntity): void {
+    if (booking.refundStatus === RefundStatus.PENDING && this.automaticRefundsEnabled() &&
+        this.automaticRefundDetails(booking)) {
+      booking.refundRequestId ??= randomUUID().replaceAll('-', '');
     }
-    const updated = await this.repository.withLockedById(id, (current) => {
-      if (current.sepayRefundId !== refund.refund_id) return current;
-      current.sepayRefundProviderStatus = refund.status;
-      current.refundTransactionId = refund.refund_id;
-      if (refund.status === 'succeeded') {
-        current.refundStatus = RefundStatus.REFUNDED;
-        current.refundedAt ??= new Date();
-        current.refundFailureReason = null;
-      } else if (refund.status === 'failed' || refund.status === 'rejected') {
-        current.refundStatus = RefundStatus.FAILED;
-      current.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
-        current.refundFailedAt = new Date();
-      } else {
-        current.refundStatus = RefundStatus.PROCESSING;
+  }
+
+  async processAutomaticRefunds(): Promise<void> {
+    if (this.processingRefunds || !this.payos.isPayoutConfigured()) return;
+    this.processingRefunds = true;
+    try {
+      const checkBefore = new Date(Date.now() - REFUND_RECHECK_MS);
+      const ids = await this.repository.findDueAutomaticRefundIds(checkBefore, REFUND_ITEMS_PER_POLL, this.automaticRefundsEnabled());
+      for (const id of ids) {
+        try {
+          await this.processAutomaticRefund(id, checkBefore);
+        } catch {
+          this.logger.warn('Could not process an automatic refund. The next poll will check it again.');
+        }
       }
-      return current;
+    } catch {
+      this.logger.warn('Could not load automatic refunds.');
+    } finally {
+      this.processingRefunds = false;
+    }
+  }
+
+  private async processAutomaticRefund(id: string, checkBefore: Date): Promise<void> {
+    const job = await this.repository.withLockedById(id, (booking) => {
+      const details = this.automaticRefundDetails(booking);
+      if (!details || !booking.refundRequestId || booking.refundHandledBy) return null;
+
+      if (booking.refundStatus === RefundStatus.PENDING) {
+        if (!this.automaticRefundsEnabled()) return null;
+        return { submit: true, input: this.beginPayosRefund(booking, details.amount, details.destination, null) };
+      }
+      if (booking.refundStatus !== RefundStatus.PROCESSING || booking.updatedAt > checkBefore) return null;
+
+      // Claim the next lookup under the row lock so two workers do not poll it together.
+      booking.updatedAt = new Date();
+      return { submit: false, input: { requestId: booking.refundRequestId, ...details } };
     });
-    if (!updated) throw new BookingNotFoundException(id);
-    await this.notifyRefundStatus(updated);
+    if (!job) return;
+    if (job.submit) await this.submitPayosRefund(id, job.input);
+    else await this.reconcilePayosRefund(id, job.input);
+  }
+
+  private beginPayosRefund(
+    booking: BookingEntity,
+    amount: number,
+    destination: PayosRefundInput['destination'],
+    handledBy: string | null,
+  ): PayosRefundInput {
+    const requestId = booking.refundStatus === RefundStatus.PENDING && booking.refundRequestId
+      ? booking.refundRequestId
+      : randomUUID().replaceAll('-', '');
+    const now = new Date();
+    booking.refundRequestId = requestId;
+    booking.refundStatus = RefundStatus.PROCESSING;
+    booking.refundRequestedAt ??= now;
+    booking.refundProcessingAt = now;
+    booking.refundHandledBy = handledBy;
+    booking.refundAttempt = Math.max(1, booking.refundAttempt + Number(Boolean(booking.refundFailedAt)));
+    booking.refundFailureReason = null;
+    booking.refundFailedAt = null;
+    return { requestId, amount, destination };
+  }
+
+  private async submitPayosRefund(id: string, submission: PayosRefundInput): Promise<BookingEntity> {
+    let providerResult: PayosRefundResult;
+    try {
+      providerResult = await this.payos.refund(submission);
+    } catch {
+      // A lost response can still represent a submitted payout. Reconcile by the same reference.
+      providerResult = { status: 'pending' };
+    }
+    const updated = await this.recordPayosRefundResult(id, submission, providerResult);
+    if (updated.refundStatus === RefundStatus.PROCESSING) await this.notifyRefundStatus(updated);
     return updated;
   }
 
-  private async submitSePayRefund(id: string): Promise<BookingEntity> {
-    const request = await this.repository.withLockedById(id, (booking) => {
-      if (!booking.sepayOrderXid || booking.refundAmount === null || booking.refundAmount <= 0) {
-        throw new BookingActionNotAllowedException('submit SePay v2 refund');
-      }
-      if (![RefundStatus.PENDING, RefundStatus.PROCESSING].includes(booking.refundStatus)) {
-        throw new BookingActionNotAllowedException('retry this SePay refund');
-      }
-      booking.sepayRefundIdempotencyKey ??= `refund-${booking.id.replaceAll('-', '')}-${booking.refundAttempt || 1}`;
-      booking.refundStatus = RefundStatus.PROCESSING;
-      booking.refundProcessingAt ??= new Date();
-      return {
-        orderXid: booking.sepayOrderXid,
-        amount: booking.refundAmount,
-        key: booking.sepayRefundIdempotencyKey,
-      };
-    });
-    if (!request) throw new BookingNotFoundException(id);
+  async refreshPayosRefund(id: string, actor: AuthorizationActor): Promise<BookingEntity> {
+    if (actor.role !== UserRole.ADMIN) throw new AuthorizationDeniedException();
+    const booking = await this.findById(id);
+    if (booking.paymentProvider !== PaymentProvider.PAYOS || booking.refundStatus !== RefundStatus.PROCESSING ||
+        !booking.refundRequestId || !booking.refundDestination || !booking.refundAmount) return booking;
+    const submission = {
+      requestId: booking.refundRequestId,
+      amount: booking.refundAmount,
+      destination: booking.refundDestination,
+    };
+    return this.reconcilePayosRefund(id, submission);
+  }
 
-    let refund;
+  private async reconcilePayosRefund(id: string, submission: PayosRefundInput): Promise<BookingEntity> {
+    let providerResult: PayosRefundResult;
     try {
-      refund = await this.sepay.refundOrder(request.orderXid, request.amount, request.key);
-    } catch (error) {
-      const rejection = error instanceof SePayV2RequestException ? error : null;
-      const permanentRejection = rejection !== null &&
-        rejection.providerStatus >= 400 && rejection.providerStatus < 500 &&
-        rejection.providerStatus !== 408 && rejection.providerStatus !== 429;
-      const current = await this.repository.withLockedById(id, (booking) => {
-        if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
-        if (permanentRejection) {
-          booking.refundStatus = RefundStatus.FAILED;
-          booking.refundFailureReason = `SePay từ chối yêu cầu hoàn tiền (HTTP ${rejection!.providerStatus}, ${rejection!.providerErrorCode}).`;
-          booking.refundFailedAt = new Date();
-        } else {
-          booking.refundFailureReason = 'SePay chưa phản hồi kết quả. Có thể đồng bộ lại an toàn bằng cùng mã chống trùng.';
-        }
-        return booking;
-      });
-      if (!current) throw new BookingNotFoundException(id);
-      await this.notifyRefundStatus(current);
-      return current;
+      providerResult = await this.payos.getRefund(submission);
+    } catch {
+      throw new ServiceUnavailableException('Chưa tra cứu được lệnh chi payOS. Vui lòng thử tra cứu lại.');
     }
+    return this.recordPayosRefundResult(id, submission, providerResult);
+  }
+
+  private async recordPayosRefundResult(id: string, submission: PayosRefundInput, outcome: PayosRefundResult): Promise<BookingEntity> {
     const updated = await this.repository.withLockedById(id, (booking) => {
-      if (booking.sepayRefundIdempotencyKey !== request.key) return booking;
-      booking.sepayRefundId = refund.refund_id;
-      booking.sepayRefundProviderStatus = refund.status;
-      booking.refundTransactionId = refund.refund_id;
-      booking.refundFailureReason = null;
-      if (refund.status === 'succeeded') {
-        booking.refundStatus = RefundStatus.REFUNDED;
-        booking.refundedAt ??= new Date();
-      } else if (refund.status === 'failed' || refund.status === 'rejected') {
-        booking.refundStatus = RefundStatus.FAILED;
-        booking.refundFailureReason = `SePay refund ${refund.status}.`;
-        booking.refundFailedAt = new Date();
-      } else {
-        booking.refundStatus = RefundStatus.PROCESSING;
+      if (booking.refundRequestId !== submission.requestId || booking.refundStatus !== RefundStatus.PROCESSING) {
+        return { booking, changed: false };
       }
+      if (outcome.status === 'succeeded' && outcome.reference) {
+        booking.refundStatus = RefundStatus.REFUNDED;
+        booking.refundTransactionId = 'PAYOS:' + outcome.reference;
+        booking.refundedAt = new Date();
+        booking.refundFailureReason = null;
+      } else if (outcome.status === 'rejected') {
+        booking.refundStatus = RefundStatus.FAILED;
+        booking.refundFailedAt = new Date();
+        booking.refundFailureReason = 'payOS xác nhận lệnh chi không thành công.';
+      } else {
+        booking.refundFailureReason = booking.refundHandledBy
+          ? 'Chưa có kết quả cuối từ payOS. Hãy tra cứu lệnh chi trước khi xử lý tiếp.'
+          : 'Chưa có kết quả cuối từ payOS. Hệ thống sẽ tiếp tục tra cứu theo mã lệnh đã lưu.';
+      }
+      return { booking, changed: booking.refundStatus !== RefundStatus.PROCESSING };
+    });
+    if (!updated) throw new BookingNotFoundException(id);
+    if (updated.changed) await this.notifyRefundStatus(updated.booking);
+    return updated.booking;
+  }
+
+  async confirmManualRefund(
+    id: string,
+    input: ConfirmManualRefundRequest,
+    actor: AuthorizationActor,
+  ): Promise<BookingEntity> {
+    if (actor.role !== UserRole.ADMIN) throw new AuthorizationDeniedException();
+
+    const updated = await this.repository.withLockedById(id, (booking) => {
+      if (booking.paymentProvider !== PaymentProvider.LEGACY_LIVE) {
+        throw new BookingActionNotAllowedException('record a historical refund');
+      }
+      if (booking.paymentStatus !== PaymentStatus.PAID) {
+        throw new BookingPaymentRequiredException('recording a refund');
+      }
+      if (booking.refundStatus === RefundStatus.REFUNDED) {
+        if (booking.refundTransactionId === input.refundTransactionId && booking.refundAmount === input.refundAmount) {
+          return booking;
+        }
+        throw new BookingAlreadyRefundedException();
+      }
+      if (
+        booking.refundStatus !== RefundStatus.PENDING ||
+        booking.settlementStatus !== SettlementStatus.PENDING ||
+        booking.refundAmount === null ||
+        booking.refundAmount <= 0 ||
+        !booking.refundReason
+      ) {
+        throw new BookingActionNotAllowedException('confirm a pending manual refund');
+      }
+      if (booking.refundAmount !== input.refundAmount) {
+        throw new ConflictException('The confirmed amount must match the pending refund amount.');
+      }
+
+      const confirmedAt = new Date();
+      booking.refundStatus = RefundStatus.REFUNDED;
+      booking.refundTransactionId = input.refundTransactionId;
+      booking.refundedAt = confirmedAt;
+      booking.refundProcessingAt ??= confirmedAt;
+      booking.refundHandledBy = actor.id;
+      booking.refundFailureReason = null;
+      booking.refundFailedAt = null;
       return booking;
     });
     if (!updated) throw new BookingNotFoundException(id);
@@ -950,15 +1044,18 @@ export class BookingsService {
         NotificationType.REFUND_PROCESSING,
         `booking:${booking.id}:refund:${booking.refundAttempt}:processing`,
         'Hoàn tiền đang được xử lý',
-        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} đang chờ SePay xác nhận.`,
+        `Yêu cầu hoàn ${amount} cho đơn đặt phòng ${booking.bookingCode} đang chờ payOS xác nhận.`,
       );
     } else if (booking.refundStatus === RefundStatus.REFUNDED) {
+      const manual = booking.paymentProvider === PaymentProvider.LEGACY_LIVE;
       await this.notify(
         booking,
         NotificationType.REFUND_SUCCEEDED,
         `booking:${booking.id}:refund:${booking.refundAttempt}:succeeded`,
-        'SePay đã xác nhận hoàn tiền',
-        `SePay xác nhận hoàn ${amount} cho booking ${booking.bookingCode} thành công.${this.sandboxNotice()}`,
+        manual ? 'Đã xác nhận hoàn tiền' : 'payOS đã xác nhận hoàn tiền',
+        manual
+          ? `Quản trị viên đã xác nhận hoàn ${amount} cho đơn đặt phòng ${booking.bookingCode} qua chuyển khoản.`
+          : `payOS xác nhận hoàn ${amount} cho đơn đặt phòng ${booking.bookingCode} thành công.`,
       );
     } else if (booking.refundStatus === RefundStatus.FAILED) {
       const reason = booking.refundFailureReason ? ` Lý do: ${booking.refundFailureReason}` : '';
@@ -967,7 +1064,7 @@ export class BookingsService {
         NotificationType.REFUND_FAILED,
         `booking:${booking.id}:refund:${booking.refundAttempt}:failed`,
         'Hoàn tiền chưa thành công',
-        `Yêu cầu hoàn ${amount} cho booking ${booking.bookingCode} chưa thành công.${reason}`,
+        `Yêu cầu hoàn ${amount} cho đơn đặt phòng ${booking.bookingCode} chưa thành công.${reason}`,
       );
     }
   }
@@ -998,11 +1095,6 @@ export class BookingsService {
 
   private formatVnd(amount: number): string {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' ₫';
-  }
-
-  private sandboxNotice(): string {
-    const baseUrl = this.configService.get<string>('SEPAY_V2_BASE_URL') ?? '';
-    return baseUrl.includes('sandbox') ? ' Đây là kết quả mô phỏng trong môi trường thử nghiệm.' : '';
   }
 
   private async assertCanView(

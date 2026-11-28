@@ -21,6 +21,7 @@ export interface HotelOwnerPage {
 export interface CreateHotelOwnerData {
   userId: string;
   bankName: string | null;
+  bankBin: string | null;
   bankAccountNumber: string | null;
   bankAccountHolder: string | null;
 }

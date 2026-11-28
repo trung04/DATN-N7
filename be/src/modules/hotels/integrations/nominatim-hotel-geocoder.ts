@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from 'redis';
 import type { HotelGeocoder, HotelLocationResult } from '../interfaces/hotel-geocoder.interface';
 import { HotelLocationRateLimitedException, HotelLocationUnavailableException } from '../exceptions/hotel-location.exceptions';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 
 interface NominatimResult {
   place_id?: number;
@@ -23,7 +24,7 @@ export class NominatimHotelGeocoder implements HotelGeocoder, OnModuleDestroy {
   private readonly userAgent: string;
   private readonly rateKey = 'tourism:hotel-location:provider-rate';
 
-  constructor(config: ConfigService) {
+  constructor(config: ConfigService, @Optional() private readonly settings?: PlatformSettingsService) {
     const url = new URL('redis://localhost');
     url.protocol = config.get<boolean>('REDIS_TLS') ? 'rediss:' : 'redis:';
     url.hostname = config.get<string>('REDIS_HOST', 'localhost');
@@ -51,7 +52,8 @@ export class NominatimHotelGeocoder implements HotelGeocoder, OnModuleDestroy {
       if (!reserved) throw new HotelLocationRateLimitedException();
       const url = new URL('/search', this.origin);
       url.search = new URLSearchParams({ q: query, format: 'jsonv2', limit: '5', countrycodes: 'vn', 'accept-language': 'vi,en' }).toString();
-      const response = await fetch(url, { headers: { 'User-Agent': this.userAgent, Accept: 'application/json' }, signal: AbortSignal.timeout(8000), redirect: 'error' });
+      const userAgent = this.settings?.get<string>('HOTEL_GEOCODER_USER_AGENT') ?? this.userAgent;
+      const response = await fetch(url, { headers: { 'User-Agent': userAgent, Accept: 'application/json' }, signal: AbortSignal.timeout(8000), redirect: 'error' });
       if (response.status === 429) {
         await this.client.set(this.rateKey, '1', { PX: 60000 });
         throw new HotelLocationRateLimitedException();

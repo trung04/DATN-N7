@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { UsersService } from '../../users/services/users.service';
 import type { AuthorizationActor } from '../../authorization/interfaces/authorization-actor.interface';
 import { AuthorizationDeniedException } from '../../authorization/exceptions/authorization.exceptions';
@@ -7,6 +7,7 @@ import { HotelOwnerEntity } from '../../users/entities/hotel-owner.entity';
 import { CreateHotelOwnerRequest } from '../dtos/requests/create-hotel-owner.request';
 import { ListHotelOwnersRequest } from '../dtos/requests/list-hotel-owners.request';
 import { UpdateHotelOwnerRequest } from '../dtos/requests/update-hotel-owner.request';
+import { selectableBanks } from '../catalog/vietqr-banks';
 import {
   EmptyHotelOwnerUpdateException,
   HotelOwnerConflictException,
@@ -39,6 +40,7 @@ export class HotelOwnersService {
     const hotelOwner = await this.repository.create({
       userId: input.userId,
       bankName: this.normalizeNullable(input.bankName),
+      bankBin: null,
       bankAccountNumber: this.normalizeNullable(input.bankAccountNumber),
       bankAccountHolder: this.normalizeNullable(input.bankAccountHolder),
     });
@@ -55,6 +57,10 @@ export class HotelOwnersService {
       sortBy: input.sortBy,
       sortOrder: input.sortOrder,
     });
+  }
+
+  listBanks() {
+    return selectableBanks;
   }
 
   async findByUserId(userId: string): Promise<HotelOwnerEntity> {
@@ -80,8 +86,27 @@ export class HotelOwnersService {
     }
     const hotelOwner = await this.findByUserId(userId);
 
+    if (input.bankBin !== undefined) {
+      const bank = selectableBanks.find((option) => option.bin === input.bankBin);
+      if (!bank) throw new BadRequestException('Hãy chọn ngân hàng có trong danh sách.');
+      const account = this.normalizeNullable(input.bankAccountNumber);
+      const holder = this.normalizeNullable(input.bankAccountHolder);
+      if (!account || !/^\d{4,24}$/.test(account)) {
+        throw new BadRequestException('Số tài khoản cần có từ 4 đến 24 chữ số.');
+      }
+      if (!holder || /^DEMO ONLY - HOST /i.test(holder)) {
+        throw new BadRequestException('Hãy nhập tên chủ tài khoản đăng ký với ngân hàng.');
+      }
+      hotelOwner.bankName = bank.shortName;
+      hotelOwner.bankBin = bank.bin;
+      hotelOwner.bankAccountNumber = account;
+      hotelOwner.bankAccountHolder = holder;
+      return this.repository.save(hotelOwner);
+    }
     if (input.bankName !== undefined) {
-      hotelOwner.bankName = this.normalizeNullable(input.bankName);
+      const bankName = this.normalizeNullable(input.bankName);
+      if (bankName !== hotelOwner.bankName) hotelOwner.bankBin = null;
+      hotelOwner.bankName = bankName;
     }
     if (input.bankAccountNumber !== undefined) {
       hotelOwner.bankAccountNumber = this.normalizeNullable(
@@ -119,6 +144,7 @@ export class HotelOwnersService {
 
   private isEmptyUpdate(input: UpdateHotelOwnerRequest): boolean {
     return [
+      input.bankBin,
       input.bankName,
       input.bankAccountNumber,
       input.bankAccountHolder,

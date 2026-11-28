@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Minus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PaginatedList } from '@/components/paginated-list'
 import { Card } from '@/components/common'
 import { PublicRoomGallery } from '@/components/room-images'
 import { currency, nights } from '@/lib/utils'
@@ -103,7 +104,7 @@ export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, 
   }
 
   return <div className="grid gap-5">
-    {groups.map(group => {
+    <PaginatedList items={groups} label="Phân trang loại phòng">{visible => visible.map(group => {
       const availableCount = availableIdsByGroup(group).length
       const quantity = quantities[group.key] ?? 0
       const room = group.room
@@ -127,7 +128,7 @@ export function RoomTypePicker({ hotel, rooms, data, availableRoomIds, checkIn, 
           </div>
         </div>
       </Card>
-    })}
+    })}</PaginatedList>
     <Card className="sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-4 border-[#cbd8e6] p-4 shadow-lg sm:p-5">
       <div>
         <p className="font-semibold">{selectedCount} phòng · {stayNights} đêm</p>

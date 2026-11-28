@@ -23,7 +23,8 @@ export enum SettlementBatchStatus {
 
 export enum SettlementTransferMode {
   MANUAL = 'MANUAL',
-  SEPAY_BANKHUB_SANDBOX = 'SEPAY_BANKHUB_SANDBOX',
+  LEGACY_SIMULATED = 'LEGACY_SIMULATED',
+  PAYOS = 'PAYOS',
 }
 
 @Entity({ name: 'settlement_batches' })
@@ -104,6 +105,15 @@ export class SettlementBatchEntity {
 
   @Column({ name: 'provider_transfer_id', type: 'varchar', length: 255, nullable: true })
   providerTransferId: string | null;
+
+  @Column({ name: 'payout_request_id', type: 'varchar', length: 32, nullable: true })
+  payoutRequestId: string | null;
+
+  @Column({ name: 'payout_bank_bin', type: 'varchar', length: 6, nullable: true })
+  payoutBankBin: string | null;
+
+  @Column({ name: 'payout_submitted_at', type: 'timestamptz', nullable: true })
+  payoutSubmittedAt: Date | null;
 
   @Column({ type: 'integer', default: 1 })
   revision: number;

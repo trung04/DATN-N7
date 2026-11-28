@@ -12,10 +12,10 @@ describe('management pagination', () => {
     expect(pageItems(Array.from({ length: 41 }, (_, i) => i), 3, 20)).toEqual([40])
     expect(pageItems(Array.from({ length: 40 }, (_, i) => i), 3, 20)).toEqual(Array.from({ length: 20 }, (_, i) => i + 20))
   })
-  it.each(['', '0', '-1', '12', '100', '15.5', 'NaN'])('uses 10 for missing or invalid size %s', value => {
-    expect(readPageSize(new URLSearchParams({ limit: value }))).toBe(10)
+  it.each(['', '0', '-1', '12', '100', '15.5', 'NaN'])('uses 6 for missing or invalid size %s', value => {
+    expect(readPageSize(new URLSearchParams({ limit: value }))).toBe(6)
   })
-  it.each([10, 15, 20])('uses the selected size %s for slices and page counts', size => {
+  it.each([6, 10, 15, 20])('uses the selected size %s for slices and page counts', size => {
     expect(readPageSize(new URLSearchParams({ limit: String(size) }))).toBe(size)
     expect(pageItems(Array.from({ length: 50 }, (_, i) => i), 2, size)).toEqual(Array.from({ length: size }, (_, i) => i + size))
     expect(lastPage(50, size)).toBe(Math.ceil(50 / size))

@@ -108,12 +108,13 @@ export interface BookingRepository {
   ): Promise<string[]>;
   findById(id: string): Promise<BookingEntity | null>;
   findByCode(bookingCode: string): Promise<BookingEntity | null>;
-  findBySePayOrderCode(orderCode: string): Promise<BookingEntity | null>;
+  findByPaymentReference(orderCode: string): Promise<BookingEntity | null>;
   findByIdempotencyKey(
     key: string,
     requestHash: string,
   ): Promise<BookingEntity | null>;
   findPage(options: FindBookingsOptions): Promise<BookingPage>;
+  findDueAutomaticRefundIds(checkBefore: Date, limit: number, includePending: boolean): Promise<string[]>;
   create(
     data: CreateBookingData,
     roomItems: CreateBookingRoomData[],

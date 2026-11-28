@@ -12,6 +12,7 @@ import {
   HotelEntity,
   HotelStatus,
 } from '../src/modules/hotels/entities/hotel.entity';
+import { HotelNotFoundException } from '../src/modules/hotels/exceptions/hotel.exceptions';
 import { HotelsService } from '../src/modules/hotels/services/hotels.service';
 import { HotelDocumentsService } from '../src/modules/hotels/services/hotel-documents.service';
 import type { AuthenticatedRequest } from '../src/modules/auth/interfaces/authenticated-request.interface';
@@ -52,8 +53,8 @@ describe('Hotels API (e2e)', () => {
   let app: INestApplication<App>;
   const service = {
     create: jest.fn(),
-    findPage: jest.fn(),
-    findById: jest.fn(),
+    findReviewPage: jest.fn(),
+    findForReview: jest.fn(),
     update: jest.fn(),
     addDocument: jest.fn(),
     deleteDocument: jest.fn(),
@@ -210,6 +211,34 @@ describe('Hotels API (e2e)', () => {
       .expect(({ body }) => {
         expect(body.status).toBe(HotelStatus.PENDING_APPROVAL);
       });
+  });
+
+  it('uses the review list for admin searches and pagination', async () => {
+    service.findReviewPage.mockResolvedValue({ items: [], total: 0 });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/hotels')
+      .query({ status: HotelStatus.DRAFT, search: 'Sun', page: 2, limit: 6 })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual([]);
+        expect(body.meta.total).toBe(0);
+      });
+
+    expect(service.findReviewPage).toHaveBeenCalledWith(
+      expect.objectContaining({ status: HotelStatus.DRAFT, search: 'Sun', page: 2, limit: 6 }),
+    );
+  });
+
+  it('returns 404 when the admin review detail is unavailable', async () => {
+    service.findForReview.mockRejectedValue(new HotelNotFoundException(hotelId));
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/admin/hotels/${hotelId}`)
+      .expect(404)
+      .expect(({ body }) => expect(body.code).toBe('HOTEL_NOT_FOUND'));
+
+    expect(service.findForReview).toHaveBeenCalledWith(hotelId);
   });
 
   it('uses one admin endpoint for hotel review actions', async () => {

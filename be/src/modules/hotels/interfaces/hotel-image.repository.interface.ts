@@ -1,4 +1,5 @@
 import type { HotelImageEntity } from '../entities/hotel-image.entity';
+import type { HotelStatus } from '../entities/hotel.entity';
 export const HOTEL_IMAGE_REPOSITORY = Symbol('HOTEL_IMAGE_REPOSITORY');
 
 export interface CreateHotelImageData {
@@ -17,8 +18,8 @@ export interface HotelImageRepository {
   delete(
     hotelId: string,
     imageId: string,
-    deleteOwnedImage: boolean,
-  ): Promise<void>;
+    beforeDelete: (image: HotelImageEntity, status: HotelStatus) => Promise<boolean>,
+  ): Promise<boolean>;
   makePrimary(
     hotelId: string,
     imageId: string,

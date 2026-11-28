@@ -231,7 +231,9 @@ export class RoomsService {
     const current = await this.repository.findById(id);
     if (!current) throw new RoomNotFoundException(id);
     const room = current.room;
-    await this.hotelsService.assertManagedBy(room.hotelId, actor);
+    await this.hotelsService.assertManagedBy(room.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     const hotelId = input.hotelId ?? room.hotelId;
     if (hotelId !== room.hotelId) {
       await this.hotelsService.assertManagedBy(hotelId, actor);
@@ -266,7 +268,9 @@ export class RoomsService {
   async delete(id: string, actor: AuthorizationActor): Promise<void> {
     const result = await this.repository.findById(id);
     if (!result) throw new RoomNotFoundException(id);
-    await this.hotelsService.assertManagedBy(result.room.hotelId, actor);
+    await this.hotelsService.assertManagedBy(result.room.hotelId, actor, {
+      requiresActiveHotel: true,
+    });
     await this.repository.delete(result.room);
   }
 

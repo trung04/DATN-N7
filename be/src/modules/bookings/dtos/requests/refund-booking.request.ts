@@ -11,16 +11,26 @@ import {
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-export class RefundBookingRequest {
+class RefundAmountRequest {
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(9_999_999_999)
   refundAmount: number;
+}
 
+export class RefundBookingRequest extends RefundAmountRequest {
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
   @MaxLength(5000)
   refundReason: string;
+}
+
+export class ConfirmManualRefundRequest extends RefundAmountRequest {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  refundTransactionId: string;
 }

@@ -1,3 +1,7 @@
+import { CreateTouristProfiles1794500016000 } from './migrations/1794500016000-CreateTouristProfiles';
+import { AddTravelPreferenceCategories1794500017000 } from './migrations/1794500017000-AddTravelPreferenceCategories';
+import { TwoFactorCredentialEntity } from '../modules/auth/entities/two-factor-credential.entity';
+import { CreateUserTwoFactorCredentials1794500018000 } from './migrations/1794500018000-CreateUserTwoFactorCredentials';
 import 'reflect-metadata';
 import { config as loadEnvironment } from 'dotenv';
 import { DataSource } from 'typeorm';
@@ -31,6 +35,7 @@ import { BookingEntity } from '../modules/bookings/entities/booking.entity';
 import { BookingRoomEntity } from '../modules/bookings/entities/booking-room.entity';
 import { BookingRoomChildEntity } from '../modules/bookings/entities/booking-room-child.entity';
 import { BookingIdempotencyKeyEntity } from '../modules/bookings/entities/booking-idempotency-key.entity';
+import { BookingSettingsEntity } from '../modules/bookings/entities/booking-settings.entity';
 import { HotelEntity } from '../modules/hotels/entities/hotel.entity';
 import { HotelDocumentEntity } from '../modules/hotels/entities/hotel-document.entity';
 import { HotelReviewHistoryEntity } from '../modules/hotels/entities/hotel-review-history.entity';
@@ -85,14 +90,17 @@ import { RoomGuestPolicyEntity } from '../modules/rooms/entities/room-guest-poli
 import { AddRoomGuestPolicies1794500009000 } from './migrations/1794500009000-AddRoomGuestPolicies';
 import { CreateNotificationEmailOutbox1794500010000 } from './migrations/1794500010000-CreateNotificationEmailOutbox';
 import { AddSePaySandboxSettlementPayout1794500011000 } from './migrations/1794500011000-AddSePaySandboxSettlementPayout';
-import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015000-AddCancellationPolicyTiers';
 import { AddImageFallbackUrl1794500012000 } from './migrations/1794500012000-AddImageFallbackUrl';
 import { AddHotelCoordinates1794500013000 } from './migrations/1794500013000-AddHotelCoordinates';
 import { AddHotelDocumentFiles1794500014000 } from './migrations/1794500014000-AddHotelDocumentFiles';
-import { CreateTouristProfiles1794500016000 } from './migrations/1794500016000-CreateTouristProfiles';
-import { AddTravelPreferenceCategories1794500017000 } from './migrations/1794500017000-AddTravelPreferenceCategories';
-import { TwoFactorCredentialEntity } from '../modules/auth/entities/two-factor-credential.entity';
-import { CreateUserTwoFactorCredentials1794500018000 } from './migrations/1794500018000-CreateUserTwoFactorCredentials';
+import { AddCancellationPolicyTiers1794500015000 } from './migrations/1794500015000-AddCancellationPolicyTiers';
+import { UseVnpaySandboxPayments1794500016000 } from './migrations/1794500016000-UseVnpaySandboxPayments';
+import { UsePayosPayments1794500017000 } from './migrations/1794500017000-UsePayosPayments';
+import { AddPayosSettlementPayout1794500018000 } from './migrations/1794500018000-AddPayosSettlementPayout';
+import { AddHotelOwnerBankBin1794500019000 } from './migrations/1794500019000-AddHotelOwnerBankBin';
+import { CreateBookingSettings1794500020000 } from './migrations/1794500020000-CreateBookingSettings';
+import { CreatePlatformSettings1794500021000 } from './migrations/1794500021000-CreatePlatformSettings';
+import { PlatformSettingsEntity } from '../modules/platform-settings/platform-settings.repository';
 
 loadEnvironment();
 const environment = validateEnvironment(process.env);
@@ -136,6 +144,8 @@ export default new DataSource({
     BookingRoomEntity,
     BookingRoomChildEntity,
     BookingIdempotencyKeyEntity,
+    BookingSettingsEntity,
+    PlatformSettingsEntity,
     SettlementBatchEntity,
     SettlementItemEntity,
     SettlementBatchEventEntity,
@@ -192,13 +202,19 @@ export default new DataSource({
     AddRoomGuestPolicies1794500009000,
     CreateNotificationEmailOutbox1794500010000,
     AddSePaySandboxSettlementPayout1794500011000,
-    AddCancellationPolicyTiers1794500015000,
     AddImageFallbackUrl1794500012000,
     AddHotelCoordinates1794500013000,
     AddHotelDocumentFiles1794500014000,
+    AddCancellationPolicyTiers1794500015000,
+    UseVnpaySandboxPayments1794500016000,
+    UsePayosPayments1794500017000,
+    AddPayosSettlementPayout1794500018000,
     CreateTouristProfiles1794500016000,
     AddTravelPreferenceCategories1794500017000,
     CreateUserTwoFactorCredentials1794500018000,
+    AddHotelOwnerBankBin1794500019000,
+    CreateBookingSettings1794500020000,
+    CreatePlatformSettings1794500021000,
   ],
   synchronize: false,
   logging: false,

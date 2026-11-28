@@ -24,6 +24,7 @@ export interface SettlementBatchData {
   adjustmentAmount: number;
   netAmount: number;
   bankNameSnapshot: string;
+  payoutBankBin: string | null;
   bankAccountNumberSnapshot: string;
   bankAccountHolderSnapshot: string;
 }
@@ -41,7 +42,24 @@ export type SettlementItemData = Pick<
   | 'netAmount'
 >;
 
+export interface SettlementTransition {
+  id: string;
+  expectedStatus: string;
+  nextStatus: string;
+  expectedRevision?: number;
+  approvedBy?: string;
+  transferReference?: string;
+  transferMode?: string;
+  providerTransferId?: string;
+  payoutRequestId?: string;
+  payoutBankBin?: string;
+  failureReason?: string;
+  eventNote?: string;
+  actorUserId: string | null;
+}
+
 export interface SettlementRepository {
+  countLivePayments(bookingIds: string[]): Promise<number>;
   findEligibleBookings(
     hotelId: string,
     periodStart: string,
@@ -57,16 +75,7 @@ export interface SettlementRepository {
     ownerUserId?: string;
   }): Promise<SettlementBatchWithItems[]>;
   findById(id: string): Promise<SettlementBatchWithItems | null>;
-  transition(input: {
-    id: string;
-    expectedStatus: string;
-    nextStatus: string;
-    approvedBy?: string;
-    transferReference?: string;
-    transferMode?: string;
-    providerTransferId?: string;
-    failureReason?: string;
-    eventNote?: string;
-    actorUserId: string;
-  }): Promise<SettlementBatchWithItems | null>;
+  findDuePayosPayoutIds(checkBefore: Date, limit: number): Promise<string[]>;
+  claimPayosPayoutCheck(id: string, requestId: string, submit: boolean, checkBefore: Date): Promise<boolean>;
+  transition(input: SettlementTransition): Promise<SettlementBatchWithItems | null>;
 }

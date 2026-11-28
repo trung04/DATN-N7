@@ -1,3 +1,4 @@
+import { DateField } from '@/components/ui/date-input'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -92,7 +93,7 @@ export function PlannerPage() {
         {catalogLoading ? <LoadingState /> : catalogError ? <div className="mt-6"><ErrorState message={errorMessage(catalogError)} /></div> : <>
           <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
             <FormField label="Điểm đến"><select value={form.city} onChange={e => set('city', e.target.value)}>{cityOptions.map(city => <option key={city}>{city}</option>)}</select></FormField>
-            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-1"><FormField label="Ngày bắt đầu"><input type="date" min={todayPlus(0)} value={form.startDate} onChange={e => set('startDate', e.target.value)} /></FormField><FormField label="Ngày kết thúc"><input type="date" min={form.startDate} value={form.endDate} onChange={e => set('endDate', e.target.value)} /></FormField></div>
+            <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-1"><DateField label="Ngày bắt đầu" min={todayPlus(0)} value={form.startDate} onChange={value => set('startDate', value)}  /><DateField label="Ngày kết thúc" min={form.startDate} value={form.endDate} onChange={value => set('endDate', value)}  /></div>
             <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-1"><FormField label="Người lớn"><input type="number" min="1" max="12" value={form.adults} onChange={e => set('adults', Number(e.target.value))} /></FormField><FormField label="Trẻ em"><input type="number" min="0" max="10" value={form.children} onChange={e => set('children', Number(e.target.value))} /></FormField></div>
             <FormField label="Ngân sách dự kiến (VND)"><input type="number" min="1" step="100000" value={form.budget} onChange={e => set('budget', Number(e.target.value))} /></FormField>
             <FormField label="Phong cách"><select value={form.style} onChange={e => set('style', e.target.value)}><option>Tiết kiệm</option><option>Cân bằng</option><option>Thoải mái</option><option>Nghỉ dưỡng</option></select></FormField>

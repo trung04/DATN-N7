@@ -11,11 +11,15 @@ import {
   Post,
   Query,
   Res,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../authorization/decorators/public.decorator';
 import { Roles } from '../../authorization/decorators/roles.decorator';
 import { UserRole } from '../../users/entities/user.entity';
+import type { UploadedLodgingImage } from '../../media/normalize-lodging-image';
 import type { Response } from 'express';
 import {
   ApiCreateOperation,
@@ -34,6 +38,7 @@ import {
   PlaceResponse,
 } from '../dtos/responses/place.response';
 import { PlaceMapper } from '../mappers/place.mapper';
+import { PlaceFormDataInterceptor, PlaceImageUploadInterceptor } from '../interceptors/place-form-data.interceptor';
 import { PlacesService } from '../services/places.service';
 
 @ApiTags('Places')
@@ -43,12 +48,16 @@ export class PlacesController {
   constructor(private readonly placesService: PlacesService) {}
 
   @Post()
+  @UseInterceptors(PlaceImageUploadInterceptor, PlaceFormDataInterceptor)
+  @ApiConsumes('application/json', 'multipart/form-data')
   @ApiCreateOperation('Create a place', PlaceResponse)
+  @ApiOperation({ description: 'To upload a cover photo, submit multipart fields data (the same JSON object as a string) and file (JPEG, PNG or WebP, max 5 MiB).' })
   async create(
     @Body() input: CreatePlaceRequest,
     @Res({ passthrough: true }) response: Response,
+    @UploadedFile() file?: UploadedLodgingImage,
   ): Promise<PlaceResponse> {
-    const place = await this.placesService.create(input);
+    const place = await this.placesService.create(input, file);
     response.setHeader('Location', `/api/v1/places/${place.id}`);
     return PlaceMapper.toResponse(
       await this.placesService.findDetailsById(place.id),
@@ -103,15 +112,33 @@ export class PlacesController {
   }
 
   @Patch(':placeId')
+  @UseInterceptors(PlaceImageUploadInterceptor, PlaceFormDataInterceptor)
+  @ApiConsumes('application/json', 'multipart/form-data')
   @ApiUpdateOperation('Update a place', PlaceResponse, 'placeId')
+  @ApiOperation({ description: 'To replace the cover photo, submit multipart fields data (the same JSON object as a string) and file (JPEG, PNG or WebP, max 5 MiB).' })
   async update(
     @Param('placeId', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() input: UpdatePlaceRequest,
+    @UploadedFile() file?: UploadedLodgingImage,
   ): Promise<PlaceResponse> {
-    const place = await this.placesService.update(id, input);
+    const place = await this.placesService.update(id, input, file);
     return PlaceMapper.toResponse(
       await this.placesService.findDetailsById(place.id),
     );
+  }
+
+  @Get(':placeId/images/:imageId/file')
+  @Public()
+  @ApiOperation({ summary: 'Read an uploaded place photo' })
+  async readImage(
+    @Param('placeId', new ParseUUIDPipe({ version: '4' })) placeId: string,
+    @Param('imageId', new ParseUUIDPipe({ version: '4' })) imageId: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    const data = await this.placesService.readImage(placeId, imageId);
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Cache-Control', 'no-cache');
+    return new StreamableFile(data, { type: 'image/webp', length: data.length });
   }
 
   @Delete(':placeId')

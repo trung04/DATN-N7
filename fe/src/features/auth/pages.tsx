@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router'
-import { ArrowRight, Check, Compass, Hotel, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Compass, Hotel, ShieldCheck } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -8,11 +8,10 @@ import { Card, Feedback, FormField, PasswordInput } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { demoAccounts, DEMO_PASSWORD } from '@/services/mock/seed'
 import { isMock, repo } from '@/services'
-import { googleLoginUrl } from '@/services/api/client'
+import { api, googleLoginUrl } from '@/services/api/client'
 import { errorMessage } from '@/lib/utils'
 import { useSession } from '@/stores/session'
 import type { Role } from '@/types/domain'
-import { cn } from '@/lib/cn'
 import { localReturnPath, loginDestination } from '@/lib/auth-navigation'
 import { clearOtpResendCooldown, formatOtpCountdown, startOtpResendCooldown, useOtpResendCooldown } from './otp-cooldown'
 
@@ -27,31 +26,10 @@ function GoogleIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) 
   )
 }
 
-function PasswordRequirements({ password }: { password?: string }) {
-  if (!password) return null
-  const rules = [
-    { label: 'Tối thiểu 8 ký tự', ok: (password?.length ?? 0) >= 8 },
-    { label: 'Có chữ cái', ok: /[A-Za-z]/.test(password ?? '') },
-    { label: 'Có chữ số', ok: /[0-9]/.test(password ?? '') },
-  ]
-  return (
-    <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-xs">
-      <span className="font-medium text-slate-600">Độ mạnh mật khẩu:</span>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
-        {rules.map(r => (
-          <span key={r.label} className={cn('inline-flex items-center gap-1', r.ok ? 'font-medium text-emerald-700' : 'text-slate-400')}>
-            {r.ok ? <Check size={12} className="stroke-[2.5]" /> : <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />}
-            {r.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 const loginSchema = z.object({ username: z.string().min(1, 'Nhập tên đăng nhập hoặc email.'), password: z.string().min(1, 'Nhập mật khẩu.') })
-const registerSchema = z.object({ name: z.string().min(2, 'Tên cần ít nhất 2 ký tự.'), username: z.string().min(3, 'Tên đăng nhập cần ít nhất 3 ký tự.').max(50).regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, 'Chỉ dùng chữ thường, số, dấu chấm, gạch dưới hoặc gạch ngang.'), email: z.email('Email không hợp lệ.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
-const resetSchema = z.object({ otp: z.string().length(6, 'OTP gồm 6 chữ số.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
+const registerSchema = z.object({ name: z.string().trim().min(2, 'Tên cần ít nhất 2 ký tự.').max(150, 'Tên không được vượt quá 150 ký tự.'), username: z.string().min(3, 'Tên đăng nhập cần ít nhất 3 ký tự.').max(50, 'Tên đăng nhập không được vượt quá 50 ký tự.').regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, 'Chỉ dùng chữ thường, số, dấu chấm, gạch dưới hoặc gạch ngang.'), email: z.email('Địa chỉ thư điện tử không hợp lệ.').max(254, 'Địa chỉ thư điện tử quá dài.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').max(72, 'Mật khẩu không được vượt quá 72 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
+const resetSchema = z.object({ otp: z.string().length(6, 'Mã xác thực gồm 6 chữ số.'), password: z.string().min(8, 'Mật khẩu cần ít nhất 8 ký tự.').regex(/[A-Za-z]/, 'Mật khẩu cần có chữ cái.').regex(/[0-9]/, 'Mật khẩu cần có chữ số.'), confirm: z.string() }).refine(x => x.password === x.confirm, { path: ['confirm'], message: 'Mật khẩu xác nhận không khớp.' })
 const loginPathByRole: Record<Role, string> = { tourist: '/dang-nhap', partner: '/chu-khach-san/dang-nhap', admin: '/admin/dang-nhap' }
 const roleLabel: Record<Role, string> = { tourist: 'du khách', partner: 'chủ khách sạn', admin: 'quản trị viên' }
 const loginPortals: Array<{ role: Role; path: string; label: string }> = [
@@ -73,7 +51,7 @@ const passwordResetErrorMessage = (error: unknown): string => {
     case 'AUTH_ACCOUNT_NOT_FOUND': return 'Email này chưa được đăng ký. Vui lòng kiểm tra lại hoặc tạo tài khoản.'
     case 'AUTH_PASSWORD_RESET_UNAVAILABLE': return 'Tài khoản này chưa thể đặt lại mật khẩu. Hãy xác minh email hoặc dùng phương thức đăng nhập đã liên kết.'
     case 'AUTH_EMAIL_DELIVERY_FAILED': return 'Không gửi được mã đặt lại mật khẩu. Vui lòng thử lại sau.'
-    case 'AUTH_OTP_RATE_LIMITED': return 'Bạn vừa yêu cầu mã OTP. Vui lòng đợi một phút rồi thử lại.'
+    case 'AUTH_OTP_RATE_LIMITED': return 'Bạn vừa yêu cầu mãM? x?c th?c. Vui lòng đợi một phút rồi thử lại.'
     default: return errorMessage(error)
   }
 }
@@ -184,114 +162,117 @@ export function LoginPage({ expectedRole }: { expectedRole?: Role }) {
   </Card>
 }
 
-export function RegisterPage() {
+export function RegisterPage({ partner = false }: { partner?: boolean }) {
   const navigate = useNavigate()
   const [message, setMessage] = useState('')
-  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<z.infer<typeof registerSchema>>({ resolver: zodResolver(registerSchema), defaultValues: { name: '', username: '', email: '', password: '', confirm: '' } })
-  const passwordValue = watch('password')
-
-  return <Card className="auth-form-card p-6 sm:p-8">
-    <h1 className="auth-form-title text-2xl font-semibold">Tạo tài khoản du khách</h1>
-    <p className="mt-2 text-sm leading-6 text-slate-500">Dùng tài khoản để lưu sở thích, lịch trình và đặt phòng của bạn.</p>
-    <form className="mt-6 grid gap-4" onSubmit={handleSubmit(async values => {
-      const email = values.email.trim().toLowerCase()
-      try {
-        await repo.register(values.name, values.username, email, values.password)
-        startOtpResendCooldown(email, 'verification')
-        navigate('/auth/verify-otp?email=' + encodeURIComponent(email))
-      } catch (error) {
-        if (apiErrorCode(error) === 'AUTH_EMAIL_DELIVERY_FAILED') {
-          clearOtpResendCooldown(email, 'verification')
-          navigate('/auth/verify-otp?delivery=failed&email=' + encodeURIComponent(email))
-        } else setMessage(errorMessage(error))
+  const [existingEmail, setExistingEmail] = useState('')
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof registerSchema>>({ resolver: zodResolver(registerSchema), defaultValues: { name: '', username: '', email: '', password: '', confirm: '' } })
+  const verificationPath = partner ? partnerVerificationPath : '/auth/verify-otp'
+  const verifyLink = (email: string) => verificationPath + '?email=' + encodeURIComponent(email)
+  const submit = handleSubmit(async values => {
+    setMessage('')
+    setExistingEmail('')
+    const email = values.email.trim().toLowerCase()
+    try {
+      const createAccount = partner ? api.registerHotelOwner : repo.register
+      await createAccount(values.name, values.username, email, values.password)
+      startOtpResendCooldown(email, 'verification')
+      navigate(verifyLink(email))
+    } catch (error) {
+      const code = apiErrorCode(error)
+      if (code === 'AUTH_EMAIL_DELIVERY_FAILED') {
+        clearOtpResendCooldown(email, 'verification')
+        navigate(verifyLink(email) + '&delivery=failed')
+      } else if (code === 'USER_EMAIL_CONFLICT') {
+        setExistingEmail(email)
+        setMessage('Địa chỉ thư điện tử này đã được sử dụng. Nếu bạn đang chờ mã xác thực, hãy tiếp tục xác minh.')
+      } else if (code === 'USERNAME_CONFLICT') {
+        setMessage('Tên đăng nhập đã được sử dụng. Hãy chọn tên khác.')
+      } else {
+        setMessage(errorMessage(error))
       }
-    })}>
-      <FormField label="Họ tên" error={errors.name?.message}>
-        <input autoComplete="name" aria-invalid={Boolean(errors.name)} {...register('name')} />
-      </FormField>
-      <FormField label="Tên đăng nhập" hint="Chữ thường, số, dấu chấm, gạch dưới hoặc gạch ngang" error={errors.username?.message}>
-        <input autoComplete="username" aria-invalid={Boolean(errors.username)} {...register('username', { onChange: e => { e.target.value = e.target.value.toLowerCase() } })} />
-      </FormField>
-      <FormField label="Email" error={errors.email?.message}>
-        <input type="email" autoComplete="email" aria-invalid={Boolean(errors.email)} {...register('email')} />
-      </FormField>
-      <FormField label="Mật khẩu" error={errors.password?.message}>
-        <PasswordInput autoComplete="new-password" aria-invalid={Boolean(errors.password)} {...register('password')} />
-      </FormField>
-      <PasswordRequirements password={passwordValue} />
-      <FormField label="Xác nhận mật khẩu" error={errors.confirm?.message}>
-        <PasswordInput autoComplete="new-password" aria-invalid={Boolean(errors.confirm)} {...register('confirm')} />
-      </FormField>
-      <Feedback message={message} kind="error" />
-      <Button disabled={isSubmitting}>{isSubmitting ? 'Đang tạo...' : 'Tiếp tục xác thực'}</Button>
+    }
+  })
+
+  return <Card className="auth-form-card p-5 sm:p-7">
+    {partner && <div className="auth-role"><span className="auth-role-icon"><Hotel size={17} /></span><span>Cổng đối tác khách sạn</span></div>}
+    <h1 className="auth-form-title text-2xl font-semibold">{partner ? 'Đăng ký chủ khách sạn' : 'Tạo tài khoản du khách'}</h1>
+    <p className="mt-2 text-sm text-slate-500">{partner ? 'Xác minh thư điện tử để tạo tài khoản quản lý khách sạn và phòng nghỉ.' : 'Dùng tài khoản để lưu sở thích, lịch trình và đặt phòng.'}</p>
+    <form className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={submit}>
+      <FormField label="Họ tên" error={errors.name?.message}><input autoComplete="name" {...register('name')} /></FormField>
+      <FormField label="Tên đăng nhập" error={errors.username?.message}><input autoComplete="username" {...register('username')} /></FormField>
+      <div className="sm:col-span-2"><FormField label="Thư điện tử" error={errors.email?.message}><input type="email" autoComplete="email" {...register('email')} /></FormField></div>
+      <FormField label="Mật khẩu" error={errors.password?.message} hint="Ít nhất 8 ký tự, có chữ và số."><input type="password" autoComplete="new-password" {...register('password')} /></FormField>
+      <FormField label="Xác nhận mật khẩu" error={errors.confirm?.message}><input type="password" autoComplete="new-password" {...register('confirm')} /></FormField>
+      {message && <div className="sm:col-span-2"><Feedback message={message} kind="error" />
+        {existingEmail && <Link className="mt-2 inline-block text-sm font-semibold text-[#1E3A5F] hover:underline" to={verifyLink(existingEmail)}>Tiếp tục xác minh thư điện tử</Link>}
+      </div>}
+      <Button className="sm:col-span-2" disabled={isSubmitting}>{isSubmitting ? 'Đang tạo…' : 'Tiếp tục xác thực'}</Button>
     </form>
-    <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
-      <span className="h-px flex-1 bg-slate-200" />
-      HOẶC
-      <span className="h-px flex-1 bg-slate-200" />
-    </div>
-    <Button variant="secondary" className="w-full flex items-center justify-center gap-2.5 font-medium" disabled={isMock} onClick={() => { window.location.assign(googleLoginUrl()) }}>
-      <GoogleIcon />Đăng ký bằng Google
-    </Button>
-    {isMock && <p className="mt-2 text-xs text-slate-500">Chế độ demo không gửi email thật.</p>}
-    <p className="mt-4 text-center text-xs text-slate-500">Bằng việc đăng ký, bạn đồng ý với <Link to="/" className="text-[#10545b] underline">Điều khoản dịch vụ</Link> và <Link to="/" className="text-[#10545b] underline">Chính sách bảo mật</Link>.</p>
-    <p className="mt-5 text-center text-sm text-slate-600">Đã có tài khoản? <Link className="font-semibold text-[#10545b] hover:underline" to="/dang-nhap">Đăng nhập</Link></p>
-    <div className="mt-6 border-t border-slate-100 pt-4 text-center">
-      <p className="text-xs text-slate-500">Bạn là chủ khách sạn hoặc homestay? <Link className="font-semibold text-[#10545b] hover:underline" to="/chu-khach-san/dang-nhap">Cổng đối tác khách sạn</Link></p>
-    </div>
+    {!partner && <Button variant="secondary" className="mt-3 w-full" disabled={isMock || !import.meta.env.VITE_API_BASE_URL} onClick={() => { window.location.href = import.meta.env.VITE_API_BASE_URL + '/auth/google/start' }}>Đăng ký bằng Google</Button>}
+    <p className="mt-4 text-center text-sm">Đã có tài khoản? <Link className="font-semibold text-[#1E3A5F] hover:underline" to={loginPathByRole[partner ? 'partner' : 'tourist']}>Đăng nhập</Link></p>
   </Card>
 }
 
-export function VerifyOtpPage() {
+export function VerifyOtpPage({ partner = false }: { partner?: boolean }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const login = useSession(state => state.login)
   const email = params.get('email') ?? ''
   const deliveryFailed = params.get('delivery') === 'failed'
   const [otp, setOtp] = useState('')
   const [message, setMessage] = useState('')
+  const [resendMessage, setResendMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [resending, setResending] = useState(false)
   const cooldown = useOtpResendCooldown(email, 'verification', !deliveryFailed)
-  return <Card className="auth-form-card p-6 sm:p-8">
-    <h1 className="auth-form-title text-2xl font-semibold">Xác thực tài khoản</h1>
-    <p className="mt-2 text-sm leading-6 text-slate-500">Nhập mã 6 chữ số đã gửi đến <strong className="font-medium text-slate-700">{email || 'email của bạn'}</strong>.</p>
-    {deliveryFailed && <Feedback message="Tài khoản đã được tạo nhưng email chưa gửi được. Hãy bấm Gửi lại mã để thử lại." kind="error" />}
-    {isMock && <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Mã OTP demo: <strong>123456</strong>.</div>}
-    <form className="mt-5 grid gap-4" onSubmit={async e => {
-      e.preventDefault()
-      setBusy(true)
-      try {
-        await repo.verifyOtp(email, otp)
-        clearOtpResendCooldown(email, 'verification')
-        navigate('/dang-nhap?registered=1')
-      } catch (error) { setMessage(errorMessage(error)) }
-      finally { setBusy(false) }
-    }}>
-      <FormField label="Mã xác thực OTP">
-        <input
-          value={otp}
-          onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="000000"
-          className="text-center font-mono text-2xl tracking-[0.5em] font-semibold text-slate-800 placeholder:text-slate-300 placeholder:tracking-[0.5em]"
-        />
-      </FormField>
+  const verificationPath = partner ? partnerVerificationPath : '/auth/verify-otp'
+  const verify = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (busy || otp.length !== 6 || !email) return
+    setBusy(true)
+    setMessage('')
+    try {
+      const verifiedUser = await repo.verifyOtp(email, otp)
+      clearOtpResendCooldown(email, 'verification')
+      login(verifiedUser)
+      navigate(loginDestination(verifiedUser.role, null), { replace: true })
+    } catch (error) {
+      const code = apiErrorCode(error)
+      if (code === 'AUTH_OTP_INVALID') setMessage('Mã xác thực sai hoặc đã hết hạn. Hãy nhập lại hoặc yêu cầu mã mới.')
+      else if (code === 'AUTH_REGISTRATION_SESSION_UNAVAILABLE') setMessage('Chưa thể mở phiên đăng nhập. Hãy gửi lại mã và thử lại.')
+      else setMessage(errorMessage(error))
+    } finally { setBusy(false) }
+  }
+
+  const resend = async () => {
+    setMessage('')
+    setResendMessage('')
+    setResending(true)
+    try {
+      await repo.resendOtp(email)
+      startOtpResendCooldown(email, 'verification')
+      setResendMessage(isMock ? 'Đã tạo lại mã xác thực.' : 'Nếu tài khoản đang chờ xác minh, mã mới sẽ được gửi qua thư điện tử.')
+      setOtp('')
+      if (deliveryFailed) navigate(verificationPath + '?email=' + encodeURIComponent(email), { replace: true })
+    } catch (error) { setMessage(errorMessage(error)) }
+    finally { setResending(false) }
+  }
+
+  return <Card className="auth-form-card p-5 sm:p-7">
+    <h1 className="auth-form-title text-2xl font-semibold">{partner ? 'Xác minh thư điện tử chủ khách sạn' : 'Xác thực tài khoản'}</h1>
+    <p className="mt-2 text-sm text-slate-500 wrap-anywhere">Nhập mã 6 chữ số đã gửi đến {email || 'thư điện tử của bạn'}.</p>
+    {deliveryFailed && <div className="mt-3"><Feedback message="Tài khoản đã được tạo nhưng email chưa gửi được. Hãy bấm Gửi lại mã để thử lại." kind="error" /></div>}
+    <form className="mt-4 grid gap-3" onSubmit={verify}>
+      <FormField label="Mã xác thực"><input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" /></FormField>
       <Feedback message={message} kind="error" />
-      <Button disabled={busy || otp.length !== 6 || !email}>Xác nhận</Button>
+      <Button disabled={busy || resending || otp.length !== 6 || !email}>{busy ? 'Đang xác minh…' : 'Xác nhận'}</Button>
     </form>
-    <Button variant="ghost" className="mt-3 w-full" disabled={!email || resending || cooldown > 0} onClick={async () => {
-      setResending(true)
-      try {
-        await repo.resendOtp(email)
-        startOtpResendCooldown(email, 'verification')
-        setMessage(isMock ? 'Đã tạo lại mã OTP demo.' : 'Nếu tài khoản đang chờ xác minh, mã mới sẽ được gửi qua email.')
-        setOtp('')
-        if (deliveryFailed) navigate('/auth/verify-otp?email=' + encodeURIComponent(email), { replace: true })
-      } catch (error) { setMessage(errorMessage(error)) }
-      finally { setResending(false) }
-    }}>{resending ? 'Đang gửi mã...' : cooldown > 0 ? `Gửi lại mã sau ${formatOtpCountdown(cooldown)}` : 'Gửi lại mã'}</Button>
-    <p className="mt-5 text-center text-xs text-slate-500">Sai địa chỉ email? <Link className="font-semibold text-[#10545b] hover:underline" to="/auth/register">Đăng ký lại với email khác</Link></p>
+    <Button variant="ghost" className="mt-3 w-full" disabled={!email || busy || resending || cooldown > 0} onClick={() => { void resend() }}>
+      {resending ? 'Đang gửi mã…' : cooldown > 0 ? `Gửi lại mã sau ${formatOtpCountdown(cooldown)}` : 'Gửi lại mã'}
+    </Button>
+    <Feedback message={resendMessage} />
+    {partner && <Link className="mt-3 block text-center text-sm font-semibold text-[#1E3A5F] hover:underline" to={partnerRegisterPath}>Quay lại đăng ký</Link>}
   </Card>
 }
 
@@ -315,7 +296,7 @@ export function ForgotPasswordPage() {
       } catch (error) { setMessage(passwordResetErrorMessage(error)) }
       finally { setBusy(false) }
     }}>
-      <FormField label="Email">
+      <FormField label="Th? ?i?n t?">
         <input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
       </FormField>
       <Feedback message={message} kind="error" />
@@ -346,7 +327,7 @@ export function ResetPasswordPage() {
         navigate('/dang-nhap?reset=1')
       } catch (error) { setMessage(errorMessage(error)) }
     })}>
-      <FormField label="Mã OTP" error={errors.otp?.message}>
+      <FormField label="MãM? x?c th?c" error={errors.otp?.message}>
         <input inputMode="numeric" autoComplete="one-time-code" aria-invalid={Boolean(errors.otp)} {...register('otp')} />
       </FormField>
       <FormField label="Mật khẩu mới" error={errors.password?.message}>
@@ -364,7 +345,7 @@ export function ResetPasswordPage() {
       try {
         await repo.requestOtp(email)
         startOtpResendCooldown(email, 'password-reset')
-        setResendMessage(isMock ? 'Đã tạo lại mã OTP demo.' : 'Mã đặt lại mật khẩu đã được gửi.')
+        setResendMessage(isMock ? 'Đã tạo lại mãM? x?c th?c demo.' : 'Mã đặt lại mật khẩu đã được gửi.')
         setMessage('')
       } catch (error) {
         setResendMessage('')
@@ -374,3 +355,6 @@ export function ResetPasswordPage() {
     <p className="mt-6 text-center text-sm text-slate-600">Quay lại <Link className="font-semibold text-[#10545b] hover:underline" to="/dang-nhap">Đăng nhập</Link></p>
   </Card>
 }
+
+const partnerRegisterPath = '/chu-khach-san/dang-ky'
+const partnerVerificationPath = '/chu-khach-san/xac-minh-email'

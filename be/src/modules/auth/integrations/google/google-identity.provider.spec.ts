@@ -18,7 +18,9 @@ describe('GoogleIdentityClient', () => {
       }),
       generateAuthUrl: jest.fn().mockReturnValue('https://google.example/auth'),
     };
-    Object.defineProperty(provider, 'client', { value: () => client });
+    Object.defineProperty(provider, 'client', {
+      value: () => ({ client, clientId: config.getOrThrow<string>('GOOGLE_CLIENT_ID') }),
+    });
 
     await expect(
       provider.createAuthorizationRequest('state', 'nonce'),
@@ -54,7 +56,9 @@ describe('GoogleIdentityClient', () => {
         }),
       }),
     };
-    Object.defineProperty(provider, 'client', { value: () => client });
+    Object.defineProperty(provider, 'client', {
+      value: () => ({ client, clientId: config.getOrThrow<string>('GOOGLE_CLIENT_ID') }),
+    });
 
     await expect(
       provider.exchangeCode('code', 'verifier', 'nonce'),

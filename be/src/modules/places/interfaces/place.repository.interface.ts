@@ -96,6 +96,12 @@ export interface PlaceCatalogWriteData {
   categoryCodes?: string[];
   topicCodes?: string[];
   imageUrl?: string | null;
+  uploadedImage?: {
+    objectKey: string;
+    byteSize: number;
+    width: number;
+    height: number;
+  };
   imageAltText?: string | null;
   referencePrice?: {
     minPrice: number;
@@ -137,6 +143,7 @@ export interface CreatePlaceData {
 
 export interface PlaceRepository {
   findById(id: string): Promise<PlaceEntity | null>;
+  findImageObjectKey(placeId: string, imageId: string): Promise<string | null>;
   findDetailsById(id: string): Promise<PlaceDetailsData | null>;
   findByExternalProviderId(
     externalProviderId: string,

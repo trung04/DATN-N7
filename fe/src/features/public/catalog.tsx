@@ -1,3 +1,5 @@
+import { HotelReviews } from './HotelReviews'
+import { useSearchDraft } from '@/lib/use-search-filters'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -176,7 +178,8 @@ export function ExplorePage() {
   const latestParams = useRef(params)
   useLayoutEffect(() => { latestParams.current = params }, [params])
   const requestedPage = readPage(params)
-  const requestedSize = readPageSize(params)
+  const defaultPageSize = 10
+  const requestedSize = readPageSize(params, defaultPageSize)
   const q = params.get('q')?.trim() ?? ''
   const city = params.get('city') ?? ''
   const category = params.get('category') ?? ''
@@ -198,7 +201,7 @@ export function ExplorePage() {
     ...(sort === 'relevance' && { relevance: true }),
   })
   const options = usePublicPlaceOptions()
-  const { page, size, setPage, setSize } = usePagination(places.data?.meta.total)
+  const { page, size, setPage, setSize } = usePagination(places.data?.meta.total, defaultPageSize)
   const update = (key: string, value: string) => {
     const next = new URLSearchParams(latestParams.current)
     if (value) next.set(key, value); else next.delete(key)
@@ -291,12 +294,17 @@ const MAX_SEARCH_CHILDREN = 10
 export function HotelsPage() {
   const { data, isLoading, error, refetch } = useCatalog()
   const [params, setParams] = useSearchParams()
-  const appliedSearchKey = ['city', 'area', 'hotelId', 'placeId', 'lat', 'lng'].map(key => params.get(key) ?? '').join('|')
   const appliedDestination = useMemo(() => readHotelSearchSelection(params, data?.hotels ?? [], data?.destinations ?? []), [params, data])
-  const [draft, setDraft] = useState<{ key: string; value: string } | null>(null)
-  const keyword = draft?.key === appliedSearchKey ? draft.value : appliedDestination?.label ?? ''
+  const filterParams = new URLSearchParams(params)
+  filterParams.delete('page')
+  const search = useSearchDraft({
+    fields: Object.fromEntries(filterParams),
+    keyword: appliedDestination?.label ?? '',
+    destination: appliedDestination,
+  }, filterParams.toString())
+  const { keyword } = search.values
   const searchLabel = appliedDestination?.label ?? 'Mọi điểm đến'
-  const setKeyword = (value: string) => setDraft({ key: appliedSearchKey, value })
+  const setKeyword = (value: string) => search.change({ keyword: value, destination: null })
   const city = params.get('city') ?? ''
   const checkIn = params.get('checkIn') ?? todayPlus(7)
   const checkOut = params.get('checkOut') ?? todayPlus(9)
@@ -322,16 +330,16 @@ export function HotelsPage() {
     enabled: !isMock && hotelIds.length > 0,
     staleTime: 5 * 60 * 1000,
   })
-  const updateMany = (values: Record<string, string>) => {
+  const applySearch = (values: Record<string, string>) => {
     const next = new URLSearchParams(params)
     Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key))
-    if (!Object.prototype.hasOwnProperty.call(values, 'page')) next.delete('page')
-    setParams(next)
+    next.delete('page')
+    search.reset()
+    if (next.toString() !== params.toString()) setParams(next)
   }
-  const update = (key: string, value: string) => updateMany({ [key]: value })
+  const updateMany = (values: Record<string, string>) => search.change({ fields: { ...search.values.fields, ...values } })
   const selectDestination = (selection: HotelSearchSelection) => {
-    setDraft(null)
-    updateMany(hotelSearchParams(selection, selection.label))
+    search.change({ keyword: selection.label, destination: selection })
   }
   const items = useMemo(() => {
     if (!data) return []
@@ -398,10 +406,9 @@ export function HotelsPage() {
       </div>
     </section>
 
-    <HotelSearchForm className="mx-1 -mt-7 mb-7 sm:mx-4" values={params} onChange={updateMany} availableAmenities={availableAmenities} onSubmit={event => {
+    <HotelSearchForm className="mx-1 -mt-7 mb-7 sm:mx-4" values={new URLSearchParams(search.values.fields)} onChange={updateMany} availableAmenities={availableAmenities} showSort onSubmit={event => {
       event.preventDefault()
-      updateMany(hotelSearchParams(draft?.key === appliedSearchKey ? null : appliedDestination, keyword))
-      setDraft(null)
+      applySearch({ ...search.values.fields, ...hotelSearchParams(search.values.destination, keyword) })
     }} destination={<HotelDestinationSearch value={keyword} onChange={setKeyword} onSelect={selectDestination} hotels={data?.hotels ?? []} destinations={data?.destinations ?? []} isLoading={isLoading} hasError={Boolean(error)} onRetry={() => void refetch()} />} />
 
     <div className="mb-5 flex flex-wrap items-center gap-2 text-sm"><span className="mr-1 text-slate-500">Điểm đến nổi bật</span>{['Đà Nẵng', 'Đà Lạt', 'Huế'].map(place => <button key={place} type="button" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 transition hover:border-[#176b70] hover:text-[#10545b]" onClick={() => selectDestination({ kind: 'city', label: place, city: place })}>{place}</button>)}</div>
@@ -412,7 +419,7 @@ export function HotelsPage() {
         : error ? <ErrorState message={errorMessage(error)} />
           : !isMock && (availabilityQuery.isError || guestPoliciesQuery.isError) ? <ErrorState message={errorMessage(availabilityQuery.error ?? guestPoliciesQuery.error)} retry={() => { void availabilityQuery.refetch(); void guestPoliciesQuery.refetch() }} />
             : items.length ? <>
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-4"><div><p className="text-xl font-semibold tracking-tight text-slate-800">{items.length} khách sạn phù hợp</p><p className="mt-1 text-sm text-slate-500">{searchLabel} · {day(checkIn)} – {day(checkOut)} · {adults} người lớn, {children} trẻ em · {rooms} phòng</p></div><label className="w-full max-w-52 text-xs font-medium text-slate-500">Sắp xếp<select className="mt-1" value={sort} onChange={event => update('sort', event.target.value)}><option value="recommended">Đề xuất phù hợp</option><option value="price-asc">Giá thấp trước</option><option value="price-desc">Giá cao trước</option><option value="rating">Đánh giá cao</option><option value="stars">Hạng sao cao</option></select></label></div>
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-4"><div><p className="text-xl font-semibold tracking-tight text-slate-800">{items.length} khách sạn phù hợp</p><p className="mt-1 text-sm text-slate-500">{searchLabel} · {day(checkIn)} – {day(checkOut)} · {adults} người lớn, {children} trẻ em · {rooms} phòng</p></div></div>
               <div id="hotel-results" className="grid scroll-mt-6 gap-5 sm:grid-cols-2 lg:grid-cols-3">{visibleItems.map(({ hotel, price }) => <HotelCard key={hotel.id} item={hotel} price={price!} search={params.toString() ? '?' + params.toString() : ''} />)}</div>
               <div className="mt-7 flex flex-col items-center justify-between gap-4 border-t border-slate-100 pt-5 sm:flex-row">
                 <p className="text-sm text-slate-500" aria-live="polite">{`\u0110ang hi\u1ec3n th\u1ecb`} {firstVisibleItem}-{lastVisibleItem} {`tr\u00ean`} {items.length} {`kh\u00e1ch s\u1ea3n`}</p>
@@ -425,14 +432,13 @@ export function HotelsPage() {
                 </nav>}
               </div>
             </>
-              : <EmptyState title={appliedDestination?.kind === 'nearby' ? 'Không tìm thấy khách sạn gần bạn' : 'Không có khách sạn phù hợp'} description={appliedDestination?.kind === 'nearby' ? 'Chỉ khách sạn đã cập nhật vị trí và nằm trong phạm vi 50 km mới xuất hiện. Bạn có thể tìm theo thành phố hoặc điều chỉnh ngày và bộ lọc.' : 'Thử nới bộ lọc, thay đổi ngày lưu trú hoặc điều chỉnh độ tuổi trẻ em.'} action={<Button variant="secondary" onClick={() => setParams({})}>Đặt lại tìm kiếm</Button>} />}
+              : <EmptyState title={appliedDestination?.kind === 'nearby' ? 'Không tìm thấy khách sạn gần bạn' : 'Không có khách sạn phù hợp'} description={appliedDestination?.kind === 'nearby' ? 'Chỉ khách sạn đã cập nhật vị trí và nằm trong phạm vi 50 km mới xuất hiện. Bạn có thể tìm theo thành phố hoặc điều chỉnh ngày và bộ lọc.' : 'Thử nới bộ lọc, thay đổi ngày lưu trú hoặc điều chỉnh độ tuổi trẻ em.'} action={<Button variant="secondary" onClick={() => { search.reset(); setParams({}) }}>Đặt lại tìm kiếm</Button>} />}
   </div>
 }
 export function HotelDetailPage() {
   const { id } = useParams()
   const [params] = useSearchParams()
   const { data, isLoading, error } = useCatalog()
-  const publicReviews = useQuery({ queryKey: ['public-reviews', id], queryFn: () => api.publicReviewPage({ hotelId: id!, page: 1, limit: 100, sortBy: 'createdAt', sortOrder: 'DESC' }), enabled: Boolean(id) && !isMock })
   const reviewSummary = useQuery({ queryKey: ['public-review-summary', id], queryFn: () => api.publicReviewSummary(id!), enabled: Boolean(id) && !isMock })
   const checkIn = params.get('checkIn') ?? todayPlus(7)
   const checkOut = params.get('checkOut') ?? todayPlus(9)
@@ -464,6 +470,6 @@ export function HotelDetailPage() {
   if (!isMock && guestPoliciesQuery.isError) return <div className="container-app section-pad"><ErrorState message={errorMessage(guestPoliciesQuery.error)} retry={() => { void guestPoliciesQuery.refetch() }} /></div>
   const hotel = data?.hotels.find(x => x.id === id)
   if (!hotel || !data) return <div className="container-app section-pad"><EmptyState title="Không tìm thấy khách sạn" action={<Button asChild><Link to="/hotels">Về danh sách</Link></Button>} /></div>
-  const reviews = isMock ? data.reviews.filter(r => r.hotelId === id && r.status === 'VISIBLE') : (publicReviews.data?.data ?? [])
-  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><HotelImage hotel={hotel} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {reviewSummary.data ? reviewSummary.data.averageRating.toFixed(1) + ' (' + reviewSummary.data.visibleCount + ' đánh giá)' : hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}{isSampleHotel(hotel) && <span className="ml-2 rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">Dữ liệu mẫu</span>}</div><h1 className="mt-2 text-3xl font-semibold">{hotelDisplayName(hotel)}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div>{isMock ? <p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p> : cancellationScheduleQuery.data?.complete ? <section className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><h2 className="font-semibold">Chính sách hủy</h2><div className="mt-2 grid gap-2">{cancellationScheduleQuery.data.rules.map(rule => <CancellationPolicyTerms key={rule.id} {...rule} />)}</div></section> : <Feedback kind="error" message={cancellationScheduleQuery.data?.issue ?? "Chính sách hủy chưa được cấu hình đầy đủ."} />}<div className="mt-5"><FavoriteButton id={hotel.id} targetType="HOTEL" /></div></div></div><DestinationMap emptyMessage="Khách sạn chưa xác nhận vị trí trên bản đồ." place={{ id: hotel.id, name: hotelDisplayName(hotel), city: hotel.city, region: hotel.address, lat: hotel.lat, lng: hotel.lng }} /><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em' + (childAges.length ? ` (${childAges.join(', ')} tuổi)` : '')} /><RoomTypePicker hotel={hotel} rooms={data.rooms.filter(room => room.hotelId === hotel.id)} data={data} availableRoomIds={availabilityQuery.data?.availableRoomIds} checkIn={checkIn} checkOut={checkOut} adults={adults} children={children} childAges={childAges} guestPolicies={guestPoliciesQuery.data ?? []} isMock={isMock} /></div><div className="mt-12"><h2 className="mb-4 text-2xl font-semibold">Đánh giá khách hàng</h2>{reviews.length ? <div className="grid gap-3">{reviews.map(r => <Card key={r.id} className="p-5"><p className="font-semibold">{r.stars}/5 sao</p><p className="mt-2 text-sm text-slate-600">{r.content}</p></Card>)}</div> : <p className="text-sm text-slate-500">Chưa có đánh giá được công bố.</p>}</div></div>
+  const mockReviews = isMock ? data.reviews.filter(review => review.hotelId === id && review.status === 'VISIBLE') : []
+  return <div className="container-app section-pad"><Link className="text-sm text-[#1E3A5F] hover:underline" to={back}>← Quay lại kết quả tìm kiếm</Link><div className="mt-5 grid gap-8 lg:grid-cols-[1.1fr_.9fr]"><HotelImage hotel={hotel} className="rounded-xl" /><div><div className="text-sm font-semibold text-[#1E3A5F]">{hotel.stars} sao · {reviewSummary.data ? reviewSummary.data.averageRating.toFixed(1) + ' (' + reviewSummary.data.visibleCount + ' đánh giá)' : hotel.rating ? 'Đánh giá ' + hotel.rating : 'Chưa có đánh giá'}{isSampleHotel(hotel) && <span className="ml-2 rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">Dữ liệu mẫu</span>}</div><h1 className="mt-2 text-3xl font-semibold">{hotelDisplayName(hotel)}</h1><p className="mt-2 flex items-center gap-1 text-slate-500"><MapPin size={16} />{hotel.address}</p><p className="mt-5 leading-7 text-slate-700">{hotel.description}</p><div className="mt-5 flex flex-wrap gap-2">{hotel.amenities.map(x => <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700" key={x}>{x}</span>)}</div>{isMock ? <p className="mt-5 text-sm text-slate-600"><strong>Chính sách hủy:</strong> {hotel.cancellationPolicy}</p> : cancellationScheduleQuery.data?.complete ? <section className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4"><h2 className="font-semibold">Chính sách hủy</h2><div className="mt-2 grid gap-2">{cancellationScheduleQuery.data.rules.map(rule => <CancellationPolicyTerms key={rule.id} {...rule} />)}</div></section> : <Feedback kind="error" message={cancellationScheduleQuery.data?.issue ?? "Chính sách hủy chưa được cấu hình đầy đủ."} />}<div className="mt-5"><FavoriteButton id={hotel.id} targetType="HOTEL" /></div></div></div><DestinationMap emptyMessage="Khách sạn chưa xác nhận vị trí trên bản đồ." place={{ id: hotel.id, name: hotelDisplayName(hotel), city: hotel.city, region: hotel.address, lat: hotel.lat, lng: hotel.lng }} /><div className="mt-12"><PageHeader title="Chọn loại phòng" description={'Lưu trú ' + checkIn + ' đến ' + checkOut + ' · ' + adults + ' người lớn, ' + children + ' trẻ em' + (childAges.length ? ` (${childAges.join(', ')} tuổi)` : '')} /><RoomTypePicker hotel={hotel} rooms={data.rooms.filter(room => room.hotelId === hotel.id)} data={data} availableRoomIds={availabilityQuery.data?.availableRoomIds} checkIn={checkIn} checkOut={checkOut} adults={adults} children={children} childAges={childAges} guestPolicies={guestPoliciesQuery.data ?? []} isMock={isMock} /></div><HotelReviews key={hotel.id} hotelId={hotel.id} mockReviews={mockReviews} /></div>
 }

@@ -128,15 +128,18 @@ export class HotelImagesService {
     actor: AuthorizationActor,
   ): Promise<void> {
     await this.assertCanManage(hotelId, actor);
-    const image = await this.repository.find(hotelId, imageId);
-    if (!image) throw new HotelImageNotFoundException();
-    const owned =
-      image.imageId === image.id &&
-      image.image.storageProvider === ImageStorageProvider.MINIO &&
-      !image.image.sourceProvider &&
-      image.image.objectKey === `hotels/${hotelId}/${imageId}.webp`;
-    if (owned) await this.storage.delete(image.image.objectKey!);
-    await this.repository.delete(hotelId, imageId, owned);
+    const deleted = await this.repository.delete(hotelId, imageId, async (image, status) => {
+      if (status === HotelStatus.PENDING_APPROVAL) throw new HotelUpdateLockedException();
+      const key = image.image.objectKey;
+      const owned =
+        image.imageId === image.id &&
+        image.image.storageProvider === ImageStorageProvider.MINIO &&
+        !image.image.sourceProvider &&
+        key === `hotels/${hotelId}/${imageId}.webp`;
+      if (owned) await this.storage.delete(key);
+      return owned;
+    });
+    if (!deleted) throw new HotelImageNotFoundException();
   }
   async makePrimary(
     hotelId: string,

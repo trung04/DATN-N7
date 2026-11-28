@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import {
   UserEntity,
   UserRole,
@@ -6,6 +7,9 @@ import {
 import { UsersService } from '../../users/services/users.service';
 import {
   AccountUnavailableException,
+  AuthChallengeInvalidException,
+  AuthEmailDeliveryException,
+  AuthRegistrationSessionUnavailableException,
   GoogleAccountLinkRequiredException,
   InvalidCredentialsException,
   InvalidGoogleStateException,
@@ -20,7 +24,6 @@ import type { AuthChallengeStore } from '../interfaces/auth-challenge-store.inte
 import type { EmailSender } from '../interfaces/email-sender.interface';
 import type { TwoFactorLoginChallengeStore } from '../interfaces/two-factor-login-challenge-store.interface';
 import { TwoFactorService } from './two-factor.service';
-import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 
 const user = (overrides: Partial<UserEntity> = {}): UserEntity =>
@@ -60,12 +63,13 @@ describe('AuthService', () => {
     findByGoogleAccountId: jest.Mock;
     findByEmail: jest.Mock;
     createGoogleUser: jest.Mock;
+    verifyEmail: jest.Mock;
   };
   let sessions: jest.Mocked<AuthSessionStore>;
   let states: jest.Mocked<GoogleOAuthStateStore>;
   let google: jest.Mocked<GoogleIdentityProvider>;
-  let authChallenges: jest.Mocked<AuthChallengeStore>;
-  let emailSender: jest.Mocked<EmailSender>;
+  let challenges: jest.Mocked<AuthChallengeStore>;
+  let email: jest.Mocked<EmailSender>;
   let twoFactorChallenges: jest.Mocked<TwoFactorLoginChallengeStore>;
   let twoFactor: { verifyCode: jest.Mock };
   let service: AuthService;
@@ -78,6 +82,7 @@ describe('AuthService', () => {
       findByGoogleAccountId: jest.fn(),
       findByEmail: jest.fn(),
       createGoogleUser: jest.fn(),
+      verifyEmail: jest.fn(),
     };
     sessions = {
       create: jest.fn(),
@@ -91,28 +96,101 @@ describe('AuthService', () => {
       createAuthorizationRequest: jest.fn(),
       exchangeCode: jest.fn(),
     };
-    authChallenges = {
-      issue: jest.fn(),
-      consume: jest.fn(),
-      clear: jest.fn(),
-    };
-    emailSender = { isConfigured: jest.fn(), sendOtp: jest.fn() };
-    twoFactorChallenges = {
-      create: jest.fn(),
-      takeAttempt: jest.fn(),
-    };
+    challenges = { issue: jest.fn().mockResolvedValue(true), consume: jest.fn(), clear: jest.fn() };
+    email = { isConfigured: jest.fn().mockReturnValue(true), sendOtp: jest.fn() };
+    twoFactorChallenges = { create: jest.fn(), takeAttempt: jest.fn() };
     twoFactor = { verifyCode: jest.fn() };
     service = new AuthService(
       users as unknown as UsersService,
       sessions,
       states,
       google,
-      authChallenges,
-      emailSender,
-      new ConfigService({ AUTH_OTP_PEPPER: 'o'.repeat(32) }),
+      challenges,
+      email,
+      new ConfigService({ AUTH_OTP_PEPPER: 'test-otp-pepper-with-sufficient-length' }),
       twoFactorChallenges,
       twoFactor as unknown as TwoFactorService,
     );
+  });
+
+  it('verifies an owner only using the OTP issued for that pending account', async () => {
+    const pending = user({ status: UserStatus.INACTIVE, role: UserRole.HOTEL_OWNER, isEmailVerified: false });
+    users.create.mockResolvedValue(pending);
+    users.findByEmail.mockResolvedValue(pending);
+    users.verifyEmail.mockResolvedValue(user({ role: UserRole.HOTEL_OWNER, isEmailVerified: true }));
+
+    await service.registerHotelOwner({
+      username: pending.username, displayName: 'Hotel Owner', email: pending.email, password: 'Password123',
+    });
+    expect(users.create).toHaveBeenCalledWith(expect.objectContaining({ status: UserStatus.INACTIVE }), UserRole.HOTEL_OWNER);
+    expect(users.verifyEmail).not.toHaveBeenCalled();
+    const otp = email.sendOtp.mock.calls[0][2];
+    const issued = challenges.issue.mock.calls[0][2];
+    challenges.consume.mockImplementation(async (_email, _purpose, hash) => hash === issued ? 'valid' : 'invalid');
+
+    users.findByEmail.mockResolvedValueOnce({ ...pending, id: '22222222-2222-4222-8222-222222222222' });
+    await expect(service.verifyEmail({ email: pending.email, otp })).rejects.toBeInstanceOf(AuthChallengeInvalidException);
+    expect(users.verifyEmail).not.toHaveBeenCalled();
+    await expect(service.verifyEmail({ email: pending.email, otp })).resolves.toBeUndefined();
+    expect(users.verifyEmail).toHaveBeenCalledWith(pending.id, pending.email, UserRole.HOTEL_OWNER);
+  });
+
+  it('keeps an owner account pending for resend after a delivery failure', async () => {
+    const pending = user({ status: UserStatus.INACTIVE, role: UserRole.HOTEL_OWNER, isEmailVerified: false });
+    users.create.mockResolvedValue(pending);
+    users.findByEmail.mockResolvedValue(pending);
+    email.sendOtp.mockRejectedValueOnce(new Error('Mail unavailable'));
+
+    await expect(service.registerHotelOwner({
+      username: pending.username, email: pending.email, password: 'Password123',
+    })).rejects.toBeInstanceOf(AuthEmailDeliveryException);
+    expect(challenges.clear).toHaveBeenCalledWith(pending.email, 'EMAIL_VERIFICATION');
+    await service.resendVerification({ email: pending.email });
+    expect(email.sendOtp).toHaveBeenCalledTimes(2);
+    expect(users.verifyEmail).not.toHaveBeenCalled();
+  });
+
+  it.each([UserRole.TOURIST, UserRole.HOTEL_OWNER])('starts a session for the newly verified %s', async role => {
+    const pending = user({ status: UserStatus.INACTIVE, role, isEmailVerified: false });
+    const active = user({ role, isEmailVerified: true });
+    users.findByEmail.mockResolvedValue(pending);
+    users.verifyEmail.mockResolvedValue(active);
+    challenges.consume.mockResolvedValueOnce('invalid').mockResolvedValueOnce('valid');
+    sessions.create.mockResolvedValue(tokens);
+
+    await expect(service.verifyEmailAndCreateSession({ email: pending.email, otp: '123456' })).rejects.toBeInstanceOf(AuthChallengeInvalidException);
+    expect(sessions.create).not.toHaveBeenCalled();
+    expect(users.verifyEmail).not.toHaveBeenCalled();
+
+    await expect(service.verifyEmailAndCreateSession({ email: pending.email, otp: '654321' })).resolves.toEqual({ user: active, ...tokens });
+    expect(sessions.create).toHaveBeenCalledWith(pending.id);
+    expect(users.verifyEmail).toHaveBeenCalledWith(pending.id, pending.email, role);
+
+    users.findByEmail.mockResolvedValue(active);
+    await expect(service.verifyEmailAndCreateSession({ email: pending.email, otp: '654321' })).rejects.toBeInstanceOf(AuthChallengeInvalidException);
+    expect(sessions.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the account pending when the registration session store is unavailable', async () => {
+    const pending = user({ status: UserStatus.INACTIVE });
+    users.findByEmail.mockResolvedValue(pending);
+    challenges.consume.mockResolvedValue('valid');
+    sessions.create.mockRejectedValue(new Error('Session store unavailable'));
+
+    await expect(service.verifyEmailAndCreateSession({ email: pending.email, otp: '123456' })).rejects.toBeInstanceOf(AuthRegistrationSessionUnavailableException);
+    expect(users.verifyEmail).not.toHaveBeenCalled();
+  });
+
+  it('revokes the provisional session when account activation cannot commit', async () => {
+    const pending = user({ status: UserStatus.INACTIVE });
+    users.findByEmail.mockResolvedValue(pending);
+    challenges.consume.mockResolvedValue('valid');
+    sessions.create.mockResolvedValue(tokens);
+    sessions.revokeByTokens.mockResolvedValue(undefined);
+    users.verifyEmail.mockResolvedValue(null);
+
+    await expect(service.verifyEmailAndCreateSession({ email: pending.email, otp: '123456' })).rejects.toBeInstanceOf(AuthChallengeInvalidException);
+    expect(sessions.revokeByTokens).toHaveBeenCalledWith(tokens.accessToken, tokens.refreshToken);
   });
 
   it('creates a rotating session after valid password credentials', async () => {

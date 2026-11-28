@@ -1,9 +1,14 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import type { ImageStorage } from '../../media/image-storage.interface';
+import { normalizeLodgingImage, type UploadedLodgingImage } from '../../media/normalize-lodging-image';
 import { CreatePlaceRequest } from '../dtos/requests/create-place.request';
 import { ListPlacesRequest } from '../dtos/requests/list-places.request';
 import { MapPlacesRequest } from '../dtos/requests/map-places.request';
 import { UpdatePlaceRequest } from '../dtos/requests/update-place.request';
 import { PlaceEntity, PlaceSourceType } from '../entities/place.entity';
+import { InvalidPlaceImageException, PlaceImageNotFoundException } from '../exceptions/place-image.exceptions';
+import { PLACE_IMAGE_STORAGE } from '../integrations/s3-place-image.storage';
 import {
   CoordinatePairRequiredException,
   EmptyPlaceUpdateException,
@@ -23,12 +28,16 @@ import type {
 
 @Injectable()
 export class PlacesService {
+  private readonly logger = new Logger(PlacesService.name);
+
   constructor(
     @Inject(PLACE_REPOSITORY)
     private readonly repository: PlaceRepository,
+    @Inject(PLACE_IMAGE_STORAGE)
+    private readonly storage: ImageStorage,
   ) {}
 
-  async create(input: CreatePlaceRequest): Promise<PlaceEntity> {
+  async create(input: CreatePlaceRequest, file?: UploadedLodgingImage): Promise<PlaceEntity> {
     const externalProviderId = this.normalizeNullable(input.externalProviderId);
     await this.assertProviderAvailable(externalProviderId);
 
@@ -37,7 +46,7 @@ export class PlacesService {
     this.assertCoordinatePair(latitude, longitude);
 
     this.assertReferencePrice(input.referencePrice);
-    return this.repository.create({
+    const data = {
       name: input.name.trim(),
       description: this.normalizeNullable(input.description),
       address: this.normalizeNullable(input.address),
@@ -69,7 +78,8 @@ export class PlacesService {
       attributionText: null,
       licenseCode: null,
       lastRefreshedAt: null,
-    }, this.catalogInput(input));
+    };
+    return this.writeWithImage(input, file, (catalog) => this.repository.create(data, catalog));
   }
 
   findCatalogOptions(): Promise<PlaceCatalogOptions> {
@@ -130,8 +140,8 @@ export class PlacesService {
     return place;
   }
 
-  async update(id: string, input: UpdatePlaceRequest): Promise<PlaceEntity> {
-    if (this.isEmptyUpdate(input)) throw new EmptyPlaceUpdateException();
+  async update(id: string, input: UpdatePlaceRequest, file?: UploadedLodgingImage): Promise<PlaceEntity> {
+    if (!file && this.isEmptyUpdate(input)) throw new EmptyPlaceUpdateException();
     const place = await this.findById(id);
     this.assertReferencePrice(input.referencePrice);
 
@@ -178,7 +188,7 @@ export class PlacesService {
       place.openingHours = display ? { display } : null;
     }
 
-    return this.repository.save(place, this.catalogInput(input));
+    return this.writeWithImage(input, file, (catalog) => this.repository.save(place, catalog));
   }
 
   async delete(id: string): Promise<void> {
@@ -186,11 +196,42 @@ export class PlacesService {
     await this.repository.delete(place);
   }
 
-  private mapPointLimit(zoom: number): number {
-    if (zoom <= 9) return 40;
-    if (zoom <= 11) return 80;
-    if (zoom <= 13) return 120;
-    return 200;
+  async readImage(placeId: string, imageId: string): Promise<Buffer> {
+    const key = await this.repository.findImageObjectKey(placeId, imageId);
+    if (!key) throw new PlaceImageNotFoundException();
+    return this.storage.get(key);
+  }
+
+  private async writeWithImage(
+    input: CreatePlaceRequest | UpdatePlaceRequest,
+    file: UploadedLodgingImage | undefined,
+    write: (catalog: PlaceCatalogWriteData) => Promise<PlaceEntity>,
+  ): Promise<PlaceEntity> {
+    const catalog = this.catalogInput(input);
+    if (!file) return write(catalog);
+
+    let image: Awaited<ReturnType<typeof normalizeLodgingImage>>;
+    try {
+      image = await normalizeLodgingImage(file);
+    } catch {
+      throw new InvalidPlaceImageException();
+    }
+
+    const objectKey = `places/${randomUUID()}.webp`;
+    await this.storage.put(objectKey, image.data, 'image/webp');
+    try {
+      return await write({
+        ...catalog,
+        uploadedImage: { objectKey, byteSize: image.size, width: image.width, height: image.height },
+      });
+    } catch (error) {
+      try {
+        await this.storage.delete(objectKey);
+      } catch {
+        this.logger.error('Failed to remove an unlinked place image');
+      }
+      throw error;
+    }
   }
 
   private async assertProviderAvailable(
@@ -281,5 +322,11 @@ export class PlacesService {
   private normalizeCode(value?: string | null): string | null {
     const normalized = this.normalizeNullable(value);
     return normalized?.toUpperCase() ?? null;
+  }
+  private mapPointLimit(zoom: number): number {
+    if (zoom <= 9) return 40;
+    if (zoom <= 11) return 80;
+    if (zoom <= 13) return 120;
+    return 200;
   }
 }

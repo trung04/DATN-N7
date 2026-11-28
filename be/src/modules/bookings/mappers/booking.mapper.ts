@@ -2,7 +2,7 @@ import {
   BookingListResponse,
   BookingResponse,
 } from '../dtos/responses/booking.response';
-import { BookingEntity } from '../entities/booking.entity';
+import { BookingEntity, PaymentProvider } from '../entities/booking.entity';
 import { assessCancellation } from '../services/cancellation-assessment';
 
 export class BookingMapper {
@@ -57,6 +57,10 @@ export class BookingMapper {
       refundAmount: booking.refundAmount,
       refundReason: booking.refundReason,
       refundStatus: booking.refundStatus,
+      manualRefund: booking.paymentProvider === PaymentProvider.LEGACY_LIVE,
+      hasRefundDestination: Boolean(booking.refundDestination),
+      paymentProvider: booking.paymentProvider ?? null,
+      testPayment: booking.paymentProvider === PaymentProvider.LEGACY_TEST,
       refundRequestedAt: booking.refundRequestedAt?.toISOString() ?? null,
       refundProcessingAt: booking.refundProcessingAt?.toISOString() ?? null,
       refundAttempt: booking.refundAttempt ?? 0,

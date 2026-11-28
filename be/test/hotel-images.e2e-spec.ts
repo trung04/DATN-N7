@@ -94,8 +94,14 @@ describe('Hotel image uploads (HTTP)', () => {
               const row = records.get(id);
               return row?.hotelId === hotel ? row : null;
             },
-            delete: async (_hotel: string, id: string) => {
-              records.delete(id);
+            delete: async (
+              hotel: string, id: string,
+              beforeDelete: (image: HotelImageEntity, currentStatus: HotelStatus) => Promise<boolean>,
+            ) => {
+              const row = records.get(id);
+              if (!row || row.hotelId !== hotel) return false;
+              await beforeDelete(row, status);
+              return records.delete(id);
             },
           },
         },
@@ -183,7 +189,9 @@ describe('Hotel image uploads (HTTP)', () => {
       await upload(actor).attach('file', png, 'photo.png').expect(403);
     expect(storage.put).not.toHaveBeenCalled();
   });
-  it('allows admin upload and rejects a missing hotel or invalid UUID', async () => {
+  it('allows admin upload for active hotels and rejects inaccessible hotels or invalid UUIDs', async () => {
+    await upload('admin').attach('file', png, 'photo.png').expect(404);
+    status = HotelStatus.ACTIVE;
     await upload('admin').attach('file', png, 'photo.png').expect(201);
     await request(app.getHttpServer())
       .post('/api/v1/hotels/22222222-2222-4222-8222-222222222222/images')

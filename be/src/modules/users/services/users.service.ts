@@ -42,7 +42,7 @@ export class UsersService {
     private readonly touristProfiles: TouristProfileRepository,
   ) {}
 
-  async create(input: CreateUserRequest): Promise<UserEntity> {
+  async create(input: CreateUserRequest, role: UserRole.TOURIST | UserRole.HOTEL_OWNER = UserRole.TOURIST): Promise<UserEntity> {
     const username = this.normalizeUsername(input.username);
     const email = this.normalizeEmail(input.email);
     await this.assertIdentityAvailable(username, email, null);
@@ -61,7 +61,7 @@ export class UsersService {
       dateOfBirth: input.dateOfBirth ?? null,
       gender: input.gender ?? null,
       status: input.status,
-      role: UserRole.TOURIST,
+      role,
       isEmailVerified: false,
       isTwoFactorEnabled: false,
     });
@@ -274,12 +274,8 @@ export class UsersService {
     await this.repository.save(user);
   }
 
-  async verifyEmail(id: string): Promise<UserEntity> {
-    const user = await this.findById(id);
-    if (user.isEmailVerified && user.status === UserStatus.ACTIVE) return user;
-    user.isEmailVerified = true;
-    if (user.status === UserStatus.INACTIVE) user.status = UserStatus.ACTIVE;
-    return this.repository.save(user);
+  verifyEmail(id: string, email: string, role: UserRole): Promise<UserEntity | null> {
+    return this.repository.activatePendingAccount(id, this.normalizeEmail(email), role);
   }
 
   async delete(id: string): Promise<void> {

@@ -82,7 +82,10 @@ export class HotelsService {
     });
   }
 
-  findPage(input: ListHotelsRequest): Promise<HotelPage> {
+  private findPage(
+    input: ListHotelsRequest,
+    excludedStatus?: HotelStatus,
+  ): Promise<HotelPage> {
     return this.repository.findPage({
       page: input.page,
       limit: input.limit,
@@ -90,9 +93,14 @@ export class HotelsService {
       ownerUserId: input.ownerUserId,
       placeId: input.placeId,
       status: input.status,
+      excludedStatus,
       sortBy: input.sortBy,
       sortOrder: input.sortOrder,
     });
+  }
+
+  findReviewPage(input: ListHotelsRequest): Promise<HotelPage> {
+    return this.findPage(input, HotelStatus.DRAFT);
   }
 
   findPublicPage(input: ListHotelsRequest): Promise<HotelPage> {
@@ -121,11 +129,18 @@ export class HotelsService {
     return hotel;
   }
 
+  async findForReview(id: string): Promise<HotelEntity> {
+    const hotel = await this.findById(id);
+    this.assertReviewable(hotel);
+    return hotel;
+  }
+
   async getSettlementDestination(hotelId: string): Promise<{
     hotelId: string;
     hotelName: string;
     ownerUserId: string;
     bankName: string;
+    bankBin: string | null;
     bankAccountNumber: string;
     bankAccountHolder: string;
   }> {
@@ -141,6 +156,7 @@ export class HotelsService {
       hotelName: hotel.name,
       ownerUserId: hotel.ownerUserId,
       bankName: owner.bankName,
+      bankBin: owner.bankBin ?? null,
       bankAccountNumber: owner.bankAccountNumber,
       bankAccountHolder: owner.bankAccountHolder,
     };
@@ -229,17 +245,17 @@ export class HotelsService {
 
   async submit(id: string, actor: AuthorizationActor): Promise<HotelEntity> {
     const hotel = await this.findById(id);
-    this.assertCanManage(hotel, actor);
-    if (
-      hotel.status !== HotelStatus.DRAFT &&
-      hotel.status !== HotelStatus.REJECTED
-    ) {
-      throw new InvalidHotelStatusTransitionException(
-        hotel.status,
-        HotelReviewAction.SUBMITTED,
-      );
-    }
-    this.assertSubmissionReady(hotel);
+    const validate = (current: HotelEntity) => {
+      this.assertCanManage(current, actor);
+      if (current.status !== HotelStatus.DRAFT && current.status !== HotelStatus.REJECTED) {
+        throw new InvalidHotelStatusTransitionException(current.status, HotelReviewAction.SUBMITTED);
+      }
+      this.assertSubmissionReady(current);
+      if (!current.images?.length) {
+        throw new HotelSubmissionInvalidException('Cần tải lên ít nhất một ảnh khách sạn trước khi nộp hồ sơ.');
+      }
+    };
+    validate(hotel);
 
     hotel.status = HotelStatus.PENDING_APPROVAL;
     hotel.submittedAt = new Date();
@@ -251,7 +267,7 @@ export class HotelsService {
       actorUserId: hotel.ownerUserId,
       action: HotelReviewAction.SUBMITTED,
       reason: null,
-    });
+    }, validate);
   }
 
   async review(
@@ -260,7 +276,7 @@ export class HotelsService {
     input: ReviewHotelRequest,
   ): Promise<HotelEntity> {
     await this.usersService.findById(reviewerUserId);
-    const hotel = await this.findById(id);
+    const hotel = await this.findForReview(id);
     const reason = this.normalizeNullable(input.reason);
     const action = this.applyReviewCommand(hotel, input.action, reason);
     hotel.reviewedAt = new Date();
@@ -299,22 +315,39 @@ export class HotelsService {
   }
 
   async findReviewHistory(id: string): Promise<HotelReviewHistoryEntity[]> {
-    await this.findById(id);
+    await this.findForReview(id);
     return this.repository.findReviewHistory(id);
   }
 
   async assertManagedBy(
     id: string,
     actor: AuthorizationActor,
+    { requiresActiveHotel = false }: { requiresActiveHotel?: boolean } = {},
   ): Promise<HotelEntity> {
     const hotel = await this.findById(id);
     this.assertCanManage(hotel, actor);
+    if (requiresActiveHotel && actor.role === UserRole.HOTEL_OWNER) {
+      if (hotel.status === HotelStatus.PENDING_APPROVAL) {
+        throw new HotelUpdateLockedException();
+      }
+      if (hotel.status !== HotelStatus.ACTIVE) {
+        throw new HotelNotActiveException(id);
+      }
+    }
     return hotel;
   }
 
   private assertCanManage(hotel: HotelEntity, actor: AuthorizationActor): void {
-    if (actor.role !== UserRole.ADMIN && hotel.ownerUserId !== actor.id) {
+    if (actor.role === UserRole.ADMIN) {
+      this.assertReviewable(hotel);
+    } else if (hotel.ownerUserId !== actor.id) {
       throw new AuthorizationDeniedException();
+    }
+  }
+
+  private assertReviewable(hotel: HotelEntity): void {
+    if (hotel.status === HotelStatus.DRAFT) {
+      throw new HotelNotFoundException(hotel.id);
     }
   }
 
@@ -352,21 +385,18 @@ export class HotelsService {
   }
 
   private assertSubmissionReady(hotel: HotelEntity): void {
-    const businessLicense = hotel.documents?.find(
-      (document) =>
-        document.documentType === HotelDocumentType.BUSINESS_LICENSE,
-    );
-    if (!businessLicense) {
+    const licenses = hotel.documents?.filter(document =>
+      document.documentType === HotelDocumentType.BUSINESS_LICENSE &&
+      Boolean(document.documentNumber?.trim() && document.fileUrl?.trim())) ?? [];
+    if (!licenses.length) {
       throw new HotelSubmissionInvalidException(
-        'A business license is required before submitting the hotel.',
+        'Cần có giấy phép kinh doanh kèm ảnh trước khi nộp hồ sơ.',
       );
     }
-    if (
-      businessLicense.expiresAt &&
-      businessLicense.expiresAt < this.todayDate()
-    ) {
+    const today = this.todayDate();
+    if (!licenses.some(license => !license.expiresAt || license.expiresAt >= today)) {
       throw new HotelSubmissionInvalidException(
-        'The business license has expired.',
+        'Giấy phép kinh doanh đã hết hạn. Hãy bổ sung giấy phép còn hiệu lực.',
       );
     }
   }

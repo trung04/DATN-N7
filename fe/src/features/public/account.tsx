@@ -1,3 +1,4 @@
+import { DateField } from '@/components/ui/date-input'
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,7 +14,7 @@ import {
 } from "@/components/common";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { isMock, repo } from "@/services";
-import { currency, errorMessage } from "@/lib/utils";
+import { currency, day, errorMessage } from "@/lib/utils";
 import { useSession } from "@/stores/session";
 import {
   useCatalog,
@@ -163,13 +164,7 @@ export function ProfilePage() {
               />
             </FormField>
             <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Ngày sinh">
-                <input
-                  type="date"
-                  value={dateOfBirth}
-                  onChange={(event) => setDateOfBirth(event.target.value)}
-                />
-              </FormField>
+              <DateField label="Ngày sinh" value={dateOfBirth} onChange={setDateOfBirth} />
               <FormField label="Giới tính">
                 <select
                   value={gender}
@@ -230,7 +225,7 @@ export function ProfilePage() {
             <div>
               <dt className="text-slate-500">Ngày sinh</dt>
               <dd className="font-medium">
-                {profile?.dateOfBirth || "Chưa cập nhật"}
+                {profile?.dateOfBirth ? day(profile.dateOfBirth) : "Chưa cập nhật"}
               </dd>
             </div>
             <div>
@@ -500,7 +495,7 @@ export function ProfilePage() {
           <Link to="/preferences">Sở thích du lịch</Link>
         </Button>
         <Button asChild variant="secondary">
-          <Link to="/bookings">Booking của tôi</Link>
+          <Link to="/bookings">??n ??t ph?ng của tôi</Link>
         </Button>
         <Button asChild variant="secondary">
           <Link to="/trips">Chuyến đi</Link>
